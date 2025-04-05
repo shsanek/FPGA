@@ -18,7 +18,7 @@ module I_O_OUTPUT_CONTROLLER(
   logic internal_io_output_ready_trigger;
   logic[2:0] internal_output_counter;
   logic[7:0] internal_current_value;
-  (* dont_touch *) wire active;
+  wire active;
   
   I_O_TIMER_GENERATOR timer_generator(
    .clk(clk),
