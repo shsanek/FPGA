@@ -1,0 +1,3 @@
+mkdir -p tmp
+iverilog -g2012 -o tmp/OP_0110011 OP_0110011.sv OP_0110011_TEST.sv
+vvp tmp/OP_0110011

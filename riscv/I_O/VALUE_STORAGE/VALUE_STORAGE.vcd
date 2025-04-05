@@ -1,0 +1,216 @@
+$date
+	Sun Mar 30 17:19:01 2025
+$end
+$version
+	Icarus Verilog
+$end
+$timescale
+	1s
+$end
+$scope module VALUE_STORAGE_TEST $end
+$var wire 4 ! leds [3:0] $end
+$var wire 8 " io_output_value [7:0] $end
+$var wire 1 # io_output_trigger $end
+$var reg 4 $ buttons [3:0] $end
+$var reg 1 % clk $end
+$var reg 1 & io_input_trigger $end
+$var reg 8 ' io_input_value [7:0] $end
+$var reg 1 ( io_read_ready_trigger $end
+$var integer 32 ) error [31:0] $end
+$scope module dut $end
+$var wire 4 * buttons [3:0] $end
+$var wire 1 % clk $end
+$var wire 1 & io_input_trigger $end
+$var wire 8 + io_input_value [7:0] $end
+$var wire 1 # io_output_trigger $end
+$var wire 8 , io_output_value [7:0] $end
+$var wire 1 ( io_read_ready_trigger $end
+$var wire 4 - leds [3:0] $end
+$var reg 1 . internal_io_output_trigger $end
+$var reg 8 / internal_value [7:0] $end
+$var reg 2 0 state [1:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+$comment Show the parameter values. $end
+$dumpall
+$end
+#0
+$dumpvars
+b0 0
+b0 /
+0.
+b0 -
+b0 ,
+bx +
+bx *
+b0 )
+x(
+bx '
+x&
+0%
+bx $
+0#
+b0 "
+b0 !
+$end
+#5
+1(
+b0 '
+b0 +
+0&
+b0 $
+b0 *
+1%
+#10
+0%
+#15
+b1 !
+b1 -
+b1 0
+b1 "
+b1 ,
+b1 /
+1%
+b1 $
+b1 *
+#20
+0%
+#25
+1%
+#30
+0%
+#35
+b0 0
+1%
+b0 $
+b0 *
+#40
+0%
+#45
+b10 !
+b10 -
+b1 0
+b10 "
+b10 ,
+b10 /
+1%
+b10 $
+b10 *
+#50
+0%
+#55
+1%
+#60
+0%
+#65
+b0 0
+1%
+b0 $
+b0 *
+#70
+0%
+#75
+b0 !
+b0 -
+b1 0
+b0 "
+b0 ,
+b0 /
+1%
+b100 $
+b100 *
+#80
+0%
+#85
+1%
+b1 $
+b1 *
+#90
+0%
+#95
+b0 0
+1%
+b0 $
+b0 *
+#100
+0%
+#105
+b110 !
+b110 -
+b10110 "
+b10110 ,
+b10110 /
+1%
+b10110 '
+b10110 +
+1&
+#110
+0%
+#115
+1%
+b101000 '
+b101000 +
+0&
+#120
+0%
+#125
+b10 0
+1#
+1.
+1%
+0(
+b1000 $
+b1000 *
+#130
+0%
+#135
+b11 0
+0#
+0.
+1%
+b0 $
+b0 *
+#140
+0%
+#145
+1%
+b10 $
+b10 *
+#150
+0%
+#155
+1%
+#160
+0%
+#165
+b1 0
+1%
+1(
+#170
+0%
+#175
+b0 0
+1%
+b0 $
+b0 *
+#180
+0%
+#185
+b0 !
+b0 -
+b1 0
+b0 "
+b0 ,
+b0 /
+1%
+b100 $
+b100 *
+#190
+0%
+#195
+1%
+#200
+0%
+#205
+1%

@@ -1,0 +1,129 @@
+$date
+	Sat Mar 29 17:32:05 2025
+$end
+$version
+	Icarus Verilog
+$end
+$timescale
+	1s
+$end
+$scope module REGISTER_32_BLOCK_32_TEST $end
+$var wire 32 ! rs2_value [31:0] $end
+$var wire 32 " rs1_value [31:0] $end
+$var reg 1 # clk $end
+$var reg 5 $ rd [4:0] $end
+$var reg 1 % reset_trigger $end
+$var reg 5 & rs1 [4:0] $end
+$var reg 5 ' rs2 [4:0] $end
+$var reg 1 ( write_trigger $end
+$var reg 32 ) write_value [31:0] $end
+$var integer 32 * error [31:0] $end
+$scope module dut $end
+$var wire 1 # clk $end
+$var wire 5 + rd [4:0] $end
+$var wire 1 % reset_trigger $end
+$var wire 5 , rs1 [4:0] $end
+$var wire 5 - rs2 [4:0] $end
+$var wire 1 ( write_trigger $end
+$var wire 32 . write_value [31:0] $end
+$var reg 32 / rs1_value [31:0] $end
+$var reg 32 0 rs2_value [31:0] $end
+$scope begin $ivl_for_loop0 $end
+$var integer 32 1 i [31:0] $end
+$upscope $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+$comment Show the parameter values. $end
+$dumpall
+$end
+#0
+$dumpvars
+b100000 1
+bx 0
+bx /
+b11111111111111111111111111111111 .
+b1 -
+b0 ,
+b0 +
+b0 *
+b11111111111111111111111111111111 )
+0(
+b1 '
+b0 &
+1%
+b0 $
+0#
+bx "
+bx !
+$end
+#5
+b0 !
+b0 0
+b0 "
+b0 /
+b100000 1
+1#
+#10
+0#
+0%
+#15
+1#
+#20
+0#
+b0 '
+b0 -
+1(
+b11011110101011011011111011101111 )
+b11011110101011011011111011101111 .
+#25
+1#
+#30
+0#
+0(
+#35
+1#
+#40
+0#
+b11 '
+b11 -
+b11 &
+b11 ,
+1(
+b10010001101000101011001111000 )
+b10010001101000101011001111000 .
+b11 $
+b11 +
+#45
+1#
+#50
+0#
+0(
+#55
+b10010001101000101011001111000 !
+b10010001101000101011001111000 0
+b10010001101000101011001111000 "
+b10010001101000101011001111000 /
+1#
+#60
+0#
+b1010 &
+b1010 ,
+1(
+b10101011110011011110111100000001 )
+b10101011110011011110111100000001 .
+b1010 $
+b1010 +
+#65
+b0 "
+b0 /
+1#
+#70
+0#
+0(
+#75
+b10101011110011011110111100000001 "
+b10101011110011011110111100000001 /
+1#
+#80
+0#

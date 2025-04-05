@@ -1,0 +1,2 @@
+iverilog -g2012 -o first first.sv first_test.sv
+vvp first
