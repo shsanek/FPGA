@@ -11,8 +11,6 @@ module I_O_OUTPUT_CONTROLLER(
   input wire[7:0] io_output_value,
   input wire io_output_trigger,
 
-  input wire active,
-
   output wire io_output_ready_trigger, 
   output wire RXD
 );
@@ -20,6 +18,13 @@ module I_O_OUTPUT_CONTROLLER(
   logic internal_io_output_ready_trigger;
   logic[2:0] internal_output_counter;
   logic[7:0] internal_current_value;
+  wire active;
+  
+  I_O_TIMER_GENERATOR timer_generator(
+   .clk(CLK100MHZ),
+   .active(active)
+  );
+    
 
   OUTPUT_CONTROLLER_STATE internal_state;
 
@@ -57,4 +62,4 @@ module I_O_OUTPUT_CONTROLLER(
     internal_state = OUT_WATING_VALUE;
     internal_io_output_ready_trigger = 1;
   end;
-endmodule;
+endmodule

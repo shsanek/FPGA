@@ -5,7 +5,7 @@ typedef enum logic [1:0] {
     OUTPUT,
     WATING_OUTPUT
 } VALUE_STORAGE_STATE;
-
+        
 module VALUE_STORAGE (
     input wire clk,
 
@@ -14,7 +14,7 @@ module VALUE_STORAGE (
     input wire io_input_trigger,
     input wire[7:0] io_input_value,
 
-    input wire io_read_ready_trigger, 
+    input wire io_output_ready_trigger, 
 
     output wire[7:0] io_output_value,
     output wire io_output_trigger,
@@ -59,7 +59,7 @@ module VALUE_STORAGE (
                     state <= WATING_OUTPUT;
                 end
                 (WATING_OUTPUT): begin
-                    if (io_read_ready_trigger) begin
+                    if (io_output_ready_trigger) begin
                         state <= WATING_BUTTON_UP;
                     end;
                 end

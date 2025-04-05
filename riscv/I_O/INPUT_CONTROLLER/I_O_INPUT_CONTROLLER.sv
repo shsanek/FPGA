@@ -29,7 +29,7 @@ module SIGNAL_ACCAMULATOR #(
   initial begin
     counter = 0;
   end;
-endmodule;
+endmodule
 
 module CLK_DELAY #(
   parameter CLK_COUNT = 100,
@@ -44,7 +44,7 @@ module CLK_DELAY #(
 
   always_ff @(posedge clk) begin
     if (reset_trigger) begin
-      counter <= reset_value;
+      counter <= reset_value - 3;
       active_trigger <= 0;
     end else if (counter == 0) begin
       active_trigger <= 1;
@@ -56,14 +56,14 @@ module CLK_DELAY #(
   initial begin
     counter = CLK_COUNT;
   end;
-endmodule;
+endmodule
 
 module I_O_INPUT_CONTROLLER #(
   parameter CLOCK_FREQ = 100000000,
   parameter BAUD_RATE  = 115200,
   parameter BIT_PERIOD = CLOCK_FREQ / BAUD_RATE,
-  parameter int SIZE = $clog2(BIT_PERIOD + TIME_SHIFT + 1),
-  parameter int TIME_SHIFT = BIT_PERIOD / 3
+  parameter int TIME_SHIFT = BIT_PERIOD / 3,
+  parameter int SIZE = $clog2(BIT_PERIOD + TIME_SHIFT + 1)
 ) (
   input wire clk,
 
@@ -113,7 +113,7 @@ module I_O_INPUT_CONTROLLER #(
       end else if (internal_state == IN_WATING_VALUE) begin
         if (internal_current_invert_siggnal) begin
           internal_timer_reset <= 1;
-          internal_timer_reset_value <= BIT_PERIOD + TIME_SHIFT - 3;
+          internal_timer_reset_value <= BIT_PERIOD + TIME_SHIFT;
           internal_state <= IN_VALUE_OFF_RESET_TIMER;
         end
       end else if (internal_state == IN_VALUE_OFF_RESET_TIMER) begin
@@ -125,7 +125,7 @@ module I_O_INPUT_CONTROLLER #(
           internal_input_counter <= internal_input_counter + 1;
         
           internal_timer_reset <= 1;
-          internal_timer_reset_value <= BIT_PERIOD - 3;
+          internal_timer_reset_value <= BIT_PERIOD;
 
           if (internal_input_counter == 7) begin
             internal_state <= IN_WATING_STOP_SIGNAL;
@@ -144,4 +144,4 @@ module I_O_INPUT_CONTROLLER #(
 
     internal_state = IN_WATING_STOP_SIGNAL;
   end;
-endmodule;
+endmodule

@@ -26,4 +26,4 @@ module I_O_TIMER_GENERATOR #(
     internal_active = 0;
   end;
 
-endmodule;
+endmodule
