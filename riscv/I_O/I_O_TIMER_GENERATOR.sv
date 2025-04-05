@@ -17,7 +17,7 @@ module I_O_TIMER_GENERATOR #(
           internal_active <= 1;
     end else begin
       counter <= counter + 1;
-      internal_active <= 1;
+      internal_active <= 0;
     end
   end
 

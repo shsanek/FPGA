@@ -18,10 +18,10 @@ module I_O_OUTPUT_CONTROLLER(
   logic internal_io_output_ready_trigger;
   logic[2:0] internal_output_counter;
   logic[7:0] internal_current_value;
-  wire active;
+  (* dont_touch *) wire active;
   
   I_O_TIMER_GENERATOR timer_generator(
-   .clk(CLK100MHZ),
+   .clk(clk),
    .active(active)
   );
     
@@ -48,10 +48,10 @@ module I_O_OUTPUT_CONTROLLER(
         if (internal_output_counter == 7) begin
           internal_state <= OUT_END_SIGNAL;
         end
-      end else begin
+      end else if (internal_state == OUT_END_SIGNAL) begin
         internal_state <= OUT_WATING_VALUE;
-        internal_io_output_ready_trigger <= 1;
         internal_output <= 1;
+        internal_io_output_ready_trigger <= 1;
       end
     end
   end

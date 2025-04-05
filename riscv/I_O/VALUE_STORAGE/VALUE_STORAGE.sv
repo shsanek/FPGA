@@ -73,4 +73,4 @@ module VALUE_STORAGE (
         state = WATING_BUTTON_INPUT;
     end;
 
-endmodule;
+endmodule
