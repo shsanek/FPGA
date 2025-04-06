@@ -12,6 +12,7 @@ module VALUE_STORAGE_TEST();
     wire io_output_trigger;
 
     logic[3:0] leds;
+    logic timer_active_trigger;
 
     int error = 0;
 
@@ -20,13 +21,15 @@ module VALUE_STORAGE_TEST();
         .buttons(buttons),
         .io_input_trigger(io_input_trigger),
         .io_input_value(io_input_value),
-        .io_read_ready_trigger(io_read_ready_trigger),
+        .timer_active_trigger(timer_active_trigger),
+        .io_output_ready_trigger(io_read_ready_trigger),
         .io_output_value(io_output_value),
         .io_output_trigger(io_output_trigger),
         .leds(leds)
     );
 
     initial begin
+        timer_active_trigger = 1;
         clk = 0;
         forever #5 clk = ~clk;
     end

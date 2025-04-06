@@ -38,10 +38,10 @@ module VALUE_STORAGE (
             case(state)
                 (VSS_WATING_BUTTON_INPUT): begin
                     if (timer_active_trigger) begin
-                        if (buttons[1]) begin
+                        if (buttons[0]) begin
                             internal_value <= (internal_value << 1) + 1;
                             state <= VSS_WATING_BUTTON_UP;
-                        end else if (buttons[0]) begin
+                        end else if (buttons[1]) begin
                             internal_value <= (internal_value << 1);
                             state <= VSS_WATING_BUTTON_UP;
                         end else if (buttons[2]) begin
