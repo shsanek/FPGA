@@ -5,35 +5,43 @@ typedef enum logic [1:0] {
     IN_WATING_STOP_SIGNAL
 } INPUT_CONTROLLER_STATE;
 
-module SIGNAL_ACCAMULATOR(
+module SIGNAL_ACCAMULATOR #(
+    parameter int SIZE = 3,
+    parameter int VALUE = 0
+)(
   input wire clk,
   input wire signal,
   output wire active_trigger
 );
-  logic[3: 0] counter;
+  logic[SIZE: 0] counter;
+  wire[SIZE: 0] counter_inc;
+  wire[SIZE: 0] counter_dec;
+  
+  assign counter_inc = counter + 1;
+  assign counter_inc = counter - 1;
 
-  assign active_trigger = counter[2] || counter[3];
+  assign active_trigger = counter[SIZE - 1] || counter[SIZE];
 
   always_ff @(posedge clk) begin
-    if (!signal) begin
-      if (!counter[3]) begin
-        if (counter == 7) begin
-          counter <= counter + 3;
+    if (signal == VALUE) begin
+      if (!counter[SIZE]) begin
+        if (counter[SIZE] == (1 << SIZE - 1)) begin
+          counter <= 1 << SIZE;
         end else begin
-          counter <= counter + 1;
+          counter <= counter_inc;
         end;
       end;
     end else if (counter != 0) begin 
-      if (counter == 8) begin
-        counter <= counter - 4;
+      if (counter[SIZE] == (1 << SIZE - 1)) begin
+          counter <= 0;
       end else begin
-        counter <= counter - 1;
+          counter <= counter_inc;
       end;
     end
   end;
 
   initial begin
-    counter = 0;
+    counter = 4'd0;
   end;
 endmodule
 
@@ -144,7 +152,7 @@ module I_O_INPUT_CONTROLLER #(
   initial begin
     internal_io_input_trigger = 0;
     internal_input_counter = 0;
-    internal_current_value = 0;
+    internal_current_value = 8'd0;
 
     internal_state = IN_WATING_STOP_SIGNAL;
   end;

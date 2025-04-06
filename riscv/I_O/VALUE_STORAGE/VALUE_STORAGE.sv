@@ -1,9 +1,9 @@
 typedef enum logic [1:0] {
-    WATING_BUTTON_INPUT,
-    WATING_BUTTON_UP,
+    VSS_WATING_BUTTON_INPUT,
+    VSS_WATING_BUTTON_UP,
 
-    OUTPUT,
-    WATING_OUTPUT
+    VSS_OUTPUT,
+    VSS_WATING_OUTPUT
 } VALUE_STORAGE_STATE;
         
 module VALUE_STORAGE (
@@ -25,7 +25,7 @@ module VALUE_STORAGE (
     logic internal_io_output_trigger;
     VALUE_STORAGE_STATE state;
 
-    assign io_output_value = internal_value;
+    assign io_output_value[7:0] = internal_value[7:0];
     assign leds = internal_value[3:0];
     assign io_output_trigger = internal_io_output_trigger;
 
@@ -34,33 +34,33 @@ module VALUE_STORAGE (
             internal_value <= io_input_value;
         end else begin
             case(state)
-                (WATING_BUTTON_INPUT): begin
-                    if (buttons[0]) begin
+                (VSS_WATING_BUTTON_INPUT): begin
+                    if (buttons[1]) begin
                         internal_value <= (internal_value << 1) + 1;
-                        state <= WATING_BUTTON_UP;
-                    end else if (buttons[1]) begin
+                        state <= VSS_WATING_BUTTON_UP;
+                    end else if (buttons[0]) begin
                         internal_value <= (internal_value << 1);
-                        state <= WATING_BUTTON_UP;
+                        state <= VSS_WATING_BUTTON_UP;
                     end else if (buttons[2]) begin
                         internal_value <= 0;
-                        state <= WATING_BUTTON_UP;
+                        state <= VSS_WATING_BUTTON_UP;
                     end else if (buttons[3]) begin
                         internal_io_output_trigger <= 1;
-                        state <= OUTPUT;
+                        state <= VSS_OUTPUT;
                     end
                 end
-                (WATING_BUTTON_UP): begin
+                (VSS_WATING_BUTTON_UP): begin
                     if (!(buttons[0] || buttons[1] || buttons[2] || buttons[3])) begin
-                        state <= WATING_BUTTON_INPUT;
+                        state <= VSS_WATING_BUTTON_INPUT;
                     end
                 end
-                (OUTPUT): begin
+                (VSS_OUTPUT): begin
                     internal_io_output_trigger <= 0;
-                    state <= WATING_OUTPUT;
+                    state <= VSS_WATING_OUTPUT;
                 end
-                (WATING_OUTPUT): begin
+                (VSS_WATING_OUTPUT): begin
                     if (io_output_ready_trigger) begin
-                        state <= WATING_BUTTON_UP;
+                        state <= VSS_WATING_BUTTON_UP;
                     end;
                 end
             endcase
@@ -69,8 +69,8 @@ module VALUE_STORAGE (
 
     initial begin
         internal_value = 8'd0;
-        internal_io_output_trigger = 1'b0;
-        state = WATING_BUTTON_INPUT;
+        internal_io_output_trigger = 0;
+        state = VSS_WATING_BUTTON_INPUT;
     end;
 
 endmodule

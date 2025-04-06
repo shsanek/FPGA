@@ -57,9 +57,10 @@ module I_O_OUTPUT_CONTROLLER(
   end
 
   initial begin
-    internal_output = 1;
-    internal_output_counter = 0;
+    internal_output = 0;
+    internal_output_counter = 3'd0;
     internal_state = OUT_WATING_VALUE;
     internal_io_output_ready_trigger = 1;
+    internal_current_value = 8'd0;
   end;
 endmodule
