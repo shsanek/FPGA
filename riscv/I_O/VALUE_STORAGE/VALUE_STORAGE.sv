@@ -15,6 +15,8 @@ module VALUE_STORAGE (
     input wire[7:0] io_input_value,
 
     input wire io_output_ready_trigger, 
+    
+    input wire timer_active_trigger,
 
     output wire[7:0] io_output_value,
     output wire io_output_trigger,
@@ -35,22 +37,24 @@ module VALUE_STORAGE (
         end else begin
             case(state)
                 (VSS_WATING_BUTTON_INPUT): begin
-                    if (buttons[1]) begin
-                        internal_value <= (internal_value << 1) + 1;
-                        state <= VSS_WATING_BUTTON_UP;
-                    end else if (buttons[0]) begin
-                        internal_value <= (internal_value << 1);
-                        state <= VSS_WATING_BUTTON_UP;
-                    end else if (buttons[2]) begin
-                        internal_value <= 0;
-                        state <= VSS_WATING_BUTTON_UP;
-                    end else if (buttons[3]) begin
-                        internal_io_output_trigger <= 1;
-                        state <= VSS_OUTPUT;
+                    if (timer_active_trigger) begin
+                        if (buttons[1]) begin
+                            internal_value <= (internal_value << 1) + 1;
+                            state <= VSS_WATING_BUTTON_UP;
+                        end else if (buttons[0]) begin
+                            internal_value <= (internal_value << 1);
+                            state <= VSS_WATING_BUTTON_UP;
+                        end else if (buttons[2]) begin
+                            internal_value <= 0;
+                            state <= VSS_WATING_BUTTON_UP;
+                        end else if (buttons[3]) begin
+                            internal_io_output_trigger <= 1;
+                            state <= VSS_OUTPUT;
+                        end
                     end
                 end
                 (VSS_WATING_BUTTON_UP): begin
-                    if (!(buttons[0] || buttons[1] || buttons[2] || buttons[3])) begin
+                    if ((!(buttons[0] || buttons[1] || buttons[2] || buttons[3])) && timer_active_trigger) begin
                         state <= VSS_WATING_BUTTON_INPUT;
                     end
                 end

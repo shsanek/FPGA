@@ -7,7 +7,7 @@ typedef enum logic [1:0] {
 
 module SIGNAL_ACCAMULATOR #(
     parameter int SIZE = 3,
-    parameter int VALUE = 0
+    parameter int VALUE = 1
 )(
   input wire clk,
   input wire signal,
@@ -97,7 +97,10 @@ module I_O_INPUT_CONTROLLER #(
   INPUT_CONTROLLER_STATE internal_state;
 
   wire internal_current_invert_siggnal; 
-  SIGNAL_ACCAMULATOR #(.SIZE($clog2(TIME_SHIFT))) signal_acc(
+  SIGNAL_ACCAMULATOR #(
+    .SIZE($clog2(TIME_SHIFT)),
+    .VALUE(0)
+  ) signal_acc(
     .clk(clk),
     .signal(TXD),
     .active_trigger(internal_current_invert_siggnal)

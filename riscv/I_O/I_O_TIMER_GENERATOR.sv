@@ -1,3 +1,17 @@
+function automatic int ceil_log2(input int value);
+  int result;
+  begin
+    result = 0;
+    value = value - 1;
+    while (value > 0) begin
+      result++;
+      value = value >> 1;
+    end
+    return result;
+  end
+endfunction
+
+
 module I_O_TIMER_GENERATOR #(
   parameter CLOCK_FREQ = 100000000,
   parameter BAUD_RATE  = 115200,
@@ -6,7 +20,8 @@ module I_O_TIMER_GENERATOR #(
   input  wire clk,
   output wire active
 );
-  logic[16:0] counter;
+  localparam integer TIMER_WIDTH = ceil_log2(BIT_PERIOD);
+  logic[TIMER_WIDTH - 1:0] counter;
   logic internal_active;
 
   assign active = internal_active;
