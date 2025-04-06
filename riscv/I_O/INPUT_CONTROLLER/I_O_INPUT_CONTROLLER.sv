@@ -11,37 +11,41 @@ module SIGNAL_ACCAMULATOR #(
 )(
   input wire clk,
   input wire signal,
-  output wire active_trigger
+  output logic active_trigger
 );
   logic[SIZE: 0] counter;
   wire[SIZE: 0] counter_inc;
   wire[SIZE: 0] counter_dec;
   
   assign counter_inc = counter + 1;
-  assign counter_inc = counter - 1;
+  assign counter_dec = counter - 1;
 
-  assign active_trigger = counter[SIZE - 1] || counter[SIZE];
+  localparam int MAX_CONSTANT = (1 << SIZE);
+  localparam int CENTER_CONSTANT = (1 << (SIZE - 1));
 
   always_ff @(posedge clk) begin
     if (signal == VALUE) begin
       if (!counter[SIZE]) begin
-        if (counter[SIZE] == (1 << SIZE - 1)) begin
-          counter <= 1 << SIZE;
+        if (counter == CENTER_CONSTANT[SIZE: 0]) begin
+          counter <= MAX_CONSTANT[SIZE: 0];
+          active_trigger <= 1;
         end else begin
           counter <= counter_inc;
         end;
       end;
     end else if (counter != 0) begin 
-      if (counter[SIZE] == (1 << SIZE - 1)) begin
+      if (counter == CENTER_CONSTANT[SIZE: 0]) begin
           counter <= 0;
+          active_trigger <= 0;
       end else begin
-          counter <= counter_inc;
+          counter <= counter_dec;
       end;
     end
   end;
 
   initial begin
-    counter = 4'd0;
+    counter = 0;
+    active_trigger = 0;
   end;
 endmodule
 
@@ -93,7 +97,7 @@ module I_O_INPUT_CONTROLLER #(
   INPUT_CONTROLLER_STATE internal_state;
 
   wire internal_current_invert_siggnal; 
-  SIGNAL_ACCAMULATOR signal_acc(
+  SIGNAL_ACCAMULATOR #(.SIZE($clog2(TIME_SHIFT))) signal_acc(
     .clk(clk),
     .signal(TXD),
     .active_trigger(internal_current_invert_siggnal)
