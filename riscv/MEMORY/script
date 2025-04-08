@@ -1,0 +1,3 @@
+mkdir -p tmp
+iverilog -g2012 -o tmp/RAM_CONTROLLER RAM_CONTROLLER.sv RAM_CONTROLLER_TEST.sv
+vvp tmp/RAM_CONTROLLER
