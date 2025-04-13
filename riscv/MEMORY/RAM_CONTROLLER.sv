@@ -28,7 +28,7 @@ module RAM_CONTROLLER #(
 
     // --- MIG INTERFACE --- (подключается к блоку MIG DDR3)
     // Управляющие сигналы (выходы от вашего контроллера, входы в MIG)
-    output logic [ADDRESS_SIZE-1:0] mig_app_addr,  // Адрес для операции (28 бит)
+    output wire [ADDRESS_SIZE-1:0] mig_app_addr,  // Адрес для операции (28 бит)
     output logic [2:0]              mig_app_cmd,   // Команда: например, 3'b001 для чтения, 3'b010 для записи
     output logic                    mig_app_en,    // Валидность команды и адреса
 
@@ -47,14 +47,8 @@ module RAM_CONTROLLER #(
     // Сигналы готовности MIG
     input  wire                  mig_app_rdy,    // MIG готов принять новую команду
 
-    // Дополнительные статусные сигналы (можно использовать для отладки)
-    input  wire                  mig_app_sr_active,
-    input  wire                  mig_app_ref_ack,
-    input  wire                  mig_app_zq_ack,
-
     // Тактовые и синхронные сигналы от MIG
     input  wire                  mig_ui_clk,         // ui_clk - тактовый сигнал пользовательского интерфейса MIG
-    input  wire                  mig_ui_clk_sync_rst,  // Синхронный сброс в области ui_clk
     input  wire                  mig_init_calib_complete // Сигнал завершения инициализации и калибровки DDR3
 );
 
@@ -152,12 +146,9 @@ module RAM_CONTROLLER #(
 
     // эти сигналы постоянны
     assign mig_app_wdf_wren = 1;
-
-    // тут нужен каст относительно нижних 4 бит адресса
     assign mig_app_wdf_data = internal_write_value;
     assign mig_app_wdf_end = 1;
-
-    // записывать будем всегда все
+    assign mig_app_addr = internal_address;
     assign mig_app_wdf_mask = 1;
  
     always_ff @(posedge mig_ui_clk) begin
@@ -165,10 +156,7 @@ module RAM_CONTROLLER #(
 
         // код синхронизации
         if (controll_ui_clk_state == SYNC_CONTROLLER_ACTIVE_CONTROLL) begin
-            if (ram_state == RAM_CONTROLLER_STATE_WATING) begin
-                
-                mig_app_addr <= internal_address;
-
+            if (ram_state == RAM_CONTROLLER_STATE_WATING) begin 
                 if (mig_app_rdy && mig_init_calib_complete) begin
 
                     if (internal_read_trigger) begin
