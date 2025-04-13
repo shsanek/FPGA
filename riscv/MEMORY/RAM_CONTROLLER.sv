@@ -1,9 +1,7 @@
 module RAM_CONTROLLER #(
-    parameter CHUNK_SIZE = 1024,
     parameter CHUNK_PART = 128,
     parameter DATA_SIZE = 32,
     parameter MASK_SIZE = DATA_SIZE / 8,
-    parameter CHUNK_PART_COUNT = CHUNK_SIZE / CHUNK_PART,
     parameter ADDRESS_SIZE = 28,
     parameter CHUNK_COUNT = 4
 )
@@ -88,11 +86,11 @@ module RAM_CONTROLLER #(
     RAM_CONTROLLER_STATE ram_state;
 
     logic[3: 0] internal_chunk_part_index;
-    logic[CHUNK_PART-1: 0] internal_output_value[CHUNK_PART_COUNT-1: 0];
+    logic[CHUNK_PART-1: 0] internal_output_value;
     
     logic internal_read_value_ready2;
     assign read_value_ready = internal_read_value_ready2;
-    assign read_value = internal_output_value[0];
+    assign read_value = internal_output_value[31:0];
 
     initial begin
         controll_ui_clk_state = SYNC_CONTROLLER_NOT_CONTOLL;
@@ -114,7 +112,7 @@ module RAM_CONTROLLER #(
             controller_ready <= !(write_trigger || read_trigger) && (internal_error == 0);
             
             internal_read_value_ready2 <= internal_read_value_ready;
-            internal_read_value_ready <= 0;
+            internal_read_value_ready <= read_trigger;
 
             internal_address <= address;
             internal_mask <= mask;
@@ -152,35 +150,39 @@ module RAM_CONTROLLER #(
         internal_chunk_part_index = 0;
     end
 
+    // эти сигналы постоянны
+    assign mig_app_wdf_wren = 1;
+
+    // тут нужен каст относительно нижних 4 бит адресса
+    assign mig_app_wdf_data = internal_write_value;
+    assign mig_app_wdf_end = 1;
+
+    // записывать будем всегда все
+    assign mig_app_wdf_mask = 1;
+ 
     always_ff @(posedge mig_ui_clk) begin
         // тут код не требующий синхронизации
 
         // код синхронизации
         if (controll_ui_clk_state == SYNC_CONTROLLER_ACTIVE_CONTROLL) begin
             if (ram_state == RAM_CONTROLLER_STATE_WATING) begin
+                
                 mig_app_addr <= internal_address;
-                mig_app_wdf_wren <= 0;
-                mig_app_wdf_mask <= (~0) & internal_mask;
-                internal_chunk_part_index <= 0;
-                mig_app_wdf_end <= 0;
 
                 if (mig_app_rdy && mig_init_calib_complete) begin
 
                     if (internal_read_trigger) begin
-
-                        mig_app_wdf_end <= 0;
                         mig_app_en <= 1;
                         mig_app_cmd <= 1;
-
-                        internal_read_trigger <= 0;
                         
                         ram_state <= RAM_CONTROLLER_STATE_READ;
                     end else if (internal_write_trigger) begin
                         mig_app_en <= 1;
-                        mig_app_wdf_end <= 0;
                         mig_app_cmd <= 2;
 
-                        internal_write_trigger <= 0;
+                        // mig_app_wdf_wren <= 1;
+                        // mig_app_wdf_data <= internal_write_value;
+                        // mig_app_wdf_end <= 1;
 
                         ram_state <= RAM_CONTROLLER_STATE_WRITE;
                     end else begin 
@@ -189,29 +191,19 @@ module RAM_CONTROLLER #(
                     end
                 end
             end else if (ram_state == RAM_CONTROLLER_STATE_READ) begin
+                mig_app_en <= 0;
                 if (mig_app_rd_data_valid) begin
-                    mig_app_en <= 0;
-                    internal_output_value[internal_chunk_part_index] <= mig_app_rd_data;
-                    if (internal_chunk_part_index == 7) begin
-                        ram_state <= RAM_CONTROLLER_STATE_WATING;
-                        internal_read_value_ready <= 1;
-                        controll_ui_clk_state <= SYNC_CONTROLLER_WILL_STOP_CONTROLL;
-                    end
-                    internal_chunk_part_index <= internal_chunk_part_index + 1;
+                    internal_output_value <= mig_app_rd_data;
+                    // сохраняем сигнал и передаем управление
+                    ram_state <= RAM_CONTROLLER_STATE_WATING;
+                    controll_ui_clk_state <= SYNC_CONTROLLER_WILL_STOP_CONTROLL;
                 end
             end else if (ram_state == RAM_CONTROLLER_STATE_WRITE) begin
+                mig_app_en <= 0;
                 if (mig_app_wdf_rdy) begin
-                    mig_app_en <= 0;
-                    mig_app_wdf_wren <= 1;
-                    mig_app_wdf_data <= internal_write_value;
-                    if (internal_chunk_part_index == 7) begin
-                        ram_state <= RAM_CONTROLLER_STATE_WATING;
-                        controll_ui_clk_state <= SYNC_CONTROLLER_WILL_STOP_CONTROLL;
-                        mig_app_wdf_end <= 1;
-                    end
-                    internal_chunk_part_index <= internal_chunk_part_index + 1;
-                end else begin
-                    mig_app_wdf_wren <= 0;
+                    // сигналы уже выставлены и синхронизированные так что просто передаем управление другому домену
+                    ram_state <= RAM_CONTROLLER_STATE_WATING;
+                    controll_ui_clk_state <= SYNC_CONTROLLER_WILL_STOP_CONTROLL;
                 end
             end
         end else if (
