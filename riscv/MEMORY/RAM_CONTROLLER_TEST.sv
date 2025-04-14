@@ -58,6 +58,7 @@ module RAM_CONTROLLER_TEST();
     .read_trigger(read_trigger),
     .read_value(read_value),
     .read_value_ready(read_value_ready),
+
     .mig_app_addr(mig_app_addr),
     .mig_app_cmd(mig_app_cmd),
     .mig_app_en(mig_app_en),
@@ -70,11 +71,7 @@ module RAM_CONTROLLER_TEST();
     .mig_app_rd_data_valid(mig_app_rd_data_valid),
     .mig_app_rdy(mig_app_rdy),
     .mig_app_wdf_rdy(mig_app_wdf_rdy),
-    .mig_app_sr_active(mig_app_sr_active),
-    .mig_app_ref_ack(mig_app_ref_ack),
-    .mig_app_zq_ack(mig_app_zq_ack),
     .mig_ui_clk(mig_ui_clk),
-    .mig_ui_clk_sync_rst(mig_ui_clk_sync_rst),
     .mig_init_calib_complete(mig_init_calib_complete)
   );
 
@@ -115,7 +112,7 @@ module RAM_CONTROLLER_TEST();
   int mig_sim_state = 0;
   always @(posedge mig_ui_clk) begin
     if (mig_sim_state == 1) begin
-      if(read_beat < 8) begin
+      if(read_beat < 1) begin
         mig_app_rd_data_valid <= 1;
         // Для первого beat задаём тестовое значение в младших 32 битах
         if(read_beat == 0)
@@ -123,7 +120,7 @@ module RAM_CONTROLLER_TEST();
         else
           mig_app_rd_data <= 0;
         // На последнем beat сигнал окончания burst
-        if(read_beat == 7)
+        if(read_beat == 0)
           mig_app_rd_data_end <= 1;
         else
           mig_app_rd_data_end <= 0;
@@ -173,16 +170,15 @@ module RAM_CONTROLLER_TEST();
     #150;
     // Проверяем, что сигнал готовности чтения установлен и получено корректное значение
 
-    assert(_read_value_count != 1) else error = error + 1;
-    assert(_read_value != 32'hCAFEBABE) else error = error + 1;
+    assert(_read_value_count == 1) else error = error + 1;
+    assert(_read_value == 32'hCAFEBABE) else error = error + 1;
 
     // Задаём адрес, маску, значение для записи и активируем write_trigger
     address = 28'd200;
     mask    = 4'b1111;
     write_value = 32'h12345678;
     write_trigger = 1;
-
-    @(posedge clk);
+    #10;
     write_trigger = 0;
     
     // Принудительно задаём сигнал mig_app_wdf_wren = 1,
