@@ -83,7 +83,7 @@ endmodule
 module VALUE_STORAGE2 (
     input wire clk,
     
-    output wire[27:0] address,
+    output logic[27:0] address,
 
     input wire[3:0] buttons,
 
@@ -106,7 +106,6 @@ module VALUE_STORAGE2 (
 
     assign io_output_value[31:0] = internal_value[31:0];
     assign leds = internal_value[3:0];
-    assign address = buttons[2] ? (internal_address - 1) : internal_address;
 
     always_ff @(posedge clk) begin
         if (ram_read_ready_trigger) begin 
@@ -123,11 +122,15 @@ module VALUE_STORAGE2 (
                             state <= VSS_WATING_BUTTON_UP;
                         end else if (buttons[2]) begin
                             ram_read_trigger <= 1;
-                            internal_address <= (internal_address - 1);
+                            address <= internal_address - 16;
+                            if (internal_address > 16) begin
+                                internal_address <= (internal_address - 16);
+                            end
                             state <= VSS_OUTPUT;
                         end else if (buttons[3]) begin
                             ram_write_trigger <= 1;
-                            internal_address <= internal_address + 1;
+                            internal_address <= internal_address + 16;
+                            address <= internal_address;
                             state <= VSS_OUTPUT;
                         end
                     end
@@ -155,6 +158,7 @@ module VALUE_STORAGE2 (
         internal_value = 8'd0;
         ram_write_trigger = 0;
         ram_read_trigger = 0;
+        internal_address = 16;
         state = VSS_WATING_BUTTON_INPUT;
     end;
 
