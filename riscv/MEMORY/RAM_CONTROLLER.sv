@@ -213,3 +213,140 @@ module RAM_CONTROLLER #(
     end
 
 endmodule
+
+module CHUNK_STORAGE#(
+    parameter CHUNK_PART = 128,
+    parameter DATA_SIZE = 32,
+    parameter MASK_SIZE = DATA_SIZE / 8,
+    parameter ADDRESS_SIZE = 28
+)(
+    input wire clk,
+
+    // COMMON
+    input wire[ADDRESS_SIZE - 1:0] address,
+    input wire[MASK_SIZE - 1: 0] mask,
+    output logic controller_ready,
+    output logic[3:0] error,
+
+    // WRITE
+    input wire write_trigger,
+    input wire[DATA_SIZE-1: 0] write_value,
+
+    // READ
+    input wire read_trigger,
+    output wire[DATA_SIZE-1: 0] read_value,
+    output wire read_value_ready,
+
+    //
+    output wire contains_address,
+    output wire[ADDRESS_SIZE - 1:0] save_address,
+    output wire[CHUNK_PART - 1: 0] save_data,
+    output wire save_need_flag,
+
+    input wire[CHUNK_PART - 1: 0] new_data,
+    input wire new_data_save
+);
+    typedef struct packed {
+        logic[ADDRESS_SIZE - 5:0] address;
+        logic [DATA_SIZE - 1:0] data_0;
+        logic [DATA_SIZE - 1:0] data_1;
+        logic [DATA_SIZE - 1:0] data_2;
+        logic [DATA_SIZE - 1:0] data_3;
+        logic valid;
+        logic need_save;
+    } CHUNK;
+
+    CHUNK chunks[3:0];
+    
+    wire address_0 = (chunks[0].valid && chunks[0].address[23:0] == address[27:4]); // 248
+    wire address_1 = (chunks[1].valid && chunks[1].address[23:0] == address[27:4]);
+    wire address_2 = (chunks[2].valid && chunks[2].address[23:0] == address[27:4]);
+    wire address_3 = (chunks[3].valid && chunks[3].address[23:0] == address[27:4]);
+    
+    wire [DATA_SIZE - 1:0] data_0 = (address[3:2] == 2'd0) ? chunks[0].data_0 :
+                                    (address[3:2] == 2'd1) ? chunks[0].data_1 :
+                                    (address[3:2] == 2'd2) ? chunks[0].data_2 :
+                                                            chunks[0].data_3;
+
+    wire [DATA_SIZE - 1:0] data_1 = (address[3:2] == 2'd0) ? chunks[1].data_0 :
+                                    (address[3:2] == 2'd1) ? chunks[1].data_1 :
+                                    (address[3:2] == 2'd2) ? chunks[1].data_2 :
+                                                            chunks[1].data_3;
+
+    wire [DATA_SIZE - 1:0] data_2 = (address[3:2] == 2'd0) ? chunks[2].data_0 :
+                                    (address[3:2] == 2'd1) ? chunks[2].data_1 :
+                                    (address[3:2] == 2'd2) ? chunks[2].data_2 :
+                                                            chunks[2].data_3;
+
+    wire [DATA_SIZE - 1:0] data_3 = (address[3:2] == 2'd0) ? chunks[3].data_0 :
+                                    (address[3:2] == 2'd1) ? chunks[3].data_1 :
+                                    (address[3:2] == 2'd2) ? chunks[3].data_2 :
+                                                            chunks[3].data_3;
+
+    wire[DATA_SIZE - 1:0] read_data = address_0 ? data_0 : (address_1 ? data_1 : (address_2 ? data_2 : (address_3 ? data_3 : 0)));
+
+    assign contains_address = address_0 || address_1 || address_2 || address_3;
+
+    assign save_address = {chunks[chunks_list[3]].address, 4'b000};
+    assign save_data = { chunks[chunks_list[3]].data_0, chunks[chunks_list[3]].data_1, chunks[chunks_list[3]].data_2, chunks[chunks_list[3]].data_3 };
+    assign save_need_flag = chunks[chunks_list[3]].need_save;
+
+    logic[1:0] chunks_list[3:0];
+
+    always_ff @(posedge clk) begin
+        if (new_data_save) begin
+            chunks[chunks_list[3]].address <= address[27:4];
+            chunks[chunks_list[3]].data_0 <= new_data[31:0];
+            chunks[chunks_list[3]].data_1 <= new_data[63:32];
+            chunks[chunks_list[3]].data_2 <= new_data[95:64];
+            chunks[chunks_list[3]].data_3 <= new_data[127:96];
+            chunks[chunks_list[3]].valid <= 1;
+        end else begin 
+            for (int i = 0; i < 4; i++) begin
+                if (chunks[i].valid && chunks[i].address == address[27:4]) begin
+                    if (write_trigger || read_trigger) begin
+                        if (chunks_list[0] != i) begin
+                            chunks_list[1] <= chunks_list[0];
+                            if (chunks_list[1] != i) begin
+                                chunks_list[2] <= chunks_list[1];
+                                if (chunks_list[2] != i) begin
+                                    chunks_list[3] <= chunks_list[2];
+                                end
+                            end
+                        end
+                        chunks_list[0] <= i;
+                    end
+                    if (write_trigger) begin
+                        case(address[3:2])
+                        2'b00: chunks[i].data_0 <= { 
+                            mask[0] ? write_value[7:0] : chunks[i].data_0[7:0],
+                            mask[1] ? write_value[15:8] : chunks[i].data_0[15:8],
+                            mask[2] ? write_value[23:16] : chunks[i].data_0[23:16],
+                            mask[3] ? write_value[31:24] : chunks[i].data_0[31:24]
+                        };
+                        2'b01: chunks[i].data_1 <= { 
+                            mask[0] ? write_value[7:0] : chunks[i].data_1[7:0],
+                            mask[1] ? write_value[15:8] : chunks[i].data_1[15:8],
+                            mask[2] ? write_value[23:16] : chunks[i].data_1[23:16],
+                            mask[3] ? write_value[31:24] : chunks[i].data_1[31:24]
+                        };
+                        2'b10: chunks[i].data_2 <= { 
+                            mask[0] ? write_value[7:0] : chunks[i].data_2[7:0],
+                            mask[1] ? write_value[15:8] : chunks[i].data_2[15:8],
+                            mask[2] ? write_value[23:16] : chunks[i].data_2[23:16],
+                            mask[3] ? write_value[31:24] : chunks[i].data_2[31:24]
+                        };
+                        2'b11: chunks[i].data_3 <= { 
+                            mask[0] ? write_value[7:0] : chunks[i].data_3[7:0],
+                            mask[1] ? write_value[15:8] : chunks[i].data_3[15:8],
+                            mask[2] ? write_value[23:16] : chunks[i].data_3[23:16],
+                            mask[3] ? write_value[31:24] : chunks[i].data_3[31:24]
+                        };
+                        endcase;
+                        chunks[i].need_save <= 1;
+                    end
+                end
+            end
+        end
+    end
+endmodule
