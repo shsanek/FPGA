@@ -1,0 +1,3 @@
+mkdir -p tmp
+iverilog -g2012 -o tmp/CHUNK_STORAGE CHUNK_STORAGE.sv CHUNK_STORAGE_TEST.sv
+vvp tmp/CHUNK_STORAGE

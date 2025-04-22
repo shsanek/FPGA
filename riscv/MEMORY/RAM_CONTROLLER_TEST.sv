@@ -161,7 +161,7 @@ module RAM_CONTROLLER_TEST();
     read_trigger = 0;
     write_trigger = 0;
 
-    #20;
+    #50;
     read_trigger = 1;
     #10;
     read_trigger = 0;
