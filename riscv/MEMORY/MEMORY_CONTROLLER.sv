@@ -24,6 +24,7 @@ module MEMORY_CONTROLLER#(
 
     // INTERFACE
     // COMMON
+    output wire controller_ready,
     input wire[ADDRESS_SIZE - 1:0] address,
     input wire[MASK_SIZE - 1: 0] mask,
 
@@ -52,17 +53,35 @@ module MEMORY_CONTROLLER#(
     wire internal_contains_address;
     wire internal_contains_command_address;
 
+    logic internal_write_trigger;
+    logic[ADDRESS_SIZE - 1:0] internal_address;
+    logic[MASK_SIZE - 1:0] internal_mask;
+    logic[DATA_SIZE - 1:0] internal_write_data;
+
+    wire output_write_trigger;
+    wire[ADDRESS_SIZE - 1:0] output_address;
+    wire[MASK_SIZE - 1:0] output_mask;
+    wire[DATA_SIZE - 1:0] output_write_value;
+    
+    assign output_write_trigger = (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) ? internal_write_trigger : write_trigger;
+    assign output_address = (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) ? internal_address : address;
+    assign output_mask = (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) ? internal_mask : mask;
+    assign output_write_value = (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) ? internal_write_data : write_data;
+
     assign contains_address = internal_contains_address;
     assign contains_command_address = internal_contains_command_address;
-
+    assign controller_ready = ((internal_state == MEMORY_CONTROLLER_STATE_NORMA) && ram_controller_ready); 
     typedef enum logic [1:0] {
         MEMORY_CONTROLLER_STATE_NORMAL,
-        MEMORY_CONTROLLER_STATE_WATING
+        MEMORY_CONTROLLER_STATE_WATING,
+        MEMORY_CONTROLLER_STATE_SAVE_DATA,
+        MEMORY_CONTROLLER_STATE_WRITE_DATA
     } MEMORY_CONTROLLER_STATE;
 
     MEMORY_CONTROLLER_STATE internal_state;
 
     initial begin
+        internal_write_trigger <= 0;
         internal_state = MEMORY_CONTROLLER_STATE_NORMAL;
         new_data_save = 0;
         ram_write_trigger = 0;
@@ -70,26 +89,35 @@ module MEMORY_CONTROLLER#(
     end
 
     always_ff @(posedge clk) begin
-        if (internal_state == MEMORY_CONTROLLER_STATE_NORMAL && ram_controller_ready) begin
-            if (new_data_save) begin
-                new_data_save <= 0;
-            end else if (!internal_contains_address) begin
+        if (internal_state == MEMORY_CONTROLLER_STATE_SAVE_DATA) begin
+            new_data_save <= 0;
+            internal_state <= internal_write_trigger ? MEMORY_CONTROLLER_STATE_WRITE_DATA : MEMORY_CONTROLLER_STATE_NORMAL;
+        end else if (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) begin
+            internal_write_trigger <= 0;
+            internal_state <= MEMORY_CONTROLLER_STATE_WATING;
+        end else if (internal_state == MEMORY_CONTROLLER_STATE_NORMAL && ram_controller_ready) begin
+            if ((!internal_contains_address) && (read_trigger || write_trigger)) begin
                 if (save_need_flag) begin
                     ram_write_trigger <= 1;
                     ram_write_value <= save_data;
                     ram_write_address <= save_address;
                 end
+                internal_write_trigger <= write_trigger;
+                internal_address <= address;
+                internal_mask <= mask;
+                internal_write_value <= write_value;
+
                 ram_read_trigger <= 1;
                 ram_read_address <= { address[27:4], 4'b0000 };
                 internal_state <= MEMORY_CONTROLLER_STATE_WATING;
-            end else if ((!contains_address) && (read_trigger || write_trigger)) begin
+            end else if (!internal_contains_command_address) begin
                 if (save_need_flag) begin
                     ram_write_trigger <= 1;
                     ram_write_value <= save_data;
                     ram_write_address <= save_address;
                 end
                 ram_read_trigger <= 1;
-                ram_read_address <= { address[27:4], 4'b0000 };
+                ram_read_address <= { command_address[27:4], 4'b0000 };
                 internal_state <= MEMORY_CONTROLLER_STATE_WATING;
             end
         end else if (internal_state == MEMORY_CONTROLLER_STATE_WATING) begin
@@ -99,7 +127,7 @@ module MEMORY_CONTROLLER#(
                 new_address <= ram_read_address;
                 new_data <= ram_read_value;
                 new_data_save <= 1;
-                internal_state <= MEMORY_CONTROLLER_STATE_NORMAL;
+                internal_state <= MEMORY_CONTROLLER_STATE_SAVE_DATA;
             end
         end
     end
@@ -111,12 +139,12 @@ module MEMORY_CONTROLLER#(
         .ADDRESS_SIZE(ADDRESS_SIZE)
     ) storage_pool (
         .clk                   (clk),
-        .address               (address),
-        .mask                  (mask),
+        .address               (output_address),
+        .mask                  (output_mask),
 
         // WRITE
-        .write_trigger         (write_trigger),
-        .write_value           (write_value),
+        .write_trigger         (output_write_trigger),
+        .write_value           (output_write_value),
 
         // READ FOR COMMAND
         .command_address       (command_address),

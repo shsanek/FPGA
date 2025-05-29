@@ -20,6 +20,8 @@ module RAM_CONTROLLER #(
     output wire[CHUNK_PART - 1: 0] read_value,
     input wire[ADDRESS_SIZE - 1:0] read_address,
     output wire read_value_ready,
+
+    //
     output logic[2:0] led0,
 
     // MIG INTERFACE
