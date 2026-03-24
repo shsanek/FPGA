@@ -66,11 +66,11 @@ module MEMORY_CONTROLLER#(
     assign output_write_trigger = (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) ? internal_write_trigger : write_trigger;
     assign output_address = (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) ? internal_address : address;
     assign output_mask = (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) ? internal_mask : mask;
-    assign output_write_value = (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) ? internal_write_data : write_data;
+    assign output_write_value = (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) ? internal_write_data : write_value;
 
     assign contains_address = internal_contains_address;
     assign contains_command_address = internal_contains_command_address;
-    assign controller_ready = ((internal_state == MEMORY_CONTROLLER_STATE_NORMA) && ram_controller_ready); 
+    assign controller_ready = ((internal_state == MEMORY_CONTROLLER_STATE_NORMAL) && ram_controller_ready);
     typedef enum logic [1:0] {
         MEMORY_CONTROLLER_STATE_NORMAL,
         MEMORY_CONTROLLER_STATE_WATING,
@@ -105,7 +105,7 @@ module MEMORY_CONTROLLER#(
                 internal_write_trigger <= write_trigger;
                 internal_address <= address;
                 internal_mask <= mask;
-                internal_write_value <= write_value;
+                internal_write_data <= write_value;
 
                 ram_read_trigger <= 1;
                 ram_read_address <= { address[27:4], 4'b0000 };

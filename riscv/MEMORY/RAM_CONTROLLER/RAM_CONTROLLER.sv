@@ -100,7 +100,7 @@ module RAM_CONTROLLER #(
     always_ff @(posedge clk) begin
         led0[1] <= mig_init_calib_complete;
         led0[0] <= !mig_init_calib_complete;
-        led0[2] <= !controll_clk_state == SYNC_CONTROLLER_ACTIVE_CONTROLL;
+        led0[2] <= (controll_clk_state != SYNC_CONTROLLER_ACTIVE_CONTROLL);
 
 
         if (controll_clk_state == SYNC_CONTROLLER_ACTIVE_CONTROLL) begin
