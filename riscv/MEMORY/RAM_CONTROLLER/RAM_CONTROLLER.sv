@@ -87,7 +87,7 @@ module RAM_CONTROLLER #(
         controll_ui_clk_state = SYNC_CONTROLLER_ACTIVE_CONTROLL;
         controll_clk_state = SYNC_CONTROLLER_NOT_CONTOLL;
         
-        controller_ready = 1;
+        controller_ready = 0;
         internal_error = 0;
         internal_write_trigger = 0;
         internal_write_value = 0;
