@@ -45,7 +45,11 @@ module RAM_CONTROLLER_TEST();
   reg  [CHUNK_PART-1:0]      read_captured;
   integer                    write_count;
   reg  [CHUNK_PART-1:0]      write_captured;
-  reg                         test_error;
+  reg                        test_error;
+
+  // MIG эмулятор
+  reg mig_read_busy;
+  reg mig_write_busy;
 
   // Инстанцируем DUT
   RAM_CONTROLLER #(
@@ -111,8 +115,6 @@ module RAM_CONTROLLER_TEST();
   end
 
   // Эмуляция реакции MIG на burst-чтение одного такта
-  reg mig_read_busy;
-  reg mig_write_busy;
   integer read_beat;
   integer write_beat;
   always @(posedge mig_ui_clk) begin

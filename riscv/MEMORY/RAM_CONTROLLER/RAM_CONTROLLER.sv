@@ -75,12 +75,13 @@ module RAM_CONTROLLER #(
     logic internal_read_value_ready;
     logic internal_read_value_ready2;
 
+    logic[CHUNK_PART - 1: 0] internal_output_value;
+    logic skip_write;
+
     assign read_value_ready =   internal_read_value_ready2;
     assign read_value =         internal_output_value;
 
     RAM_CONTROLLER_STATE ram_state;
-
-    logic[CHUNK_PART - 1: 0] internal_output_value;
 
     initial begin
         controll_ui_clk_state = SYNC_CONTROLLER_ACTIVE_CONTROLL;
@@ -144,8 +145,7 @@ module RAM_CONTROLLER #(
     end
 
     assign mig_app_wdf_mask = 16'b0000000000000000;
-    logic skip_write;
- 
+
     always_ff @(posedge mig_ui_clk) begin
         if (controll_ui_clk_state == SYNC_CONTROLLER_ACTIVE_CONTROLL) begin
             if (ram_state == RAM_CONTROLLER_STATE_INIT) begin
