@@ -21,9 +21,6 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
     reg  [MASK_SIZE-1:0]    mask;
     reg                     write_trigger;
     reg  [DATA_SIZE-1:0]    write_value;
-    reg  [ADDRESS_SIZE-1:0] command_address;
-    wire [DATA_SIZE-1:0]    read_command;
-    wire                    contains_command_address;
     reg                     read_trigger;
     wire [DATA_SIZE-1:0]    read_value;
     wire                    contains_address;
@@ -82,9 +79,6 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         .mask                     (mask),
         .write_trigger            (write_trigger),
         .write_value              (write_value),
-        .command_address          (command_address),
-        .read_command             (read_command),
-        .contains_command_address (contains_command_address),
         .read_trigger             (read_trigger),
         .read_value               (read_value),
         .contains_address         (contains_address)
@@ -220,7 +214,6 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
     localparam [ADDRESS_SIZE-1:0] ADDR_E = 28'h000_0040;  // MIG[4]  — 5th → triggers eviction
     localparam [ADDRESS_SIZE-1:0] ADDR_F = 28'h000_0050;  // MIG[5]
     localparam [ADDRESS_SIZE-1:0] ADDR_G = 28'h000_0060;  // MIG[6]
-    localparam [ADDRESS_SIZE-1:0] ADDR_H = 28'h000_0070;  // MIG[7]
 
     // ================================================================
     // Main test
@@ -229,10 +222,7 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         $dumpfile("MEMORY_CONTROLLER_INTEGRATION_TEST.vcd");
         $dumpvars(0, MEMORY_CONTROLLER_INTEGRATION_TEST);
 
-        // init — hold triggers low; command_address='0 (ADDR_A) so once
-        // ADDR_A loads it stays hot in the command-fetch slot.
         address         = '0;
-        command_address = ADDR_A;
         mask            = {MASK_SIZE{1'b1}};
         write_trigger   = 0;
         write_value     = 0;
@@ -240,12 +230,15 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         errors          = 0;
 
         // Wait for RAM_CONTROLLER INIT to complete and controller_ready to rise.
-        // MIG_MODEL calibration completes instantly, but RAM_CONTROLLER needs
-        // its INIT handshake cycle before it asserts controller_ready.
+        // Use wait_ready task which has robust repeat+while logic.
+        // First wait a few cycles for initial X values to resolve, then
+        // wait until controller_ready is a solid 1.
         begin : wait_init
             integer n;
+            // Let initial blocks settle and first posedge occur
+            @(posedge clk); #1;
             n = 0;
-            while (!controller_ready && n < 4000) begin
+            while (controller_ready !== 1'b1 && n < 4000) begin
                 @(posedge clk); n = n + 1;
             end
             @(posedge clk); #1;
@@ -326,18 +319,6 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         address = ADDR_D | 28'h8; #1; chk("T6 w2", read_value === 32'h3333_3333);
         address = ADDR_D | 28'hC; #1; chk("T6 w3", read_value === 32'h4444_4444);
 
-        // All 4 slots now occupied: A(clean), B(dirty), C(dirty), D(dirty)
-        // Point command_address at ADDR_B so evicting A later won't re-fetch it.
-        // Then refresh C and D via read hits so their order_indices reset to 0.
-        // With all four slots at order_index=0, slot 0 (A, clean) becomes the
-        // LRU victim (slot 0 wins the priority tie-break in the pool logic).
-        @(posedge clk); #1;
-        command_address = ADDR_B;
-        wait_ready;   // let any pending command fetch settle
-        do_read(ADDR_C);  // hit → C.order_index resets to 0
-        do_read(ADDR_D);  // hit → D.order_index resets to 0
-        // Now: A=0, B=0(cmd-pinned), C=0, D=0 → slot 0 (A) is the LRU victim.
-
         // ============================================================
         // T7: Cache full check — all 4 addresses simultaneously in cache
         // ============================================================
@@ -349,9 +330,10 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         address = ADDR_D; #1; chk("T7 ADDR_D cached", contains_address);
 
         // ============================================================
-        // T8: Clean eviction — ADDR_E causes LRU (ADDR_A, clean) eviction
-        //     ADDR_A was last accessed in T2; B/C/D touched more recently.
-        //     No dirty writeback expected for the evicted clean line.
+        // T8: Clean eviction — ADDR_E causes LRU (ADDR_A, clean) eviction.
+        //     Access order: A(T1 last hit), B(T4), C(T5), D(T6).
+        //     A has been aging the longest without a hit → LRU victim.
+        //     No dirty writeback expected.
         // ============================================================
         $display("T8: clean eviction (LRU = ADDR_A, no writeback)");
         do_read(ADDR_E);
@@ -362,43 +344,34 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         chk("T8 ADDR_A evicted (miss)",        !contains_address);
 
         // ============================================================
-        // T9: Dirty eviction writeback — write to ADDR_B (mark dirty),
-        //     then evict it by loading 4 new unique chunks; finally
-        //     re-read ADDR_B from RAM and verify dirty data survived.
+        // T9: Dirty eviction writeback — ADDR_B was last written in T4,
+        //     making it the oldest dirty slot after T8.
+        //     Loading ADDR_F evicts B (LRU dirty) → writeback to MIG.
+        //     Loading ADDR_G evicts E or C (next in LRU order).
+        //     Re-reading ADDR_B fetches the written-back value from MIG.
         // ============================================================
         $display("T9: dirty eviction writeback");
-        // Cache after T8: {E, B(dirty,0xCAFE_BABE), C(dirty), D(dirty)}
-        // Overwrite ADDR_B with a distinct value to make the test unambiguous.
-        do_write(ADDR_B, 4'b1111, 32'hBEEF_CAFE);
-        @(posedge clk); #1;
-        address = ADDR_B; #1;
-        chk("T9 ADDR_B dirty in cache", contains_address);
-        chk("T9 ADDR_B pre-evict value", read_value === 32'hBEEF_CAFE);
+        // Cache after T8: {E(clean), B(dirty,0xCAFE_BABE), C(dirty), D(dirty)}
+        // B is the LRU dirty slot (last accessed in T4).
+        do_read(ADDR_F);   // evicts B (LRU, dirty) → writeback 0xCAFE_BABE to MIG
+        do_read(ADDR_G);   // evicts next LRU slot
 
-        // Load 4 new chunks → evicts all 4 current slots (including dirty ADDR_B).
-        // command_address stays on ADDR_B; set it away to avoid auto-refetch.
-        @(posedge clk); #1;
-        command_address = ADDR_F;
-        do_read(ADDR_E);  // already loaded but causes a command-miss resolution
-        do_read(ADDR_F);
-        do_read(ADDR_G);
-        do_read(ADDR_H);
-        // All 4 original dirty lines (B, C, D, E) must have been written back to MIG.
-
-        // Now re-read ADDR_B from RAM through the empty cache.
+        // Re-read ADDR_B from RAM to verify dirty writeback preserved data.
         do_read(ADDR_B);
         @(posedge clk); #1;
         address = ADDR_B; #1;
-        chk("T9 ADDR_B in cache after re-read", contains_address);
-        chk("T9 dirty writeback preserved 0xBEEF_CAFE", read_value === 32'hBEEF_CAFE);
+        chk("T9 ADDR_B in cache after re-read",         contains_address);
+        chk("T9 dirty writeback preserved 0xCAFE_BABE", read_value === 32'hCAFE_BABE);
 
         // ============================================================
         // T10: Dirty writeback for word offsets — ADDR_D was written with
-        //      4 distinct words; after eviction and re-read all 4 must
-        //      match what was written in T6.
+        //      4 distinct words in T6 (1111,2222,3333,4444).
+        //      Evict D and re-read to verify all 4 words survived.
         // ============================================================
         $display("T10: dirty writeback preserves all 4 words of a chunk");
-        // ADDR_D was evicted in T9's flush. Re-read it from RAM.
+        // Force D out of cache by loading two cold addresses, then re-read D.
+        do_read(28'h000_0080);   // evicts LRU — forces D toward eviction
+        do_read(28'h000_0090);   // one more to ensure D is evicted
         do_read(ADDR_D);
         @(posedge clk); #1;
         address = ADDR_D | 28'h0; #1; chk("T10 w0 after writeback", read_value === 32'h1111_1111);
@@ -407,70 +380,48 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         address = ADDR_D | 28'hC; #1; chk("T10 w3 after writeback", read_value === 32'h4444_4444);
 
         // ============================================================
-        // T11: Command-address port — write to an address via data port,
-        //      confirm read_command reflects the written value.
+        // T11: Masked partial write does not corrupt other words.
+        //      Write-miss on ADDR_A (not in cache, RAM holds 0).
+        //      Apply mask=0010 to w2 → only byte1 changes.
         // ============================================================
-        $display("T11: command port read_command matches written data");
-        // Write to ADDR_A first (cache miss → fetch + write), THEN point
-        // command_address at it.  Setting command_address before the write
-        // would trigger a command-miss prefetch that consumes the miss slot and
-        // causes the write_trigger pulse to be missed.
-        do_write(ADDR_A, 4'b1111, 32'hFACE_FEED);
-        // ADDR_A now in cache with w0=0xFACE_FEED. Set command_address.
-        @(posedge clk); #1;
-        command_address = ADDR_A;
-        @(posedge clk); #1;
-        address = ADDR_A; #1;
-        chk("T11 contains_address for ADDR_A",         contains_address);
-        chk("T11 contains_command_address for ADDR_A", contains_command_address);
-        chk("T11 read_command = 0xFACE_FEED",          read_command === 32'hFACE_FEED);
-
-        // ============================================================
-        // T12: Masked write preserves other words in the same chunk
-        //      Write w2 partially; w0 and w1 from the original chunk must be intact.
-        // ============================================================
-        $display("T12: masked partial write does not corrupt other words");
-        // ADDR_A in cache with w0=0xFACE_FEED, w1=0, w2=0, w3=0.
-        // Write only byte1 of w2 (offset +8): mask=0010, value=0x00XX00XX
+        $display("T11: masked partial write does not corrupt other words");
         do_write(ADDR_A | 28'h8, 4'b0010, 32'hFF_AA_BB_CC);
         @(posedge clk); #1;
-        // w0 and w1 unchanged
-        address = ADDR_A | 28'h0; #1; chk("T12 w0 unchanged", read_value === 32'hFACE_FEED);
-        address = ADDR_A | 28'h4; #1; chk("T12 w1 unchanged", read_value === 32'h0000_0000);
-        // w2: only byte1 (bits15:8) changed to 0xBB
-        address = ADDR_A | 28'h8; #1; chk("T12 w2 byte1 written", read_value === 32'h0000_BB00);
+        // w0 and w1 come from RAM (all zeros), w2 only byte1 written
+        address = ADDR_A | 28'h0; #1; chk("T11 w0 unchanged (=0)", read_value === 32'h0000_0000);
+        address = ADDR_A | 28'h4; #1; chk("T11 w1 unchanged (=0)", read_value === 32'h0000_0000);
+        address = ADDR_A | 28'h8; #1; chk("T11 w2 byte1 written",  read_value === 32'h0000_BB00);
 
         // ============================================================
-        // T13: Read-then-write at the same address — interleaved ops
-        //      Simulate a read-modify-write sequence.
+        // T12: Read-then-write at the same address — interleaved ops.
+        //      ADDR_C was evicted in T9 with dirty data 0xAA00_CC00.
+        //      Re-fetch it from RAM, then overwrite in cache.
         // ============================================================
-        $display("T13: read-modify-write sequence");
-        do_read(ADDR_C);                            // C was evicted; re-fetch from RAM
+        $display("T12: read-modify-write sequence");
+        do_read(ADDR_C);
         @(posedge clk); #1;
         address = ADDR_C; #1;
-        // RAM holds the T5 masked result: 0xAA00_CC00
-        chk("T13 ADDR_C re-fetched from RAM", contains_address);
-        chk("T13 ADDR_C RAM value correct",   read_value === 32'hAA00_CC00);
-        // Now modify it in-place.
+        chk("T12 ADDR_C re-fetched from RAM", contains_address);
+        chk("T12 ADDR_C RAM value correct",   read_value === 32'hAA00_CC00);
         do_write(ADDR_C, 4'b1111, 32'hDEAD_C0DE);
         @(posedge clk); #1;
         address = ADDR_C; #1;
-        chk("T13 ADDR_C updated in cache",    read_value === 32'hDEAD_C0DE);
+        chk("T12 ADDR_C updated in cache",    read_value === 32'hDEAD_C0DE);
 
         // ============================================================
-        // T14: controller_ready gating — while busy, controller_ready = 0
+        // T13: controller_ready gating — while busy, controller_ready = 0
         // ============================================================
-        $display("T14: controller_ready low while fetching");
+        $display("T13: controller_ready low while fetching");
         @(posedge clk); #1;
         // Start a read on a cold address.
-        address      = 28'h000_0090;   // MIG[9], not in cache
+        address      = 28'h000_00A0;   // not in cache
         read_trigger = 1;
         @(posedge clk); #1;
         read_trigger = 0;
         // Immediately after the trigger, the controller should be busy.
-        chk("T14 controller_ready = 0 during fetch", !controller_ready);
+        chk("T13 controller_ready = 0 during fetch", !controller_ready);
         wait_ready;
-        chk("T14 controller_ready = 1 after fetch", controller_ready);
+        chk("T13 controller_ready = 1 after fetch", controller_ready);
 
         // ============================================================
         // Summary

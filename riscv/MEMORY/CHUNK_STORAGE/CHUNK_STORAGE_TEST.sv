@@ -18,10 +18,6 @@ module CHUNK_STORAGE_TEST;
   wire                    contains_address;
   wire [DATA_SIZE-1:0]    read_value;
 
-  reg  [ADDRESS_SIZE-1:0] command_address;
-  wire                    contains_command_address;
-  wire [DATA_SIZE-1:0]    read_command;
-
   wire [ADDRESS_SIZE-1:0] save_address;
   wire [CHUNK_PART-1:0]   save_data;
   wire                    save_need_flag;
@@ -46,9 +42,6 @@ module CHUNK_STORAGE_TEST;
     .mask                    (mask),
     .write_trigger           (write_trigger),
     .write_value             (write_value),
-    .command_address         (command_address),
-    .read_command            (read_command),
-    .contains_command_address(contains_command_address),
     .read_trigger            (read_trigger),
     .read_value              (read_value),
     .contains_address        (contains_address),
@@ -99,7 +92,6 @@ module CHUNK_STORAGE_TEST;
 
     // Drive defaults at time 0 — before any posedge
     address         = ADDR_A;
-    command_address = ADDR_A;
     mask            = {MASK_SIZE{1'b1}};
     write_trigger   = 0;
     write_value     = 0;
@@ -117,11 +109,8 @@ module CHUNK_STORAGE_TEST;
     clk_step;  // posedge 1 — DUT sees new_data_save=0, chunk_valid=0
     // combinational outputs settle after DUT FF
     address         = ADDR_A;
-    command_address = ADDR_A;
     chk("T1 contains_address=0",         !contains_address);
     chk("T1 read_value=0",                read_value === 32'd0);
-    chk("T1 contains_command_address=0", !contains_command_address);
-    chk("T1 read_command=0",              read_command === 32'd0);
 
     // ----------------------------------------------------------------
     // T2: Load chunk A
@@ -152,29 +141,17 @@ module CHUNK_STORAGE_TEST;
     address = ADDR_A | 28'hC; #0; chk("T3 word3", read_value === DATA_A[127:96]);
 
     // ----------------------------------------------------------------
-    // T4: Read command port — all 4 word offsets (combinational)
+    // T4: Address miss — different chunk (combinational)
     // ----------------------------------------------------------------
-    $display("T4: read_command all 4 words");
-    command_address = ADDR_A | 28'h0; #0; chk("T4 cmd word0", read_command === DATA_A[31:0]);
-    command_address = ADDR_A | 28'h4; #0; chk("T4 cmd word1", read_command === DATA_A[63:32]);
-    command_address = ADDR_A | 28'h8; #0; chk("T4 cmd word2", read_command === DATA_A[95:64]);
-    command_address = ADDR_A | 28'hC; #0; chk("T4 cmd word3", read_command === DATA_A[127:96]);
-
-    // ----------------------------------------------------------------
-    // T5: Address miss — different chunk (combinational)
-    // ----------------------------------------------------------------
-    $display("T5: miss — different chunk address");
+    $display("T4: miss — different chunk address");
     address         = ADDR_B; #0;
-    command_address = ADDR_B; #0;
-    chk("T5 contains_address=0",         !contains_address);
-    chk("T5 read_value=0",                read_value    === 32'd0);
-    chk("T5 contains_command_address=0", !contains_command_address);
-    chk("T5 read_command=0",              read_command  === 32'd0);
+    chk("T4 contains_address=0",         !contains_address);
+    chk("T4 read_value=0",                read_value    === 32'd0);
 
     // ----------------------------------------------------------------
-    // T6: Write miss — write to unloaded address must be ignored
+    // T5: Write miss — write to unloaded address must be ignored
     // ----------------------------------------------------------------
-    $display("T6: write miss ignored");
+    $display("T5: write miss ignored");
     address       = ADDR_B;
     mask          = 4'b1111;
     write_value   = 32'hDEAD_DEAD;
@@ -183,33 +160,33 @@ module CHUNK_STORAGE_TEST;
     write_trigger = 0;
     clk_step;             // settle
     address = ADDR_A;
-    chk("T6 data unchanged", save_data === DATA_A);
-    chk("T6 save_need_flag still 0", !save_need_flag);
+    chk("T5 data unchanged", save_data === DATA_A);
+    chk("T5 save_need_flag still 0", !save_need_flag);
 
     // ----------------------------------------------------------------
-    // T7: LRU order_index — resets on hit, increments only on order_tick
+    // T6: LRU order_index — resets on hit, increments only on order_tick
     // ----------------------------------------------------------------
-    $display("T7: order_index behavior");
+    $display("T6: order_index behavior");
     address      = ADDR_A;
     read_trigger = 1;
     clk_step;                          // posedge — hit → order_index <= 0
     read_trigger = 0;
-    chk("T7 order_index=0 after hit", order_index === 16'd0);
+    chk("T6 order_index=0 after hit", order_index === 16'd0);
 
     // 3 idle posedges WITHOUT order_tick — counter must NOT change
     clk_step; clk_step; clk_step;
-    chk("T7 order_index=0 without tick", order_index === 16'd0);
+    chk("T6 order_index=0 without tick", order_index === 16'd0);
 
     // 3 posedges WITH order_tick=1 — counter increments each cycle
     order_tick = 1;
     clk_step; clk_step; clk_step;
     order_tick = 0;
-    chk("T7 order_index=3 after 3 ticks", order_index === 16'd3);
+    chk("T6 order_index=3 after 3 ticks", order_index === 16'd3);
 
     // ----------------------------------------------------------------
-    // T8: Masked write — only selected bytes change
+    // T7: Masked write — only selected bytes change
     // ----------------------------------------------------------------
-    $display("T8: masked write to word1 (mask=0101)");
+    $display("T7: masked write to word1 (mask=0101)");
     address       = ADDR_A | 28'h4;   // word1
     mask          = 4'b0101;           // bytes 2 and 0
     write_value   = 32'hA1B2_C3D4;
@@ -221,13 +198,13 @@ module CHUNK_STORAGE_TEST;
     // word1 was DATA_A[63:32]=0x1234_5678
     // mask[3]=0→keep 0x12, mask[2]=1→take 0xB2, mask[1]=0→keep 0x56, mask[0]=1→take 0xD4
     expected_data = {DATA_A[127:64], 32'h12B2_56D4, DATA_A[31:0]};
-    chk("T8 save_need_flag=1",   save_need_flag);
-    chk("T8 save_data correct",  save_data === expected_data);
+    chk("T7 save_need_flag=1",   save_need_flag);
+    chk("T7 save_data correct",  save_data === expected_data);
 
     // ----------------------------------------------------------------
-    // T9: Full-mask write to word3 — all bytes replaced
+    // T8: Full-mask write to word3 — all bytes replaced
     // ----------------------------------------------------------------
-    $display("T9: full-mask write to word3");
+    $display("T8: full-mask write to word3");
     address       = ADDR_A | 28'hC;   // word3
     mask          = 4'b1111;
     write_value   = 32'hBEEF_CAFE;
@@ -237,12 +214,12 @@ module CHUNK_STORAGE_TEST;
     clk_step;
 
     expected_data = {32'hBEEF_CAFE, DATA_A[95:64], 32'h12B2_56D4, DATA_A[31:0]};
-    chk("T9 save_data word3 replaced", save_data === expected_data);
+    chk("T8 save_data word3 replaced", save_data === expected_data);
 
     // ----------------------------------------------------------------
-    // T10: new_data_save overwrites — chunk B loaded, chunk A evicted
+    // T9: new_data_save overwrites — chunk B loaded, chunk A evicted
     // ----------------------------------------------------------------
-    $display("T10: load chunk B (evicts chunk A)");
+    $display("T9: load chunk B (evicts chunk A)");
     new_address   = ADDR_B;
     new_data      = DATA_B;
     new_data_save = 1;
@@ -251,13 +228,13 @@ module CHUNK_STORAGE_TEST;
     clk_step;
 
     address = ADDR_B; #0;
-    chk("T10 chunk B hit",       contains_address);
-    chk("T10 save_need_flag=0", !save_need_flag);
-    chk("T10 save_data=DATA_B",  save_data === DATA_B);
-    chk("T10 word0 of B",        read_value === DATA_B[31:0]);
+    chk("T9 chunk B hit",       contains_address);
+    chk("T9 save_need_flag=0", !save_need_flag);
+    chk("T9 save_data=DATA_B",  save_data === DATA_B);
+    chk("T9 word0 of B",        read_value === DATA_B[31:0]);
 
     address = ADDR_A; #0;
-    chk("T10 chunk A now miss", !contains_address);
+    chk("T9 chunk A now miss", !contains_address);
 
     // ----------------------------------------------------------------
     // Summary

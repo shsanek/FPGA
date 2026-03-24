@@ -14,11 +14,6 @@ module CHUNK_STORAGE#(
     input wire write_trigger,
     input wire[DATA_SIZE-1: 0] write_value,
 
-    // READ FOR COMMAND 
-    input wire[ADDRESS_SIZE - 1:0] command_address,
-    output wire[DATA_SIZE-1:0] read_command,
-    output wire contains_command_address,
-
     // READ
     input wire read_trigger,
     output wire[DATA_SIZE-1: 0] read_value,
@@ -47,18 +42,6 @@ module CHUNK_STORAGE#(
     logic [15:0] internal_order_index;
     assign order_index = internal_order_index;
 
-    // FOR COMMAND
-    wire internal_contains_command_address = (chunk_valid && (chunk_addr == command_address[ADDRESS_SIZE-1:4]));
-    wire[1:0] internal_address_command_index = command_address[3:2];
-    assign contains_command_address = internal_contains_command_address;
-    assign read_command = internal_contains_command_address ? (
-        internal_address_command_index == 0 ? chunk_data0 : (
-            internal_address_command_index == 1 ? chunk_data1 : (
-                internal_address_command_index == 2 ? chunk_data2 : chunk_data3
-            )
-        )
-    ) : 32'd0;
-
     // FOR READ
     wire internal_contains_address = (chunk_valid && (chunk_addr == address[ADDRESS_SIZE-1:4]));
     wire[1:0] internal_address_index = address[3:2];
@@ -83,7 +66,7 @@ module CHUNK_STORAGE#(
     end
 
     always_ff @(posedge clk) begin
-        if ((internal_contains_address && (read_trigger || write_trigger)) || internal_contains_command_address || new_data_save) begin
+        if ((internal_contains_address && (read_trigger || write_trigger)) || new_data_save) begin
             internal_order_index <= 0;
         end else if (!chunk_valid) begin
             internal_order_index <= 16'hFFFF;

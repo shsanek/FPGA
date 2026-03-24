@@ -32,11 +32,6 @@ module MEMORY_CONTROLLER#(
     input wire write_trigger,
     input wire[DATA_SIZE-1: 0] write_value,
 
-    // READ FOR COMMAND
-    input wire[ADDRESS_SIZE - 1:0] command_address,
-    output wire[DATA_SIZE-1:0] read_command,
-    output wire contains_command_address,
-
     // READ
     input wire read_trigger,
     output wire[DATA_SIZE-1: 0] read_value,
@@ -51,7 +46,6 @@ module MEMORY_CONTROLLER#(
     logic new_data_save;
 
     wire internal_contains_address;
-    wire internal_contains_command_address;
 
     logic internal_write_trigger;
     logic[ADDRESS_SIZE - 1:0] internal_address;
@@ -82,7 +76,6 @@ module MEMORY_CONTROLLER#(
     assign output_write_value   = (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) ? internal_write_data    : write_value;
 
     assign contains_address         = internal_contains_address;
-    assign contains_command_address = internal_contains_command_address;
     assign controller_ready         = ((internal_state == MEMORY_CONTROLLER_STATE_NORMAL) && ram_controller_ready);
 
     // LRU order_tick: age cache entries while controller is busy
@@ -136,12 +129,6 @@ module MEMORY_CONTROLLER#(
                 ram_read_trigger  <= 1;
                 ram_read_address  <= { address[ADDRESS_SIZE-1:4], 4'b0000 };
                 internal_state    <= MEMORY_CONTROLLER_STATE_WATING;
-
-            end else if (!internal_contains_command_address) begin
-                // Cache miss on command fetch
-                ram_read_trigger  <= 1;
-                ram_read_address  <= { command_address[ADDRESS_SIZE-1:4], 4'b0000 };
-                internal_state    <= MEMORY_CONTROLLER_STATE_WATING;
             end
 
         end else if (internal_state == MEMORY_CONTROLLER_STATE_WATING) begin
@@ -176,11 +163,6 @@ module MEMORY_CONTROLLER#(
         // WRITE
         .write_trigger         (output_write_trigger),
         .write_value           (output_write_value),
-
-        // READ FOR COMMAND
-        .command_address       (command_address),
-        .read_command          (read_command),
-        .contains_command_address(internal_contains_command_address),
 
         // READ
         .read_trigger          (read_trigger),

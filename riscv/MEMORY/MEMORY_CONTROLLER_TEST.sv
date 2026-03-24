@@ -23,12 +23,9 @@ module MEMORY_CONTROLLER_TEST;
   reg                         write_trigger;
   reg  [DATA_SIZE-1:0]        write_value;
   reg                         read_trigger;
-  reg  [ADDRESS_SIZE-1:0]     command_address;
 
   wire                        contains_address;
   wire [DATA_SIZE-1:0]        read_value;
-  wire                        contains_command_address;
-  wire [DATA_SIZE-1:0]        read_command;
 
   int error = 0;
 
@@ -52,12 +49,9 @@ module MEMORY_CONTROLLER_TEST;
     .mask                      (mask),
     .write_trigger             (write_trigger),
     .write_value               (write_value),
-    .command_address           (command_address),
     .read_trigger              (read_trigger),
     .read_value                (read_value),
-    .contains_address          (contains_address),
-    .contains_command_address  (contains_command_address),
-    .read_command              (read_command)
+    .contains_address          (contains_address)
   );
 
   // test chunks
@@ -101,7 +95,6 @@ module MEMORY_CONTROLLER_TEST;
     read_trigger  = 0;
     ram_read_value = '0;
     address       = '0;
-    command_address = '0;
     #10;
 
     // fill block 0 — enable controller together with the first read trigger

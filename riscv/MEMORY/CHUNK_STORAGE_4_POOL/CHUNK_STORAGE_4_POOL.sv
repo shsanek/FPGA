@@ -14,11 +14,6 @@ module CHUNK_STORAGE_4_POOL#(
     input wire write_trigger,
     input wire[DATA_SIZE-1: 0] write_value,
 
-    // READ FOR COMMAND 
-    input wire[ADDRESS_SIZE - 1:0] command_address,
-    output wire[DATA_SIZE-1:0] read_command,
-    output wire contains_command_address,
-
     // READ
     input wire read_trigger,
     output wire[DATA_SIZE-1: 0] read_value,
@@ -39,9 +34,6 @@ module CHUNK_STORAGE_4_POOL#(
     localparam COUNT = 4;
 
     // Internal wires — declared before use
-    wire [DATA_SIZE-1:0]    _read_command   [COUNT];
-    wire [COUNT-1:0]        _contains_command_address;
-
     wire [DATA_SIZE-1:0]    _read_value     [COUNT];
     wire [COUNT-1:0]        _contains_address;
 
@@ -53,10 +45,8 @@ module CHUNK_STORAGE_4_POOL#(
     wire [COUNT-1:0]        _new_data_save;
 
     // Aggregate outputs
-    assign contains_command_address = _contains_command_address[0] || _contains_command_address[1] || _contains_command_address[2] || _contains_command_address[3];
     assign contains_address = _contains_address[0] || _contains_address[1] || _contains_address[2] || _contains_address[3];
 
-    assign read_command = _read_command[0] | _read_command[1] | _read_command[2] | _read_command[3];
     assign read_value   = _read_value[0]   | _read_value[1]   | _read_value[2]   | _read_value[3];
 
     // LRU victim selection: slot with maximum order_index is evicted
@@ -120,11 +110,6 @@ module CHUNK_STORAGE_4_POOL#(
                 // WRITE
                 .write_trigger         (write_trigger),
                 .write_value           (write_value),
-
-                // READ FOR COMMAND
-                .command_address       (command_address),
-                .read_command          (_read_command[i]),
-                .contains_command_address(_contains_command_address[i]),
 
                 // READ
                 .read_trigger          (read_trigger),

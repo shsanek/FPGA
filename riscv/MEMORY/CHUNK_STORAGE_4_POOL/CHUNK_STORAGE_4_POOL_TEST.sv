@@ -22,10 +22,6 @@ module CHUNK_STORAGE_4_POOL_TEST;
   wire                    contains_address;
   wire [DATA_SIZE-1:0]    read_value;
 
-  reg  [ADDRESS_SIZE-1:0] command_address;
-  wire                    contains_command_address;
-  wire [DATA_SIZE-1:0]    read_command;
-
   wire [ADDRESS_SIZE-1:0] save_address;
   wire [CHUNK_PART-1:0]   save_data;
   wire                    save_need_flag;
@@ -54,9 +50,6 @@ module CHUNK_STORAGE_4_POOL_TEST;
     .mask                     (mask),
     .write_trigger            (write_trigger),
     .write_value              (write_value),
-    .command_address          (command_address),
-    .read_command             (read_command),
-    .contains_command_address (contains_command_address),
     .read_trigger             (read_trigger),
     .read_value               (read_value),
     .contains_address         (contains_address),
@@ -80,7 +73,6 @@ module CHUNK_STORAGE_4_POOL_TEST;
     write_trigger = 0;
     write_value   = 0;
     read_trigger  = 0;
-    command_address = 0;
     new_data      = 0;
     new_address   = 0;
     new_data_save = 0;
@@ -177,12 +169,6 @@ module CHUNK_STORAGE_4_POOL_TEST;
 
     if (contains_address      !== 1'b1)               error = error + 1;
     if (read_value            !== 32'h12345678)       error = error + 1;
-
-    command_address = {new_address[27:4],4'b1000};
-    #10;
-
-    if (contains_command_address !== 1'b1)  error = error + 1;
-    if (read_command !== 32'h12345678)     error = error + 1;
 
     // --- 4) Маскированная запись в слово с индексом 1 ---
     address       = {new_address[27:4],4'b0100};
