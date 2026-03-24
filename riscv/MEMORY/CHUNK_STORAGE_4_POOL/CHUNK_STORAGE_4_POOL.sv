@@ -30,6 +30,8 @@ module CHUNK_STORAGE_4_POOL#(
 
     output wire[15:0] order_index,
 
+    input wire order_tick,
+
     input wire[CHUNK_PART - 1: 0] new_data,
     input wire[ADDRESS_SIZE - 1:0] new_address,
     input wire new_data_save
@@ -130,6 +132,7 @@ module CHUNK_STORAGE_4_POOL#(
                 .save_need_flag        (_save_need_flag[i]),
 
                 .order_index           (_order_index[i]),
+                .order_tick            (order_tick),
 
                 // NEW DATA
                 .new_data              (new_data),

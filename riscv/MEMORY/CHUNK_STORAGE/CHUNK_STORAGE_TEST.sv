@@ -30,6 +30,7 @@ module CHUNK_STORAGE_TEST;
   reg  [CHUNK_PART-1:0]   new_data;
   reg  [ADDRESS_SIZE-1:0] new_address;
   reg                     new_data_save;
+  reg                     order_tick;
 
   int                     errors;
   logic [CHUNK_PART-1:0]  expected_data;
@@ -55,6 +56,7 @@ module CHUNK_STORAGE_TEST;
     .save_data               (save_data),
     .save_need_flag          (save_need_flag),
     .order_index             (order_index),
+    .order_tick              (order_tick),
     .new_data                (new_data),
     .new_address             (new_address),
     .new_data_save           (new_data_save)
@@ -105,6 +107,7 @@ module CHUNK_STORAGE_TEST;
     new_data        = 0;
     new_address     = 0;
     new_data_save   = 0;
+    order_tick      = 0;
     errors          = 0;
 
     // ----------------------------------------------------------------
@@ -184,7 +187,7 @@ module CHUNK_STORAGE_TEST;
     chk("T6 save_need_flag still 0", !save_need_flag);
 
     // ----------------------------------------------------------------
-    // T7: LRU order_index — resets on read hit, increments when idle
+    // T7: LRU order_index — resets on hit, increments only on order_tick
     // ----------------------------------------------------------------
     $display("T7: order_index behavior");
     address      = ADDR_A;
@@ -193,8 +196,15 @@ module CHUNK_STORAGE_TEST;
     read_trigger = 0;
     chk("T7 order_index=0 after hit", order_index === 16'd0);
 
-    clk_step; clk_step; clk_step;     // 3 idle posedges → order_index 1,2,3
-    chk("T7 order_index=3 after 3 idle", order_index === 16'd3);
+    // 3 idle posedges WITHOUT order_tick — counter must NOT change
+    clk_step; clk_step; clk_step;
+    chk("T7 order_index=0 without tick", order_index === 16'd0);
+
+    // 3 posedges WITH order_tick=1 — counter increments each cycle
+    order_tick = 1;
+    clk_step; clk_step; clk_step;
+    order_tick = 0;
+    chk("T7 order_index=3 after 3 ticks", order_index === 16'd3);
 
     // ----------------------------------------------------------------
     // T8: Masked write — only selected bytes change

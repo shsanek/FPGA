@@ -30,6 +30,8 @@ module CHUNK_STORAGE#(
 
     output wire[15:0] order_index,
 
+    input wire order_tick,
+
     input wire[CHUNK_PART - 1: 0] new_data,
     input wire[ADDRESS_SIZE - 1:0] new_address,
     input wire new_data_save
@@ -86,7 +88,7 @@ module CHUNK_STORAGE#(
         end else if (!chunk_valid) begin
             internal_order_index <= 16'hFFFF;
         end else begin
-            if (internal_order_index != 16'hFFFF) begin 
+            if (internal_order_index != 16'hFFFF && order_tick) begin
                 internal_order_index <= internal_order_index + 1;
             end
         end
