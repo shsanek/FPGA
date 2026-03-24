@@ -17,14 +17,14 @@
 - [x] `IMMEDIATE_GENERATOR_TEST.sv`
 
 ### BRANCH_UNIT
-- [ ] `BRANCH_UNIT.sv` — BEQ/BNE/BLT/BGE/BLTU/BGEU → branch_taken + target_pc
-- [ ] `BRANCH_UNIT_TEST.sv`
+- [x] `BRANCH_UNIT.sv` — BEQ/BNE/BLT/BGE/BLTU/BGEU → branch_taken + target_pc
+- [x] `BRANCH_UNIT_TEST.sv`
 
 ### LOAD / STORE UNIT
-- [ ] `LOAD_UNIT.sv` — LB/LH/LW/LBU/LHU: выравнивание + sign extension
-- [ ] `LOAD_UNIT_TEST.sv`
-- [ ] `STORE_UNIT.sv` — SB/SH/SW: byte mask для MEMORY_CONTROLLER
-- [ ] `STORE_UNIT_TEST.sv`
+- [x] `LOAD_UNIT.sv` — LB/LH/LW/LBU/LHU: выравнивание + sign extension
+- [x] `LOAD_UNIT_TEST.sv`
+- [x] `STORE_UNIT.sv` — SB/SH/SW: byte mask для MEMORY_CONTROLLER
+- [x] `STORE_UNIT_TEST.sv`
 
 ---
 
