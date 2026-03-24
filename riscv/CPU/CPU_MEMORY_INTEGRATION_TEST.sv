@@ -140,7 +140,14 @@ module CPU_MEMORY_INTEGRATION_TEST();
         .write_value        (mc_write_value),
         .read_trigger       (mc_read_trigger),
         .read_value         (mc_read_value),
-        .contains_address   (mc_contains_address)
+        .contains_address   (mc_contains_address),
+        .dbg_read_trigger   (1'b0),
+        .dbg_write_trigger  (1'b0),
+        .dbg_address        (28'b0),
+        .dbg_write_data     (32'b0),
+        .dbg_mask           (4'b0),
+        .dbg_read_data      (),
+        .dbg_ready          ()
     );
 
     // ---------------------------------------------------------------
