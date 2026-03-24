@@ -105,6 +105,9 @@ module RAM_CONTROLLER_TEST();
     read_count   = 0;
     write_count  = 0;
     test_error   = 0;
+
+    mig_read_busy  = 0;
+    mig_write_busy = 0;
   end
 
   // Эмуляция реакции MIG на burst-чтение одного такта
@@ -135,7 +138,7 @@ module RAM_CONTROLLER_TEST();
       mig_write_busy <= 1;
       mig_app_wdf_rdy <= 0;
     end else begin
-      mig_app_wdf_rdy <= 0;
+      mig_app_wdf_rdy <= 1;
     end
   end
 
