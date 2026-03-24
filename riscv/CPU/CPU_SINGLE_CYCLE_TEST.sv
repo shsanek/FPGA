@@ -15,6 +15,7 @@ module CPU_SINGLE_CYCLE_TEST();
     CPU_SINGLE_CYCLE #(.DEBUG_ENABLE(0)) dut (
         .clk            (clk),
         .reset          (reset),
+        .mem_stall      (1'b0),
         .instr_addr     (instr_addr),
         .instr_data     (instr_data),
         .mem_read_en    (mem_read_en),

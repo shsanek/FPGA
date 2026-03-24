@@ -21,6 +21,9 @@ module CPU_SINGLE_CYCLE #(
     output wire [3:0]  mem_byte_mask,
     input  wire [31:0] mem_read_data,
 
+    // Stall от памяти (MEMORY_CONTROLLER не готов)
+    input  wire        mem_stall,
+
     // Debug-интерфейс
     input  wire        dbg_halt,
     input  wire        dbg_step,
@@ -48,7 +51,7 @@ module CPU_SINGLE_CYCLE #(
         if (reset) dbg_halted_r <= 1'b0;
         else       dbg_halted_r <= DEBUG_ENABLE ? dbg_halt : 1'b0;
     end
-    wire cpu_stall = DEBUG_ENABLE ? (dbg_halted_r && !dbg_step) : 1'b0;
+    wire cpu_stall = mem_stall || (DEBUG_ENABLE ? (dbg_halted_r && !dbg_step) : 1'b0);
     assign dbg_is_halted = DEBUG_ENABLE ? dbg_halted_r : 1'b0;
 
     // -------------------------------------------------------------------------
@@ -166,7 +169,7 @@ module CPU_SINGLE_CYCLE #(
     // Интерфейс памяти данных
     // -------------------------------------------------------------------------
     assign mem_read_en    = (opcode == OP_LOAD);
-    assign mem_write_en   = (opcode == OP_STORE) && !cpu_stall;
+    assign mem_write_en   = (opcode == OP_STORE);
     assign mem_addr       = alu_result;
     assign mem_write_data = store_data;
     assign mem_byte_mask  = store_mask;
