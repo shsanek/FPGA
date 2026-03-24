@@ -91,8 +91,9 @@ module MEMORY_CONTROLLER_TEST;
     $dumpvars(0, MEMORY_CONTROLLER_TEST);
     #10;
 
-    // init
-    ram_controller_ready = 1;
+    // init — hold ram_controller_ready=0 so NORMAL does not fire a
+    // spurious command_address fetch before we assert our first read_trigger
+    ram_controller_ready = 0;
     ram_read_value_ready = 0;
     mask    = {MASK_SIZE{1'b1}};
     write_trigger = 0;
@@ -103,8 +104,8 @@ module MEMORY_CONTROLLER_TEST;
     command_address = '0;
     #10;
 
-    // fill block 0
-    address      = 32'h0000_0000; read_trigger = 1; #10;
+    // fill block 0 — enable controller together with the first read trigger
+    address      = 32'h0000_0000; read_trigger = 1; ram_controller_ready = 1; #10;
     read_trigger = 0;
     if (ram_read_trigger !== 1)           error = error + 1;
     if (ram_read_address  !== 32'h0000_0000) error = error + 1;
@@ -169,24 +170,21 @@ module MEMORY_CONTROLLER_TEST;
     #30;
     if (ram_write_trigger !== 0)          error = error + 1;
 
-    // miss on block 4 => eviction of the *oldest* (block 0), then read block 4
+    // miss on block 4 => evict oldest (block 0, clean — no writeback), fetch block 4
     address      = 32'h0000_0040; read_trigger = 1; #10;
     read_trigger = 0;
-    #10;
-    // eviction: block0 flushed
-    if (ram_write_trigger !== 1)          error = error + 1;
-    if (ram_write_address  !== 32'h0000_0000) error = error + 1;
-    if (ram_write_value   !== CHUNK0)      error = error + 1;
-    // then a read is immediately issued on next cycle
-    if (ram_read_trigger !== 1)           error = error + 1;
+    // At this point NORMAL just fired: ram_read_trigger=1 (not yet cleared by WATING).
+    // Block 0 is clean (save_need_flag=0) → no dirty writeback.
+    if (ram_write_trigger !== 0)             error = error + 1;
+    if (ram_read_trigger  !== 1)             error = error + 1;
     if (ram_read_address  !== 32'h0000_0040) error = error + 1;
-    #10;
+    #20;
     ram_read_value       = {32'h5555_5555,32'h6666_6666,32'h7777_7777,32'h8888_8888};
     ram_read_value_ready = 1;
     #10;
     ram_read_value_ready = 0;
     #30;
-    if (!contains_address)                error = error + 1;
+    if (!contains_address)                   error = error + 1;
     if (read_value        !== 32'h8888_8888) error = error + 1;
 
     if (error == 0)
