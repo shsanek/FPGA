@@ -1,19 +1,15 @@
 module CHUNK_STORAGE_TEST;
 
-  // Parameters
-  localparam CHUNK_PART    = 128;
-  localparam DATA_SIZE     = 32;
-  localparam MASK_SIZE     = DATA_SIZE/8;
-  localparam ADDRESS_SIZE  = 28;
+  localparam CHUNK_PART   = 128;
+  localparam DATA_SIZE    = 32;
+  localparam MASK_SIZE    = DATA_SIZE/8;
+  localparam ADDRESS_SIZE = 28;
 
-  // Clock
+  // Clock: 100 MHz
   reg clk;
-  initial begin
-    clk = 0;
-    forever #5 clk = ~clk;
-  end
+  initial begin clk = 0; forever #5 clk = ~clk; end
 
-  // DUT interface signals
+  // DUT ports
   reg  [ADDRESS_SIZE-1:0] address;
   reg  [MASK_SIZE-1:0]    mask;
   reg                     write_trigger;
@@ -29,20 +25,15 @@ module CHUNK_STORAGE_TEST;
   wire [ADDRESS_SIZE-1:0] save_address;
   wire [CHUNK_PART-1:0]   save_data;
   wire                    save_need_flag;
-
   wire [15:0]             order_index;
 
   reg  [CHUNK_PART-1:0]   new_data;
   reg  [ADDRESS_SIZE-1:0] new_address;
   reg                     new_data_save;
 
-  // Error counter
-  int error = 0;
+  int                     errors;
+  logic [CHUNK_PART-1:0]  expected_data;
 
-  // Expected data storage
-  logic [CHUNK_PART-1:0] expected_data;
-
-  // Instantiate DUT
   CHUNK_STORAGE #(
     .CHUNK_PART   (CHUNK_PART),
     .DATA_SIZE    (DATA_SIZE),
@@ -69,82 +60,202 @@ module CHUNK_STORAGE_TEST;
     .new_data_save           (new_data_save)
   );
 
+  // Convenience: wait for posedge then drive signals #1 after,
+  // so the DUT's always_ff samples the PREVIOUS cycle's values
+  // before we change anything. Signals set here are sampled at
+  // the NEXT posedge.
+  task clk_step;
+    begin
+      @(posedge clk); #1;
+    end
+  endtask
+
+  task chk;
+    input string name;
+    input logic  cond;
+    begin
+      if (!cond) begin
+        $display("  FAIL: %s", name);
+        errors = errors + 1;
+      end
+    end
+  endtask
+
+  // Two chunk-aligned addresses (bits [3:0] = 0)
+  localparam [ADDRESS_SIZE-1:0] ADDR_A = 28'h0A5_0000;
+  localparam [ADDRESS_SIZE-1:0] ADDR_B = 28'h1B0_0000;
+
+  // 128-bit payloads: layout new_data[31:0]=d0 … [127:96]=d3
+  localparam [CHUNK_PART-1:0] DATA_A =
+    {32'hDEAD_BEEF, 32'hCAFE_BABE, 32'h1234_5678, 32'h8765_4321};
+  localparam [CHUNK_PART-1:0] DATA_B =
+    {32'hFFFF_0000, 32'h0000_FFFF, 32'hABCD_EF01, 32'h1234_5678};
+
   initial begin
     $dumpfile("CHUNK_STORAGE_TEST.vcd");
     $dumpvars(0, CHUNK_STORAGE_TEST);
 
-    @(posedge clk);
+    // Drive defaults at time 0 — before any posedge
+    address         = ADDR_A;
+    command_address = ADDR_A;
+    mask            = {MASK_SIZE{1'b1}};
+    write_trigger   = 0;
+    write_value     = 0;
+    read_trigger    = 0;
+    new_data        = 0;
+    new_address     = 0;
+    new_data_save   = 0;
+    errors          = 0;
 
-    // 1) Initialization
-    address       = 0;
-    mask          = {MASK_SIZE{1'b1}};
+    // ----------------------------------------------------------------
+    // T1: Before any load — chunk invalid, everything is a miss
+    // ----------------------------------------------------------------
+    $display("T1: miss before any load");
+    clk_step;  // posedge 1 — DUT sees new_data_save=0, chunk_valid=0
+    // combinational outputs settle after DUT FF
+    address         = ADDR_A;
+    command_address = ADDR_A;
+    chk("T1 contains_address=0",         !contains_address);
+    chk("T1 read_value=0",                read_value === 32'd0);
+    chk("T1 contains_command_address=0", !contains_command_address);
+    chk("T1 read_command=0",              read_command === 32'd0);
+
+    // ----------------------------------------------------------------
+    // T2: Load chunk A
+    // ----------------------------------------------------------------
+    $display("T2: load chunk A");
+    // Set signals AFTER posedge 1 (#1 already elapsed in clk_step)
+    new_address   = ADDR_A;
+    new_data      = DATA_A;
+    new_data_save = 1;          // will be sampled at posedge 2
+    clk_step;                   // posedge 2 — DUT loads chunk A
+    new_data_save = 0;
+    clk_step;                   // posedge 3 — settle, order_index ticks
+    address = ADDR_A;           // combinational check point
+    chk("T2 contains_address=1",  contains_address);
+    chk("T2 save_need_flag=0",   !save_need_flag);
+    chk("T2 save_address",        save_address === {ADDR_A[ADDRESS_SIZE-1:4], 4'b0});
+    chk("T2 save_data=DATA_A",    save_data    === DATA_A);
+
+    // ----------------------------------------------------------------
+    // T3: Read all 4 words (combinational)
+    // Note: #0 is needed after each address change so iverilog
+    //       propagates continuous assignments before reading wires.
+    // ----------------------------------------------------------------
+    $display("T3: read all 4 words");
+    address = ADDR_A | 28'h0; #0; chk("T3 word0", read_value === DATA_A[31:0]);
+    address = ADDR_A | 28'h4; #0; chk("T3 word1", read_value === DATA_A[63:32]);
+    address = ADDR_A | 28'h8; #0; chk("T3 word2", read_value === DATA_A[95:64]);
+    address = ADDR_A | 28'hC; #0; chk("T3 word3", read_value === DATA_A[127:96]);
+
+    // ----------------------------------------------------------------
+    // T4: Read command port — all 4 word offsets (combinational)
+    // ----------------------------------------------------------------
+    $display("T4: read_command all 4 words");
+    command_address = ADDR_A | 28'h0; #0; chk("T4 cmd word0", read_command === DATA_A[31:0]);
+    command_address = ADDR_A | 28'h4; #0; chk("T4 cmd word1", read_command === DATA_A[63:32]);
+    command_address = ADDR_A | 28'h8; #0; chk("T4 cmd word2", read_command === DATA_A[95:64]);
+    command_address = ADDR_A | 28'hC; #0; chk("T4 cmd word3", read_command === DATA_A[127:96]);
+
+    // ----------------------------------------------------------------
+    // T5: Address miss — different chunk (combinational)
+    // ----------------------------------------------------------------
+    $display("T5: miss — different chunk address");
+    address         = ADDR_B; #0;
+    command_address = ADDR_B; #0;
+    chk("T5 contains_address=0",         !contains_address);
+    chk("T5 read_value=0",                read_value    === 32'd0);
+    chk("T5 contains_command_address=0", !contains_command_address);
+    chk("T5 read_command=0",              read_command  === 32'd0);
+
+    // ----------------------------------------------------------------
+    // T6: Write miss — write to unloaded address must be ignored
+    // ----------------------------------------------------------------
+    $display("T6: write miss ignored");
+    address       = ADDR_B;
+    mask          = 4'b1111;
+    write_value   = 32'hDEAD_DEAD;
+    write_trigger = 1;
+    clk_step;             // posedge — DUT: internal_contains_address=0 → ignored
     write_trigger = 0;
-    write_value   = 0;
-    read_trigger  = 0;
-    command_address = 0;
-    new_data      = 0;
-    new_address   = 0;
-    new_data_save = 0;
+    clk_step;             // settle
+    address = ADDR_A;
+    chk("T6 data unchanged", save_data === DATA_A);
+    chk("T6 save_need_flag still 0", !save_need_flag);
 
-    // 2) Load new chunk
-    new_address   = 28'h0A5000F;
-    new_data      = {
-      32'hDEAD_BEEF,
-      32'hCAFE_BABE,
-      32'h1234_5678,
-      32'h8765_4321
-    };
-    new_data_save = 1;
-    @(posedge clk);
-    new_data_save = 0;
-    @(posedge clk);
-
-    if (save_need_flag !== 1'b0) error = error + 1;
-    if (save_address  !== {new_address[27:4],4'b0000}) error = error + 1;
-    if (save_data     !== new_data)    error = error + 1;
-
-    // 3) Read without modifications
-    address      = {new_address[27:4],4'b0000};
+    // ----------------------------------------------------------------
+    // T7: LRU order_index — resets on read hit, increments when idle
+    // ----------------------------------------------------------------
+    $display("T7: order_index behavior");
+    address      = ADDR_A;
     read_trigger = 1;
-    @(posedge clk);
+    clk_step;                          // posedge — hit → order_index <= 0
     read_trigger = 0;
-    @(posedge clk);
+    chk("T7 order_index=0 after hit", order_index === 16'd0);
 
-    if (contains_address !== 1'b1)           error = error + 1;
-    if (read_value        !== 32'h8765_4321) error = error + 1;
+    clk_step; clk_step; clk_step;     // 3 idle posedges → order_index 1,2,3
+    chk("T7 order_index=3 after 3 idle", order_index === 16'd3);
 
-    command_address = {new_address[27:4],4'b1000};
-    @(posedge clk);
-
-    if (contains_command_address !== 1'b1)      error = error + 1;
-    if (read_command             !== 32'hCAFE_BABE) error = error + 1;
-
-    // 4) Masked write to chunk_data1
-    address       = {new_address[27:4],4'b0100};
-    mask          = 4'b0101;         
+    // ----------------------------------------------------------------
+    // T8: Masked write — only selected bytes change
+    // ----------------------------------------------------------------
+    $display("T8: masked write to word1 (mask=0101)");
+    address       = ADDR_A | 28'h4;   // word1
+    mask          = 4'b0101;           // bytes 2 and 0
     write_value   = 32'hA1B2_C3D4;
     write_trigger = 1;
-    @(posedge clk);
+    clk_step;
     write_trigger = 0;
-    @(posedge clk);
+    clk_step;
 
-    if (save_need_flag !== 1'b1)                error = error + 1;
-    if (save_address    !== {new_address[27:4],4'b0000}) error = error + 1;
+    // word1 was DATA_A[63:32]=0x1234_5678
+    // mask[3]=0→keep 0x12, mask[2]=1→take 0xB2, mask[1]=0→keep 0x56, mask[0]=1→take 0xD4
+    expected_data = {DATA_A[127:64], 32'h12B2_56D4, DATA_A[31:0]};
+    chk("T8 save_need_flag=1",   save_need_flag);
+    chk("T8 save_data correct",  save_data === expected_data);
 
-    // Build expected 128-bit vector {d3,d2,d1,d0}
-    expected_data = {
-      32'hDEAD_BEEF,
-      32'hCAFE_BABE,
-      32'h12B2_56D4,
-      32'h8765_4321  
-    };
-    if (save_data !== expected_data) error = error + 1;
+    // ----------------------------------------------------------------
+    // T9: Full-mask write to word3 — all bytes replaced
+    // ----------------------------------------------------------------
+    $display("T9: full-mask write to word3");
+    address       = ADDR_A | 28'hC;   // word3
+    mask          = 4'b1111;
+    write_value   = 32'hBEEF_CAFE;
+    write_trigger = 1;
+    clk_step;
+    write_trigger = 0;
+    clk_step;
 
-    // Final report
-    if (error == 0)
+    expected_data = {32'hBEEF_CAFE, DATA_A[95:64], 32'h12B2_56D4, DATA_A[31:0]};
+    chk("T9 save_data word3 replaced", save_data === expected_data);
+
+    // ----------------------------------------------------------------
+    // T10: new_data_save overwrites — chunk B loaded, chunk A evicted
+    // ----------------------------------------------------------------
+    $display("T10: load chunk B (evicts chunk A)");
+    new_address   = ADDR_B;
+    new_data      = DATA_B;
+    new_data_save = 1;
+    clk_step;
+    new_data_save = 0;
+    clk_step;
+
+    address = ADDR_B; #0;
+    chk("T10 chunk B hit",       contains_address);
+    chk("T10 save_need_flag=0", !save_need_flag);
+    chk("T10 save_data=DATA_B",  save_data === DATA_B);
+    chk("T10 word0 of B",        read_value === DATA_B[31:0]);
+
+    address = ADDR_A; #0;
+    chk("T10 chunk A now miss", !contains_address);
+
+    // ----------------------------------------------------------------
+    // Summary
+    // ----------------------------------------------------------------
+    if (errors == 0)
       $display("ALL TESTS PASSED");
     else
-      $display("TEST FAILED with %0d errors", error);
+      $display("FAILED: %0d error(s)", errors);
 
     $finish;
   end

@@ -46,7 +46,7 @@ module CHUNK_STORAGE#(
     assign order_index = internal_order_index;
 
     // FOR COMMAND
-    wire internal_contains_command_address = (chunk_valid && (chunk_addr[23:0] == command_address[27:4]));
+    wire internal_contains_command_address = (chunk_valid && (chunk_addr == command_address[ADDRESS_SIZE-1:4]));
     wire[1:0] internal_address_command_index = command_address[3:2];
     assign contains_command_address = internal_contains_command_address;
     assign read_command = internal_contains_command_address ? (
@@ -58,7 +58,7 @@ module CHUNK_STORAGE#(
     ) : 32'd0;
 
     // FOR READ
-    wire internal_contains_address = (chunk_valid && (chunk_addr[23:0] == address[27:4]));
+    wire internal_contains_address = (chunk_valid && (chunk_addr == address[ADDRESS_SIZE-1:4]));
     wire[1:0] internal_address_index = address[3:2];
     assign contains_address = internal_contains_address;
     assign read_value = internal_contains_address ? (
@@ -75,8 +75,8 @@ module CHUNK_STORAGE#(
     assign save_data = { chunk_data3, chunk_data2, chunk_data1, chunk_data0 };
     wire internal_write_trigger = internal_contains_address && write_trigger;
 
-    initial begin 
-        chunk_valid = 0;
+    initial begin
+        chunk_valid     = 0;
         chunk_need_save = 0;
     end
 
