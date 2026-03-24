@@ -10,8 +10,8 @@ module REGISTER_32_BLOCK_32 (
     input wire write_trigger,
     input wire [31:0] write_value,
 
-    output logic [31:0] rs1_value,
-    output logic [31:0] rs2_value 
+    output wire [31:0] rs1_value,
+    output wire [31:0] rs2_value
 );
     logic [31:0] reg_values [0:31];
 
@@ -25,9 +25,7 @@ module REGISTER_32_BLOCK_32 (
         end
     end
 
-    always_ff @(posedge clk) begin
-        rs1_value <= reg_values[rs1];
-        rs2_value <= reg_values[rs2];
-    end
+    assign rs1_value = reg_values[rs1];
+    assign rs2_value = reg_values[rs2];
 
 endmodule

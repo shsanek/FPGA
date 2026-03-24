@@ -5,13 +5,17 @@ typedef enum logic [1:0] {
     OUT_END_SIGNAL
 } OUTPUT_CONTROLLER_STATE;
 
-module I_O_OUTPUT_CONTROLLER(
+module I_O_OUTPUT_CONTROLLER #(
+  parameter CLOCK_FREQ = 100000000,
+  parameter BAUD_RATE  = 115200,
+  parameter BIT_PERIOD = CLOCK_FREQ / BAUD_RATE
+)(
   input wire clk,
 
   input wire[7:0] io_output_value,
   input wire io_output_trigger,
 
-  output wire io_output_ready_trigger, 
+  output wire io_output_ready_trigger,
   output wire RXD
 );
   logic internal_output;
@@ -19,8 +23,12 @@ module I_O_OUTPUT_CONTROLLER(
   logic[2:0] internal_output_counter;
   logic[7:0] internal_current_value;
   (* dont_touch *) wire active;
-  
-  I_O_TIMER_GENERATOR timer_generator(
+
+  I_O_TIMER_GENERATOR #(
+    .CLOCK_FREQ(CLOCK_FREQ),
+    .BAUD_RATE (BAUD_RATE),
+    .BIT_PERIOD(BIT_PERIOD)
+  ) timer_generator(
    .clk(clk),
    .active(active)
   );
@@ -57,7 +65,7 @@ module I_O_OUTPUT_CONTROLLER(
   end
 
   initial begin
-    internal_output = 0;
+    internal_output = 1;
     internal_output_counter = 3'd0;
     internal_state = OUT_WATING_VALUE;
     internal_io_output_ready_trigger = 1;
