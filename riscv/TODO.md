@@ -55,52 +55,24 @@
 
 ---
 
-## Фаза 4 — Debugger v1
+## Фаза 4 — Debugger v1  ✅
 
-> **Требование:** весь debug-код должен легко отключаться.
-> Все debug-порты и `DEBUG_CONTROLLER` оборачиваются в параметр:
-> ```systemverilog
-> parameter DEBUG_ENABLE = 1
-> ```
-> При `DEBUG_ENABLE=0` — debug-порты CPU/MEM не подключаются, `DEBUG_CONTROLLER` не инстанциируется, на FPGA ресурсы не тратятся.
+Протокол (UART, little-endian, фиксированные пакеты):
 
-### Протокол (UART, little-endian, фиксированные пакеты)
+| CMD  | Название   | Payload               | Ответ                |
+|------|------------|-----------------------|----------------------|
+| 0x01 | HALT       | —                     | 0xFF                 |
+| 0x02 | RESUME     | —                     | 0xFF                 |
+| 0x03 | STEP       | —                     | PC[31:0]+INSTR[31:0] |
+| 0x04 | READ_MEM   | ADDR[31:0]            | DATA[31:0]           |
+| 0x05 | WRITE_MEM  | ADDR[31:0]+DATA[31:0] | 0xFF                 |
 
-| CMD  | Название   | Payload         | Ответ              |
-|------|------------|-----------------|--------------------|
-| 0x01 | HALT       | —               | 0xFF               |
-| 0x02 | RESUME     | —               | 0xFF               |
-| 0x03 | STEP       | —               | PC[31:0]+INSTR[31:0] |
-| 0x04 | READ_MEM   | ADDR[31:0]      | DATA[31:0]         |
-| 0x05 | WRITE_MEM  | ADDR[31:0]+DATA[31:0] | 0xFF          |
-
-### Модули
-
-- [ ] `DEBUG_CONTROLLER.sv` — главный FSM: приём команды → управление CPU/MEM → отправка ответа
-- [ ] `DEBUG_CONTROLLER_TEST.sv`
-
-### Изменения в CPU
-
-- [ ] Добавить debug-порты в `CPU_SINGLE_CYCLE.sv`:
-  ```
-  input  dbg_halt
-  input  dbg_step
-  output dbg_is_halted
-  output dbg_current_pc[31:0]
-  output dbg_current_instr[31:0]
-  ```
-
-### Изменения в MEMORY_CONTROLLER
-
-- [ ] Добавить debug-порт (приоритет выше CPU):
-  ```
-  input  dbg_read_trigger
-  input  dbg_write_trigger
-  input  dbg_address[27:0]
-  input  dbg_write_data[31:0]
-  output dbg_read_data[31:0]
-  output dbg_ready
-  ```
+- [x] `DEBUG_CONTROLLER.sv` — FSM S_IDLE→S_RECV→S_EXEC→S_HALT_WAIT→S_SEND
+  - [x] Байтовый интерфейс (UART подключается снаружи)
+  - [x] DEBUG_ENABLE=0 → заглушка (нет ресурсов на FPGA)
+- [x] `DEBUG_CONTROLLER_TEST.sv` — ALL TESTS PASSED
+- [x] `CPU_SINGLE_CYCLE.sv` — debug-порты dbg_halt/step/is_halted/pc/instr
+- [x] `MEMORY_CONTROLLER.sv` — debug-порт с приоритетом над CPU
 
 ---
 
