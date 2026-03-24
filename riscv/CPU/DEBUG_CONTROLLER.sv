@@ -43,7 +43,14 @@ module DEBUG_CONTROLLER #(
     output wire [DATA_SIZE-1:0]    mc_dbg_write_data,
     output wire [MASK_SIZE-1:0]    mc_dbg_mask,
     input  wire [DATA_SIZE-1:0]    mc_dbg_read_data,
-    input  wire                    mc_dbg_ready
+    input  wire                    mc_dbg_ready,
+
+    // CPU passthrough — байты которые НЕ являются дебаг-командами
+    output wire [7:0]  cpu_rx_byte,    // байт пришедший с UART для CPU
+    output wire        cpu_rx_valid,   // 1-тактовый импульс
+    input  wire [7:0]  cpu_tx_byte,    // байт от CPU для отправки
+    input  wire        cpu_tx_valid,   // UART_IO_DEVICE хочет отправить байт
+    output wire        cpu_tx_ready    // DEBUG готов забрать байт (комбинационно)
 );
 
     // ---------------------------------------------------------------
@@ -92,8 +99,17 @@ if (DEBUG_ENABLE) begin : dbg
     logic [7:0] tx_byte_r;
     logic       tx_valid_r;
 
+    // CPU passthrough
+    logic [7:0] cpu_rx_byte_r;
+    logic       cpu_rx_valid_r;
+
     assign dbg_halt  = halt_r;
     assign dbg_step  = step_r;
+
+    assign cpu_rx_byte  = cpu_rx_byte_r;
+    assign cpu_rx_valid = cpu_rx_valid_r;
+    // CPU TX ready: DEBUG в S_IDLE и физический TX свободен
+    assign cpu_tx_ready = (state == S_IDLE) && tx_ready && !tx_valid_r;
 
     assign mc_dbg_address       = mc_addr_r;
     assign mc_dbg_write_data    = mc_data_r;
@@ -107,7 +123,7 @@ if (DEBUG_ENABLE) begin : dbg
     // ---------------------------------------------------------------
     // Вспомогательная функция: сколько байт принять для команды
     // ---------------------------------------------------------------
-    function automatic [2:0] payload_bytes(input [7:0] c);
+    function automatic [3:0] payload_bytes(input [7:0] c);
         case (c)
             CMD_HALT:      payload_bytes = 0;
             CMD_RESUME:    payload_bytes = 0;
@@ -126,9 +142,11 @@ if (DEBUG_ENABLE) begin : dbg
         mc_write_r = 0;
         mc_addr_r  = 0;
         mc_data_r  = 0;
-        tx_byte_r  = 0;
-        tx_valid_r = 0;
-        byte_idx   = 0;
+        tx_byte_r    = 0;
+        tx_valid_r   = 0;
+        cpu_rx_byte_r  = 0;
+        cpu_rx_valid_r = 0;
+        byte_idx     = 0;
         resp_idx   = 0;
         resp_len   = 0;
         cmd        = 0;
@@ -144,28 +162,41 @@ if (DEBUG_ENABLE) begin : dbg
             step_r     <= 0;
             mc_read_r  <= 0;
             mc_write_r <= 0;
-            tx_valid_r <= 0;
-            byte_idx   <= 0;
-            resp_idx   <= 0;
+            tx_valid_r     <= 0;
+            cpu_rx_valid_r <= 0;
+            byte_idx       <= 0;
+            resp_idx       <= 0;
         end else begin
-            tx_valid_r <= 0;   // по умолчанию не слать
-            step_r     <= 0;   // step — 1 такт импульс
-            mc_read_r  <= 0;   // trigger — 1 такт импульс
-            mc_write_r <= 0;   // trigger — 1 такт импульс
+            tx_valid_r     <= 0;   // по умолчанию не слать
+            step_r         <= 0;   // step — 1 такт импульс
+            mc_read_r      <= 0;   // trigger — 1 такт импульс
+            mc_write_r     <= 0;   // trigger — 1 такт импульс
+            cpu_rx_valid_r <= 0;   // CPU RX — 1 такт импульс
 
             case (state)
 
                 // -------------------------------------------------------
                 S_IDLE: begin
                     if (rx_valid) begin
-                        cmd <= rx_byte;
-                        if (payload_bytes(rx_byte) == 0) begin
-                            byte_idx <= 0;
-                            state    <= S_EXEC;
+                        if (rx_byte >= CMD_HALT && rx_byte <= CMD_WRITE_MEM) begin
+                            // Дебаг-команда
+                            cmd <= rx_byte;
+                            if (payload_bytes(rx_byte) == 0) begin
+                                byte_idx <= 0;
+                                state    <= S_EXEC;
+                            end else begin
+                                byte_idx <= 0;
+                                state    <= S_RECV;
+                            end
                         end else begin
-                            byte_idx <= 0;
-                            state    <= S_RECV;
+                            // Не дебаг-команда → форвардим в CPU RX буфер
+                            cpu_rx_byte_r  <= rx_byte;
+                            cpu_rx_valid_r <= 1;
                         end
+                    end else if (cpu_tx_valid && tx_ready) begin
+                        // Форвардим CPU TX байт в физический UART
+                        tx_byte_r  <= cpu_tx_byte;
+                        tx_valid_r <= 1;
                     end
                 end
 
@@ -312,6 +343,9 @@ end else begin : no_dbg
     assign mc_dbg_mask          = 0;
     assign tx_byte              = 0;
     assign tx_valid             = 0;
+    assign cpu_rx_byte          = 0;
+    assign cpu_rx_valid         = 0;
+    assign cpu_tx_ready         = 1;  // всегда готов (нет дебага)
 end
 endgenerate
 

@@ -58,7 +58,13 @@ module DEBUG_CONTROLLER_TEST();
         .mc_dbg_write_data(),
         .mc_dbg_mask      (),
         .mc_dbg_read_data (mc_rdata),
-        .mc_dbg_ready     (mc_ready)
+        .mc_dbg_ready     (mc_ready),
+        // CPU passthrough — в этом тесте не используется
+        .cpu_rx_byte      (),
+        .cpu_rx_valid     (),
+        .cpu_tx_byte      (8'h00),
+        .cpu_tx_valid     (1'b0),
+        .cpu_tx_ready     ()
     );
 
     // CPU stub: встаёт когда dbg_halt выставлен

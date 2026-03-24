@@ -43,6 +43,12 @@
   - [x] Тест: память (SW, LW)
   - [x] Тест: ветвления (BEQ taken, BNE taken, skip-check)
   - [x] Тест: JAL (return addr + skip-check)
+- [x] `CPU_SINGLE_CYCLE.sv` — FENCE (NOP), ECALL (NOP), EBREAK (debug halt)
+- [x] `CPU_SINGLE_CYCLE_SYSTEM_TEST.sv` — ALL TESTS PASSED
+  - [x] T1: FENCE → NOP, PC продвигается
+  - [x] T2: ECALL → NOP, PC продвигается
+  - [x] T3: EBREAK → CPU halted, dbg_step освобождает
+  - [x] T4: EBREAK + HALT → RESUME освобождает
 
 ---
 
@@ -76,12 +82,55 @@
 
 ---
 
-## Фаза 5 — Полная интеграция и синтез
+## Фаза 4.5 — Периферийная шина + Memory-Mapped UART  ✅
 
-- [ ] `TOP.sv` — верхний модуль: CPU + MEMORY_CONTROLLER + RAM_CONTROLLER + I_O + DEBUG_CONTROLLER
-- [ ] `TOP_TEST.sv` — симуляция полной системы
+Физический UART разделён между отладчиком и CPU:
+- Байты 0x01–0x05 → DEBUG_CONTROLLER (дебаг-команды)
+- Остальные байты → CPU RX буфер (через cpu_rx_valid)
+- CPU TX → физический UART когда DEBUG в S_IDLE
+
+Адресное пространство (28-bit mc_address):
+- bit 27 = 0: MEMORY_CONTROLLER (ОЗУ, кэш)
+- bit 27 = 1: I/O устройства (UART_IO_DEVICE)
+
+UART_IO_DEVICE регистры (base = 0x0800_0000):
+| Смещение | Регистр  | Доступ | Описание                        |
+|----------|----------|--------|---------------------------------|
+| +0x00    | TX_DATA  | W/R    | Запись → отправить байт в UART  |
+| +0x04    | RX_DATA  | R      | Принятый байт (сброс после чтения)|
+| +0x08    | STATUS   | R      | bit1=tx_ready, bit0=rx_available|
+
+- [x] `UART_IO_DEVICE.sv` — memory-mapped UART регистры
+- [x] `PERIPHERAL_BUS.sv` — маршрутизатор по биту 27 адреса
+- [x] `PERIPHERAL_BUS_TEST.sv` — ALL TESTS PASSED
+
+---
+
+## Фаза 5 — Полная интеграция и симуляция  ✅
+
+- [x] `TOP.sv` — верхний модуль: CPU + MEMORY_CONTROLLER + RAM_CONTROLLER + I_O + DEBUG_CONTROLLER + PERIPHERAL_BUS + UART_IO_DEVICE
+- [x] `TOP_TEST.sv` — симуляция полной системы (ALL TESTS PASSED)
+  - [x] T1: CPU выполняет программу SW/LW (x1=42, x2=42, x3=52, x4=52)
+  - [x] T2: HALT через физический UART → cpu останавливается
+  - [x] T3: RESUME через физический UART → cpu возобновляет работу
+  - [x] T4: CPU пишет в UART_IO_DEVICE TX_DATA через память (0x0800_0000)
+- [x] C-программный тест-фреймворк (`tests/` + `PROGRAM_TEST.sv` + `run_tests.sh`)
+  - [x] `tests/linker.ld`, `tests/crt0.s`, `tests/runtime.c` — bare-metal RV32I runtime
+  - [x] `tests/programs/hello/` — "Hello, RISC-V!" (77 cycles)
+  - [x] `tests/programs/fib/` — Фибоначчи 0..9 (5169 cycles)
+  - [x] `tests/programs/sum/` — Сумма 1..100=5050 (700 cycles)
+  - [x] Toolchain: riscv64-elf-gcc -march=rv32i -mabi=ilp32
+  - [x] Bug fix: UART_IO_DEVICE cpu_tx_byte = write_value (не tx_data_r)
 - [ ] Синтез под Xilinx (constraints, pin mapping)
 - [ ] Тест на железе: загрузить программу через UART, выполнить, прочитать результат
+
+### Заметки по симуляции
+- `I_O_INPUT_CONTROLLER` переворачивает биты (shift-left аккумуляция): чтобы
+  DEBUG_CONTROLLER получил байт X, нужно отправить `rev8(X)` в стандартном UART.
+  Пример: CMD_HALT=0x01 → uart_send(0x80).
+- `tx_valid_r` — 1-тактовый импульс внутри uart_send; обнаруживать через `fork/join`
+  с uart_send и expect_dbg_byte параллельно.
+- ROM инициализируется через иерархический доступ в тестбенче: `dut.rom[i] = instr`.
 
 ---
 

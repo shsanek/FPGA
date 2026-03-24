@@ -41,18 +41,67 @@ module CPU_SINGLE_CYCLE #(
     localparam OP_JALR   = 7'b1100111;
     localparam OP_LUI    = 7'b0110111;
     localparam OP_AUIPC  = 7'b0010111;
+    localparam OP_FENCE  = 7'b0001111;  // FENCE — NOP в однотактовом CPU
+    localparam OP_SYSTEM = 7'b1110011;  // ECALL / EBREAK
 
     // -------------------------------------------------------------------------
     // Debug halt — объявляем wire cpu_stall первым (используется везде ниже)
     // Полные assign dbg_current_pc/instr ниже, после объявления pc и instr
     // -------------------------------------------------------------------------
     logic dbg_halted_r;
+    logic ebreak_halted_r;  // CPU остановлен по EBREAK
+    logic ebreak_acked_r;   // предотвращает повторный останов после resume/step
+
+    // EBREAK: opcode=SYSTEM, funct3=000, instr[20]=1
+    // Проверяем до объявления instr_data, т.к. instr = instr_data ниже
+    wire is_ebreak = DEBUG_ENABLE &&
+                     (instr_data[6:0]   == OP_SYSTEM) &&
+                     (instr_data[14:12] == 3'b000)    &&
+                     (instr_data[20]    == 1'b1);
+
+    // Детектируем CMD_RESUME: dbg_halt упал пока CPU был остановлен
+    wire dbg_resume_pulse = dbg_halted_r && !dbg_halt;
+
     always_ff @(posedge clk) begin
-        if (reset) dbg_halted_r <= 1'b0;
-        else       dbg_halted_r <= DEBUG_ENABLE ? dbg_halt : 1'b0;
+        if (reset) begin
+            dbg_halted_r    <= 1'b0;
+            ebreak_halted_r <= 1'b0;
+            ebreak_acked_r  <= 1'b0;
+        end else begin
+            dbg_halted_r <= DEBUG_ENABLE ? dbg_halt : 1'b0;
+
+            if (DEBUG_ENABLE) begin
+                // Приоритет 1: step или resume — снимаем ebreak-останов
+                if ((dbg_step || dbg_resume_pulse) && ebreak_halted_r) begin
+                    ebreak_halted_r <= 1'b0;
+                    ebreak_acked_r  <= 1'b1;
+                end
+                // Приоритет 2: новый EBREAK — ставим останов
+                else if (is_ebreak && !ebreak_acked_r && !mem_stall) begin
+                    ebreak_halted_r <= 1'b1;
+                end
+
+                // Сбрасываем acked как только PC ушёл с EBREAK
+                if (!is_ebreak)
+                    ebreak_acked_r <= 1'b0;
+            end else begin
+                ebreak_halted_r <= 1'b0;
+                ebreak_acked_r  <= 1'b0;
+            end
+        end
     end
-    wire cpu_stall = mem_stall || (DEBUG_ENABLE ? (dbg_halted_r && !dbg_step) : 1'b0);
-    assign dbg_is_halted = DEBUG_ENABLE ? dbg_halted_r : 1'b0;
+
+    // Stall от EBREAK: активен с первого такта инструкции до step/resume
+    wire ebreak_stall = DEBUG_ENABLE &&
+                        (is_ebreak && !ebreak_acked_r || ebreak_halted_r) &&
+                        !dbg_step;
+
+    wire cpu_stall = mem_stall ||
+                     (DEBUG_ENABLE ? (dbg_halted_r && !dbg_step) : 1'b0) ||
+                     ebreak_stall;
+
+    assign dbg_is_halted = DEBUG_ENABLE ?
+        (dbg_halted_r || ebreak_halted_r || (is_ebreak && !ebreak_acked_r)) : 1'b0;
 
     // -------------------------------------------------------------------------
     // PC
@@ -183,6 +232,7 @@ module CPU_SINGLE_CYCLE #(
             OP_JAL, OP_JALR:           begin wb_en = 1; wb_data = pc + 32'd4; end
             OP_LUI:                    begin wb_en = 1; wb_data = imm;         end
             OP_R, OP_I_ALU, OP_AUIPC:  begin wb_en = 1; wb_data = alu_result; end
+            OP_FENCE, OP_SYSTEM:       begin wb_en = 0; wb_data = 32'b0;       end
             default:                   begin wb_en = 0; wb_data = 32'b0;       end
         endcase
     end
