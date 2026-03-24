@@ -1,197 +1,249 @@
 module RAM_CONTROLLER_TEST();
 
-  // Параметры
   localparam CHUNK_PART   = 128;
   localparam ADDRESS_SIZE = 28;
 
-  // Тактовые сигналы
+  // Clocks: clk=100MHz (T=10ns), mig_ui_clk=125MHz (T=8ns)
   reg clk;
   reg mig_ui_clk;
+  initial begin clk = 0;       forever #5 clk       = ~clk;       end
+  initial begin mig_ui_clk = 0; forever #4 mig_ui_clk = ~mig_ui_clk; end
 
-  // Интерфейс контроллера
+  // DUT interface
   wire                    controller_ready;
   wire [3:0]              error;
   wire [2:0]              led0;
 
-  // Интерфейс записи
   reg                     write_trigger;
   reg  [CHUNK_PART-1:0]   write_value;
   reg  [ADDRESS_SIZE-1:0] write_address;
 
-  // Интерфейс чтения
   reg                     read_trigger;
   reg  [ADDRESS_SIZE-1:0] read_address;
   wire [CHUNK_PART-1:0]   read_value;
   wire                    read_value_ready;
 
-  // Сигналы MIG
-  wire [ADDRESS_SIZE-1:0]    mig_app_addr;
-  wire [2:0]                 mig_app_cmd;
-  wire                       mig_app_en;
-  wire [CHUNK_PART-1:0]      mig_app_wdf_data;
-  wire                       mig_app_wdf_end;
-  wire [(CHUNK_PART/8)-1:0]  mig_app_wdf_mask;
-  wire                       mig_app_wdf_wren;
+  // MIG bus (wires between DUT and MIG_MODEL)
+  wire [ADDRESS_SIZE-1:0]   mig_app_addr;
+  wire [2:0]                mig_app_cmd;
+  wire                      mig_app_en;
+  wire [CHUNK_PART-1:0]     mig_app_wdf_data;
+  wire                      mig_app_wdf_end;
+  wire [(CHUNK_PART/8)-1:0] mig_app_wdf_mask;
+  wire                      mig_app_wdf_wren;
+  wire                      mig_app_wdf_rdy;
+  wire [CHUNK_PART-1:0]     mig_app_rd_data;
+  wire                      mig_app_rd_data_valid;
+  wire                      mig_app_rd_data_end;
+  wire                      mig_app_rdy;
+  wire                      mig_init_calib_complete;
 
-  reg                        mig_app_wdf_rdy;
-  reg  [CHUNK_PART-1:0]      mig_app_rd_data;
-  reg                        mig_app_rd_data_valid;
-  reg                        mig_app_rd_data_end;
-  reg                        mig_app_rdy;
-  reg                        mig_init_calib_complete;
+  // Test bookkeeping
+  integer             errors;
+  integer             write_count;
+  reg [CHUNK_PART-1:0] write_captured;
+  reg [CHUNK_PART-1:0] read_captured;
 
-  // Сборники результатов
-  integer                    read_count;
-  reg  [CHUNK_PART-1:0]      read_captured;
-  integer                    write_count;
-  reg  [CHUNK_PART-1:0]      write_captured;
-  reg                        test_error;
-
-  // MIG эмулятор
-  reg mig_read_busy;
-  reg mig_write_busy;
-
-  // Инстанцируем DUT
+  // DUT
   RAM_CONTROLLER #(
     .CHUNK_PART(CHUNK_PART),
     .ADDRESS_SIZE(ADDRESS_SIZE)
   ) dut (
-    .clk(clk),
-    // COMMON
-    .controller_ready(controller_ready),
-    .error(error),
-    // WRITE
-    .write_trigger(write_trigger),
-    .write_value(write_value),
-    .write_address(write_address),
-    // READ
-    .read_trigger(read_trigger),
-    .read_value(read_value),
-    .read_address(read_address),
-    .read_value_ready(read_value_ready),
-    .led0(led0),
-    // MIG
-    .mig_app_addr(mig_app_addr),
-    .mig_app_cmd(mig_app_cmd),
-    .mig_app_en(mig_app_en),
-    .mig_app_wdf_data(mig_app_wdf_data),
-    .mig_app_wdf_end(mig_app_wdf_end),
-    .mig_app_wdf_mask(mig_app_wdf_mask),
-    .mig_app_wdf_wren(mig_app_wdf_wren),
-    .mig_app_wdf_rdy(mig_app_wdf_rdy),
-    .mig_app_rd_data(mig_app_rd_data),
-    .mig_app_rd_data_end(mig_app_rd_data_end),
-    .mig_app_rd_data_valid(mig_app_rd_data_valid),
-    .mig_app_rdy(mig_app_rdy),
-    .mig_ui_clk(mig_ui_clk),
+    .clk                   (clk),
+    .controller_ready      (controller_ready),
+    .error                 (error),
+    .write_trigger         (write_trigger),
+    .write_value           (write_value),
+    .write_address         (write_address),
+    .read_trigger          (read_trigger),
+    .read_value            (read_value),
+    .read_address          (read_address),
+    .read_value_ready      (read_value_ready),
+    .led0                  (led0),
+    .mig_app_addr          (mig_app_addr),
+    .mig_app_cmd           (mig_app_cmd),
+    .mig_app_en            (mig_app_en),
+    .mig_app_wdf_data      (mig_app_wdf_data),
+    .mig_app_wdf_end       (mig_app_wdf_end),
+    .mig_app_wdf_mask      (mig_app_wdf_mask),
+    .mig_app_wdf_wren      (mig_app_wdf_wren),
+    .mig_app_wdf_rdy       (mig_app_wdf_rdy),
+    .mig_app_rd_data       (mig_app_rd_data),
+    .mig_app_rd_data_end   (mig_app_rd_data_end),
+    .mig_app_rd_data_valid (mig_app_rd_data_valid),
+    .mig_app_rdy           (mig_app_rdy),
+    .mig_ui_clk            (mig_ui_clk),
     .mig_init_calib_complete(mig_init_calib_complete)
   );
 
-  // Генерация тактов
-  initial begin clk = 0; forever #5 clk = ~clk; end
-  initial begin mig_ui_clk = 0; forever #4 mig_ui_clk = ~mig_ui_clk; end
+  // MIG model
+  MIG_MODEL #(
+    .CHUNK_PART(CHUNK_PART),
+    .ADDRESS_SIZE(ADDRESS_SIZE)
+  ) mig (
+    .mig_ui_clk            (mig_ui_clk),
+    .mig_init_calib_complete(mig_init_calib_complete),
+    .mig_app_rdy           (mig_app_rdy),
+    .mig_app_en            (mig_app_en),
+    .mig_app_cmd           (mig_app_cmd),
+    .mig_app_addr          (mig_app_addr),
+    .mig_app_wdf_data      (mig_app_wdf_data),
+    .mig_app_wdf_wren      (mig_app_wdf_wren),
+    .mig_app_wdf_end       (mig_app_wdf_end),
+    .mig_app_wdf_rdy       (mig_app_wdf_rdy),
+    .mig_app_rd_data       (mig_app_rd_data),
+    .mig_app_rd_data_valid (mig_app_rd_data_valid),
+    .mig_app_rd_data_end   (mig_app_rd_data_end)
+  );
 
-  // Инициализация сигналов
-  initial begin
-    write_trigger           = 0;
-    write_value             = {CHUNK_PART{1'b0}};
-    write_address           = 0;
-    read_trigger            = 0;
-    read_address            = 0;
-
-    mig_app_wdf_rdy         = 1;
-    mig_app_rd_data         = 0;
-    mig_app_rd_data_valid   = 0;
-    mig_app_rd_data_end     = 0;
-    mig_app_rdy             = 1;
-    mig_init_calib_complete = 1;
-
-    read_count   = 0;
-    write_count  = 0;
-    test_error   = 0;
-
-    mig_read_busy  = 0;
-    mig_write_busy = 0;
-  end
-
-  // Эмуляция реакции MIG на burst-чтение одного такта
-  integer read_beat;
-  integer write_beat;
-  always @(posedge mig_ui_clk) begin
-// --- Burst-чтение ---
-    if (mig_read_busy) begin
-      mig_app_rd_data       <= 128'h0123456789ABCDEF_FEDCBA9876543210;
-      mig_app_rd_data_valid <= 1;
-      mig_app_rd_data_end   <= 1;
-      mig_read_busy         <= 0;
-    end else if (mig_app_en && mig_app_cmd == 3'b001) begin
-      mig_read_busy <= 1;
-    end else begin
-      mig_app_rd_data_valid <= 0;
-      mig_app_rd_data_end   <= 0;
-    end
-
-    if (mig_write_busy) begin
-      mig_app_wdf_rdy <= 1;
-      if (mig_app_wdf_wren == 1) begin
-        mig_write_busy <= 0;
-      end
-    end else if (mig_app_en && mig_app_cmd == 3'b000) begin
-      mig_write_busy <= 1;
-      mig_app_wdf_rdy <= 0;
-    end else begin
-      mig_app_wdf_rdy <= 1;
-    end
-  end
-
+  // Monitor: capture last read result
   always @(posedge clk) begin
-    if (read_value_ready) begin
-      read_count    <= read_count + 1;
+    if (read_value_ready)
       read_captured <= read_value;
-    end
   end
 
-  // Захват данных, посылаемых на запись, в домене mig_ui_clk
+  // Monitor: count writes reaching MIG
   always @(posedge mig_ui_clk) begin
     if (mig_app_wdf_wren && mig_app_wdf_end) begin
-      write_count    <= write_count + 1;
+      write_count   <= write_count + 1;
       write_captured <= mig_app_wdf_data;
     end
   end
 
-  // Основной тест
+  // ----------------------------------------------------------------
+  // Tasks
+  // ----------------------------------------------------------------
+
+  // Wait for controller_ready to return high after an operation.
+  // Includes an extra cycle so all NBAs have settled before caller checks results.
+  task wait_done;
+    integer n;
+    begin
+      repeat(4) @(posedge clk);     // give controller time to go not-ready
+      n = 0;
+      while (!controller_ready && n < 1000) begin
+        @(posedge clk);
+        n = n + 1;
+      end
+      @(posedge clk);               // one extra cycle for NBA settle
+      if (!controller_ready) begin
+        $display("  TIMEOUT: controller_ready never returned");
+        errors = errors + 1;
+      end
+    end
+  endtask
+
+  task do_write;
+    input [ADDRESS_SIZE-1:0] addr;
+    input [CHUNK_PART-1:0]   data;
+    begin
+      @(posedge clk);
+      write_address = addr;
+      write_value   = data;
+      write_trigger = 1;
+      @(posedge clk);
+      write_trigger = 0;
+      wait_done;
+    end
+  endtask
+
+  task do_read;
+    input [ADDRESS_SIZE-1:0] addr;
+    begin
+      @(posedge clk);
+      read_address = addr;
+      read_trigger = 1;
+      @(posedge clk);
+      read_trigger = 0;
+      wait_done;
+    end
+  endtask
+
+  // ----------------------------------------------------------------
+  // Main test
+  // ----------------------------------------------------------------
   initial begin
     $dumpfile("RAM_CONTROLLER_TEST.vcd");
     $dumpvars(0, RAM_CONTROLLER_TEST);
 
-    // --- ТЕСТ ЧТЕНИЯ ---
-    #65;
-    read_address = 28'd42;
-    read_trigger = 1;
-    #10;
-    read_trigger = 0;
-    // ждём реакции
-    #200;
-    if (read_count != 1)             test_error = 1;
-    if (read_captured != 128'h0123456789ABCDEF_FEDCBA9876543210) test_error = 1;
+    write_trigger  = 0;
+    write_value    = 0;
+    write_address  = 0;
+    read_trigger   = 0;
+    read_address   = 0;
+    errors         = 0;
+    write_count    = 0;
+    write_captured = 0;
+    read_captured  = 0;
 
-    // --- ТЕСТ ЗАПИСИ ---
-    #20;
-    write_address = 28'd84;
-    write_value   = 128'hDEADBEEF_DEADBEEF_FEEDFACE_FEEDFACE;
+    // Wait for MIG calibration handshake to complete
+    #100;
+
+    // ---- T1: basic write ----------------------------------------
+    $display("T1: basic write to addr 0x00");
+    do_write(28'h00, 128'hDEAD_BEEF_CAFE_BABE_1234_5678_9ABC_DEF0);
+    if (write_count !== 1)
+      begin $display("  FAIL write_count=%0d expected 1", write_count); errors=errors+1; end
+    if (write_captured !== 128'hDEAD_BEEF_CAFE_BABE_1234_5678_9ABC_DEF0)
+      begin $display("  FAIL write_captured=%h", write_captured); errors=errors+1; end
+
+    // ---- T2: basic read (read back T1 data) ---------------------
+    $display("T2: basic read from addr 0x00");
+    do_read(28'h00);
+    if (read_captured !== 128'hDEAD_BEEF_CAFE_BABE_1234_5678_9ABC_DEF0)
+      begin $display("  FAIL read_captured=%h", read_captured); errors=errors+1; end
+
+    // ---- T3: multiple addresses ---------------------------------
+    $display("T3: write/read 3 different addresses");
+    do_write(28'h10, 128'hAAAA_AAAA_BBBB_BBBB_CCCC_CCCC_DDDD_DDDD);
+    do_write(28'h20, 128'h1111_2222_3333_4444_5555_6666_7777_8888);
+    do_write(28'h30, 128'hFACE_CAFE_FEED_BEEF_C0DE_1234_ABCD_EF01);
+
+    do_read(28'h10);
+    if (read_captured !== 128'hAAAA_AAAA_BBBB_BBBB_CCCC_CCCC_DDDD_DDDD)
+      begin $display("  FAIL addr 0x10: %h", read_captured); errors=errors+1; end
+    do_read(28'h20);
+    if (read_captured !== 128'h1111_2222_3333_4444_5555_6666_7777_8888)
+      begin $display("  FAIL addr 0x20: %h", read_captured); errors=errors+1; end
+    do_read(28'h30);
+    if (read_captured !== 128'hFACE_CAFE_FEED_BEEF_C0DE_1234_ABCD_EF01)
+      begin $display("  FAIL addr 0x30: %h", read_captured); errors=errors+1; end
+
+    // ---- T4: simultaneous write+read (skip_write path) ----------
+    // Pre-load 0x50 so the simultaneous read has known data
+    $display("T4: simultaneous write+read (skip_write path)");
+    do_write(28'h50, 128'h5A5A_5A5A_A5A5_A5A5_5A5A_5A5A_A5A5_A5A5);
+
+    // Issue both triggers in the same cycle
+    @(posedge clk);
+    write_address = 28'h40;
+    write_value   = 128'hAAAA_BBBB_CCCC_DDDD_EEEE_FFFF_0000_1111;
+    read_address  = 28'h50;
     write_trigger = 1;
-    #10;
+    read_trigger  = 1;
+    @(posedge clk);
     write_trigger = 0;
+    read_trigger  = 0;
+    wait_done;
 
-    #200;
-    if (write_count != 1)            test_error = 1;
-    if (write_captured != 128'hDEADBEEF_DEADBEEF_FEEDFACE_FEEDFACE) test_error = 1;
+    // read_captured now holds result of the simultaneous READ (addr 0x50)
+    if (read_captured !== 128'h5A5A_5A5A_A5A5_A5A5_5A5A_5A5A_A5A5_A5A5)
+      begin $display("  FAIL T4 read(0x50): %h", read_captured); errors=errors+1; end
 
-    // --- Итог ---
-    if (!test_error)
-      $display("ALL 128-BIT TESTS PASSED");
+    // Verify the simultaneous WRITE actually reached addr 0x40
+    do_read(28'h40);
+    if (read_captured !== 128'hAAAA_BBBB_CCCC_DDDD_EEEE_FFFF_0000_1111)
+      begin $display("  FAIL T4 write(0x40) verify: %h", read_captured); errors=errors+1; end
+
+    // ---- error flag check --------------------------------------
+    if (error !== 4'h0)
+      begin $display("FAIL DUT error flag set: %h", error); errors=errors+1; end
+
+    // ---- summary -----------------------------------------------
+    if (errors == 0)
+      $display("ALL TESTS PASSED");
     else
-      $display("128-BIT TESTS FAILED");
+      $display("FAILED: %0d error(s)", errors);
 
     $finish;
   end
