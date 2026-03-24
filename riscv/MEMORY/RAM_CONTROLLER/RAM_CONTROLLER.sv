@@ -72,7 +72,6 @@ module RAM_CONTROLLER #(
     logic internal_write_trigger;
 
     logic internal_read_trigger;
-    logic[CHUNK_PART - 1: 0] internal_read_value;
     logic internal_read_value_ready;
     logic internal_read_value_ready2;
 
@@ -92,7 +91,6 @@ module RAM_CONTROLLER #(
         internal_write_trigger = 0;
         internal_write_value = 0;
         internal_read_trigger = 0;
-        internal_read_value = 0;
         internal_read_value_ready2 = 0;
         internal_read_value_ready = 0;
     end
@@ -106,8 +104,7 @@ module RAM_CONTROLLER #(
         if (controll_clk_state == SYNC_CONTROLLER_ACTIVE_CONTROLL) begin
             controller_ready <= !(write_trigger || read_trigger) && (internal_error == 0);
             
-            internal_read_value_ready2 <= internal_read_value_ready;
-            internal_read_value_ready <= read_trigger;
+            internal_read_value_ready2 <= 0;
             internal_read_address <= read_address;
 
             internal_write_address <= write_address;
@@ -116,6 +113,7 @@ module RAM_CONTROLLER #(
             internal_read_trigger <= read_trigger;
 
             error <= internal_error;
+            internal_error <= 0;
             
             if (write_trigger || read_trigger) begin
                 controll_clk_state <= SYNC_CONTROLLER_WILL_STOP_CONTROLL;
@@ -133,8 +131,9 @@ module RAM_CONTROLLER #(
         end else if (
             controll_clk_state == SYNC_CONTROLLER_WILL_START_CONTROLL &&
             controll_ui_clk_state == SYNC_CONTROLLER_NOT_CONTOLL
-        ) begin 
+        ) begin
             controll_clk_state <= SYNC_CONTROLLER_ACTIVE_CONTROLL;
+            internal_read_value_ready2 <= internal_read_trigger;
         end
     end
 
@@ -161,11 +160,12 @@ module RAM_CONTROLLER #(
                         mig_app_cmd <= 3'b000;
                         mig_app_addr <= internal_write_address;
                         mig_app_wdf_data <= internal_write_value;
-                       
+                        mig_app_wdf_wren <= 1;
+                        mig_app_wdf_end <= 1;
                         ram_state <= RAM_CONTROLLER_STATE_WRITE;
                     end else if (internal_read_trigger) begin
                         mig_app_en <= 1;
-                        mig_app_cmd <= 1;
+                        mig_app_cmd <= 3'b001;
                         mig_app_addr <= internal_read_address;
                         ram_state <= RAM_CONTROLLER_STATE_READ;
                     end else begin 
@@ -188,16 +188,15 @@ module RAM_CONTROLLER #(
                 if (mig_app_rdy) begin
                     mig_app_en <= 0;
                 end
-                if (!mig_app_en && !mig_app_wdf_wren && mig_app_wdf_rdy) begin
-                    mig_app_wdf_wren <= 1;
-                    mig_app_wdf_end <= 1;
-                end else if (mig_app_wdf_wren) begin
+                if (mig_app_wdf_wren && mig_app_wdf_rdy) begin
                     mig_app_wdf_wren <= 0;
                     mig_app_wdf_end <= 0;
+                end
+                if (!mig_app_en && !mig_app_wdf_wren) begin
                     ram_state <= RAM_CONTROLLER_STATE_WATING;
                     if (internal_read_trigger) begin
                         skip_write <= 1;
-                    end else begin 
+                    end else begin
                         controll_ui_clk_state <= SYNC_CONTROLLER_WILL_STOP_CONTROLL;
                     end
                 end
