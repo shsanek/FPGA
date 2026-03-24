@@ -36,19 +36,36 @@ module CHUNK_STORAGE_4_POOL#(
     input wire[ADDRESS_SIZE - 1:0] new_address,
     input wire new_data_save
 );
+    localparam COUNT = 4;
+
+    // Internal wires — declared before use
+    wire [DATA_SIZE-1:0]    _read_command   [COUNT];
+    wire [COUNT-1:0]        _contains_command_address;
+
+    wire [DATA_SIZE-1:0]    _read_value     [COUNT];
+    wire [COUNT-1:0]        _contains_address;
+
+    wire [ADDRESS_SIZE-1:0] _save_address   [COUNT];
+    wire [CHUNK_PART-1:0]   _save_data      [COUNT];
+    wire [COUNT-1:0]        _save_need_flag;
+
+    wire [15:0]             _order_index    [COUNT];
+    wire [COUNT-1:0]        _new_data_save;
+
+    // Aggregate outputs
     assign contains_command_address = _contains_command_address[0] || _contains_command_address[1] || _contains_command_address[2] || _contains_command_address[3];
     assign contains_address = _contains_address[0] || _contains_address[1] || _contains_address[2] || _contains_address[3];
 
-    localparam COUNT = 4;
-
     assign read_command = _read_command[0] | _read_command[1] | _read_command[2] | _read_command[3];
-    assign read_value = _read_value[0] | _read_value[1] | _read_value[2] | _read_value[3];
+    assign read_value   = _read_value[0]   | _read_value[1]   | _read_value[2]   | _read_value[3];
 
+    // LRU victim selection: slot with maximum order_index is evicted
     wire _out_index_0_i = !((_order_index[0] < _order_index[1]) || (_order_index[0] < _order_index[2]) || (_order_index[0] < _order_index[3]));
     wire _out_index_1_i = !((_order_index[1] < _order_index[0]) || (_order_index[1] < _order_index[2]) || (_order_index[1] < _order_index[3]));
     wire _out_index_2_i = !((_order_index[2] < _order_index[1]) || (_order_index[2] < _order_index[0]) || (_order_index[2] < _order_index[3]));
     wire _out_index_3_i = !((_order_index[3] < _order_index[1]) || (_order_index[3] < _order_index[2]) || (_order_index[3] < _order_index[0]));
 
+    // Priority encoding to resolve ties (slot 0 > 1 > 2 > 3)
     wire internal_out_index[COUNT-1:0];
 
     assign internal_out_index[0] = _out_index_0_i;
@@ -56,48 +73,36 @@ module CHUNK_STORAGE_4_POOL#(
     assign internal_out_index[2] = _out_index_2_i && !(_out_index_0_i || _out_index_1_i);
     assign internal_out_index[3] = !(_out_index_0_i || _out_index_1_i || _out_index_2_i);
 
+    // Route new_data_save only to the victim slot
+    assign _new_data_save[0] = new_data_save & internal_out_index[0];
+    assign _new_data_save[1] = new_data_save & internal_out_index[1];
+    assign _new_data_save[2] = new_data_save & internal_out_index[2];
+    assign _new_data_save[3] = new_data_save & internal_out_index[3];
+
+    // Victim slot outputs (OR-mux: non-selected slots contribute 0)
     assign order_index =
         (internal_out_index[0] ? _order_index[0] : 0) |
         (internal_out_index[1] ? _order_index[1] : 0) |
         (internal_out_index[2] ? _order_index[2] : 0) |
         (internal_out_index[3] ? _order_index[3] : 0);
 
-    assign save_address = 
+    assign save_address =
         (internal_out_index[0] ? _save_address[0] : 0) |
         (internal_out_index[1] ? _save_address[1] : 0) |
         (internal_out_index[2] ? _save_address[2] : 0) |
         (internal_out_index[3] ? _save_address[3] : 0);
 
-    assign save_data = 
+    assign save_data =
         (internal_out_index[0] ? _save_data[0] : 0) |
         (internal_out_index[1] ? _save_data[1] : 0) |
         (internal_out_index[2] ? _save_data[2] : 0) |
         (internal_out_index[3] ? _save_data[3] : 0);
 
-    assign save_need_flag = 
+    assign save_need_flag =
         (internal_out_index[0] ? _save_need_flag[0] : 0) |
         (internal_out_index[1] ? _save_need_flag[1] : 0) |
         (internal_out_index[2] ? _save_need_flag[2] : 0) |
         (internal_out_index[3] ? _save_need_flag[3] : 0);
-
-    wire[DATA_SIZE-1:0] _read_command[COUNT];
-    wire[COUNT-1:0] _contains_command_address;
-
-    // READ
-    wire[DATA_SIZE-1: 0] _read_value[COUNT];
-    wire[COUNT-1:0] _contains_address;
-
-    wire[ADDRESS_SIZE - 1:0] _save_address[COUNT];
-    wire[CHUNK_PART - 1: 0] _save_data[COUNT];
-    wire[COUNT - 1: 0] _save_need_flag;
-
-    wire[15:0] _order_index[COUNT];
-    wire[COUNT:0] _new_data_save;
-
-    assign _new_data_save[0] = new_data_save & internal_out_index[0];
-    assign _new_data_save[1] = new_data_save & internal_out_index[1];
-    assign _new_data_save[2] = new_data_save & internal_out_index[2];
-    assign _new_data_save[3] = new_data_save & internal_out_index[3];
     
     genvar i;
     generate
