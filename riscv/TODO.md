@@ -30,17 +30,19 @@
 
 ## Фаза 2 — Однотактовый CPU
 
-- [ ] `CPU_SINGLE_CYCLE.sv`
-  - [ ] Instruction fetch из ROM (массив в симуляции)
-  - [ ] Decode: opcode → control signals
-  - [ ] Execute: ALU / Branch / Load / Store / LUI / AUIPC / JAL / JALR
-  - [ ] Write back
-- [ ] `CPU_ROM.sv` — инструкционная память для тестов (параметрический массив)
-- [ ] `CPU_SINGLE_CYCLE_TEST.sv`
-  - [ ] Тест: арифметика (ADD, ADDI, LUI, AUIPC)
-  - [ ] Тест: переходы (BEQ, BNE, JAL, JALR)
-  - [ ] Тест: память (LW/SW, LB/SB, LH/SH)
-  - [ ] Тест: простая программа (цикл, сумма массива)
+- [x] `CPU_ALU.sv` — комбинационный ALU (R-type + I-type + force_add)
+- [x] `CPU_SINGLE_CYCLE.sv`
+  - [x] Instruction fetch из ROM (массив в симуляции)
+  - [x] Decode: opcode → control signals
+  - [x] Execute: ALU / Branch / Load / Store / LUI / AUIPC / JAL / JALR
+  - [x] Write back
+  - [x] Debug: dbg_halt / dbg_step / DEBUG_ENABLE parameter
+- [x] `CPU_SINGLE_CYCLE_TEST.sv`
+  - [x] Тест: арифметика (ADDI, ADD, SUB)
+  - [x] Тест: LUI, AUIPC
+  - [x] Тест: память (SW, LW)
+  - [x] Тест: ветвления (BEQ taken, BNE taken, skip-check)
+  - [x] Тест: JAL (return addr + skip-check)
 
 ---
 
