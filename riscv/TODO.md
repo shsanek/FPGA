@@ -48,10 +48,10 @@
 
 ## Фаза 3 — Интеграция с памятью
 
-- [ ] Подключить `MEMORY_CONTROLLER` как инструкционную и data-память
-  - [ ] Разделить instruction fetch и data access (два порта или арбитраж)
-- [ ] `CPU_MEMORY_INTEGRATION_TEST.sv`
-  - [ ] Загрузить программу через write-порт, запустить, проверить результат
+- [x] Подключить `MEMORY_CONTROLLER` как data-память (инструкции — ROM)
+  - [x] `CPU_DATA_ADAPTER.sv` — FSM-адаптер: CPU ↔ MEMORY_CONTROLLER со stall
+- [x] `CPU_MEMORY_INTEGRATION_TEST.sv` — ALL TESTS PASSED
+  - [x] SW/LW через MEMORY_CONTROLLER → RAM_CONTROLLER → MIG_MODEL
 
 ---
 
