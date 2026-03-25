@@ -306,15 +306,18 @@ module PROGRAM_TEST ();
                  dut.pbus.controller_ready, dut.pipeline.mc_address,
                  dut.pipeline.mc_read_trigger, dut.pipeline.mc_write_trigger);
 
-        // --- Watch first few fetches ---
-        for (int fi = 0; fi < 5; fi++) begin
+        // --- Watch first fetches + EBREAK state ---
+        for (int fi = 0; fi < 3; fi++) begin
             @(posedge clk); #1;
             while (dut.pipeline.state != 2) begin  // 2 = S_EXECUTE
                 @(posedge clk); #1;
-                if ($time > 500000) begin fi = 5; break; end // safety
+                if ($time > 500000) begin fi = 3; break; end
             end
-            $display("DEBUG fetch[%0d]: PC=0x%08X instr=0x%08X state=%0d",
-                     fi, dut.cpu.pc, dut.pipeline.instr_reg, dut.pipeline.state);
+            $display("DEBUG exec[%0d]: PC=0x%08X instr=0x%08X ebreak=%b halted=%b acked=%b stall=%b",
+                     fi, dut.cpu.pc, dut.pipeline.instr_reg,
+                     dut.cpu.is_ebreak, dut.cpu.dbg_is_halted,
+                     dut.cpu.ebreak_acked_r, dut.cpu.cpu_stall);
+            @(posedge clk); // let it advance
         end
 
         // --- Ждём EBREAK или timeout ---
