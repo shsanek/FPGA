@@ -175,8 +175,8 @@ module PROGRAM_TEST ();
     endtask
 
     task dbg_reset_pc(input [31:0] addr);
-        // CMD_RESET_PC (0x06) + ADDR[31:0] little-endian
-        uart_send(8'h06);
+        // CMD_RESET_PC (0x07) + ADDR[31:0] little-endian
+        uart_send(8'h07);
         uart_send(addr[7:0]);
         uart_send(addr[15:8]);
         uart_send(addr[23:16]);

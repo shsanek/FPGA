@@ -3,10 +3,14 @@ set src_dir  "C:/Users/ssane/Documents/FPGA/riscv"
 
 open_project ${proj_dir}/project_1.xpr
 
-catch {add_files -norecurse -fileset [get_filesets sources_1] ${src_dir}/SIMPLE_UART_RX.sv}
-catch {set_property file_type SystemVerilog [get_files ${src_dir}/SIMPLE_UART_RX.sv]}
-catch {add_files -norecurse -fileset [get_filesets sources_1] ${src_dir}/UART_FIFO.sv}
-catch {set_property file_type SystemVerilog [get_files ${src_dir}/UART_FIFO.sv]}
+foreach f [list \
+    ${src_dir}/SIMPLE_UART_RX.sv \
+    ${src_dir}/UART_FIFO.sv \
+    ${src_dir}/CPU/CPU_PIPELINE_ADAPTER.sv \
+] {
+    catch {add_files -norecurse -fileset [get_filesets sources_1] $f}
+    catch {set_property file_type SystemVerilog [get_files $f]}
+}
 
 set_property top FPGA_TOP [current_fileset]
 update_compile_order -fileset sources_1

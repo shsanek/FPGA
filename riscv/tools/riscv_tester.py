@@ -192,6 +192,7 @@ class RiscVDebug:
     CMD_STEP      = 0x03
     CMD_READ_MEM  = 0x04
     CMD_WRITE_MEM = 0x05
+    CMD_RESET_PC  = 0x07
     ACK           = 0xFF
 
     def __init__(self, port: str, baud: int = 115200, ack_timeout: float = 2.0):
@@ -279,6 +280,26 @@ class RiscVDebug:
             raise ValueError(f"Адрес 0x{addr:08X} не выровнен по 4 байтам")
         self._send(struct.pack("<BII", self.CMD_WRITE_MEM, addr, data))
         self._expect_ack()
+
+    def reset_pc(self, addr: int = 0):
+        """Устанавливает PC на указанный адрес (CPU должен быть HALT)."""
+        self._send(struct.pack("<BI", self.CMD_RESET_PC, addr))
+        self._expect_ack()
+
+    def upload_and_run(self, hex_path: str, base_addr: int = 0):
+        """Загружает hex программу в DDR и запускает CPU с base_addr."""
+        words = []
+        with open(hex_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('//') and not line.startswith('@'):
+                    words.append(int(line, 16))
+
+        self.halt()
+        for i, w in enumerate(words):
+            self.write_mem(base_addr + i * 4, w)
+        self.reset_pc(base_addr)
+        self.resume()
 
     # -----------------------------------------------------------------------
     # Дамп регистров через CPU passthrough
@@ -506,6 +527,7 @@ def run_test(dbg: RiscVDebug, test_dir: Path,
         try:
             dbg.halt()
             dbg.upload_hex(str(hex_file), progress=True)
+            dbg.reset_pc(0)
             dbg.resume()
         except Exception as e:
             return False, f"Загрузка/запуск: {e}"
@@ -738,12 +760,12 @@ def _cmd_capture(dbg: RiscVDebug, idle: float, total: float):
 def _cmd_upload(dbg: RiscVDebug, hex_path: str, idle: float, total: float):
     print(f"\n{C.BOLD}=== Загрузка программы ==={C.RESET}")
     print(f"  Файл: {hex_path}")
-    print(f"  {C.YELLOW}Примечание: запись в DDR, не в ROM. "
-          f"Для исполнения нужен двухпортовый BRAM (см. --help).{C.RESET}")
     try:
         dbg.halt()
         print(f"  {C.GREEN}CPU остановлен.{C.RESET}")
         dbg.upload_hex(hex_path, base_addr=0x00000000, progress=True)
+        dbg.reset_pc(0)
+        print(f"  {C.GREEN}PC сброшен на 0x00000000.{C.RESET}")
         dbg.resume()
         print(f"  {C.GREEN}CPU запущен.{C.RESET}")
     except Exception as e:

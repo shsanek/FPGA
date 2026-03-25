@@ -64,7 +64,7 @@ module DEBUG_CONTROLLER #(
     localparam CMD_STEP      = 8'h03;
     localparam CMD_READ_MEM  = 8'h04;
     localparam CMD_WRITE_MEM = 8'h05;
-    localparam CMD_RESET_PC  = 8'h06;
+    localparam CMD_RESET_PC  = 8'h07;
 
     typedef enum logic [3:0] {
         S_IDLE,
@@ -187,7 +187,7 @@ if (DEBUG_ENABLE) begin : dbg
                 // -------------------------------------------------------
                 S_IDLE: begin
                     if (rx_valid) begin
-                        if (rx_byte >= CMD_HALT && rx_byte <= CMD_RESET_PC) begin
+                        if (rx_byte >= CMD_HALT && rx_byte <= CMD_RESET_PC && rx_byte != 8'h06) begin
                             cmd <= rx_byte;
                             if (payload_bytes(rx_byte) == 0) begin
                                 byte_idx       <= 0;
