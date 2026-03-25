@@ -55,6 +55,7 @@ module CPU_PIPELINE_ADAPTER (
     PIPELINE_STATE state;
     logic [31:0] instr_reg;
     logic [31:0] data_reg;
+    logic [27:0] addr_reg;    // latched address for WAIT states
 
     // ---------------------------------------------------------------
     // Outputs to CPU
@@ -78,17 +79,16 @@ module CPU_PIPELINE_ADAPTER (
     // MC port (combinational) — off when paused
     // ---------------------------------------------------------------
     always_comb begin
-        mc_address       = 28'b0;
         mc_read_trigger  = 1'b0;
         mc_write_trigger = 1'b0;
         mc_write_value   = 32'b0;
         mc_mask          = 4'b1111;
+        mc_address       = addr_reg;   // hold latched address by default
 
         case (state)
             S_FETCH_TRIG: begin
                 mc_address      = instr_addr[27:0];
                 mc_read_trigger = mc_controller_ready;
-                mc_mask         = 4'b1111;
             end
 
             S_DATA_TRIG: begin
@@ -99,8 +99,11 @@ module CPU_PIPELINE_ADAPTER (
                 mc_mask          = mem_byte_mask;
             end
 
-            // S_PAUSED: all triggers = 0 (default)
-            default: ;
+            S_PAUSED: begin
+                mc_address = 28'b0;  // don't care when paused
+            end
+
+            default: ;  // hold addr_reg
         endcase
     end
 
@@ -112,13 +115,16 @@ module CPU_PIPELINE_ADAPTER (
             state     <= S_FETCH_TRIG;
             instr_reg <= 32'h0000_0013; // NOP
             data_reg  <= 32'b0;
+            addr_reg  <= 28'b0;
         end else begin
             case (state)
                 S_FETCH_TRIG: begin
                     if (pause)
                         state <= S_PAUSED;
-                    else if (mc_controller_ready)
-                        state <= S_FETCH_WAIT;
+                    else if (mc_controller_ready) begin
+                        addr_reg <= instr_addr[27:0];
+                        state    <= S_FETCH_WAIT;
+                    end
                 end
 
                 S_FETCH_WAIT: begin
@@ -142,8 +148,10 @@ module CPU_PIPELINE_ADAPTER (
                 end
 
                 S_DATA_TRIG: begin
-                    if (mc_controller_ready)
-                        state <= S_DATA_WAIT;
+                    if (mc_controller_ready) begin
+                        addr_reg <= mem_addr[27:0];
+                        state    <= S_DATA_WAIT;
+                    end
                 end
 
                 S_DATA_WAIT: begin
