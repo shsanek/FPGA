@@ -1,23 +1,19 @@
-// Универсальный тестбенч: загружает скомпилированную RV32I программу,
-// запускает её на полной системе (TOP), захватывает UART-вывод.
+// Универсальный тестбенч: загружает RV32I программу через UART debug
+// протокол (как на реальном железе), запускает, захватывает вывод.
+//
+// Поток: HALT → WRITE_MEM × N → RESET_PC(0) → RESUME → ждём EBREAK
 //
 // Plusargs:
-//   +HEX_FILE=<path>   — hex-файл программы ($readmemh формат, 32-bit words)
-//   +OUT_FILE=<path>   — куда писать захваченный UART-вывод (по умолч. /tmp/prog_out.txt)
-//   +TIMEOUT=<cycles>  — максимум тактов (по умолч. 5_000_000)
-//
-// Программа завершается инструкцией EBREAK (_exit() в runtime.c),
-// которая выставляет dbg_is_halted=1 → тестбенч заканчивает симуляцию.
-//
-// Параметры TOP:
-//   ROM_DEPTH = 4096  (16 KB — достаточно для большинства простых программ)
-//   CLOCK_FREQ, BAUD_RATE — из параметров модуля
+//   +HEX_FILE=<path>   — hex-файл программы ($readmemh, 32-bit words)
+//   +OUT_FILE=<path>   — куда писать UART-вывод
+//   +TIMEOUT=<cycles>  — макс. тактов (по умолч. 5_000_000)
 module PROGRAM_TEST ();
     localparam CLOCK_FREQ   = 1_000_000;
     localparam BAUD_RATE    = 10_000;
+    localparam BIT_PERIOD   = CLOCK_FREQ / BAUD_RATE; // 100
     localparam CHUNK_PART   = 128;
     localparam ADDRESS_SIZE = 28;
-    localparam ROM_DEPTH    = 4096;   // 16 KB instruction ROM
+    localparam MAX_WORDS    = 4096;
 
     // ---------------------------------------------------------------
     // Тактовые генераторы
@@ -47,7 +43,7 @@ module PROGRAM_TEST ();
     wire                      mig_init_calib_complete;
 
     // ---------------------------------------------------------------
-    // DUT: TOP
+    // DUT: TOP (без ROM)
     // ---------------------------------------------------------------
     logic uart_rx_pin = 1;
     wire  uart_tx_pin;
@@ -57,7 +53,6 @@ module PROGRAM_TEST ();
         .BAUD_RATE   (BAUD_RATE),
         .CHUNK_PART  (CHUNK_PART),
         .ADDRESS_SIZE(ADDRESS_SIZE),
-        .ROM_DEPTH   (ROM_DEPTH),
         .DEBUG_ENABLE(1)
     ) dut (
         .clk                    (clk),
@@ -80,9 +75,6 @@ module PROGRAM_TEST ();
         .mig_app_rd_data_end    (mig_app_rd_data_end)
     );
 
-    // ---------------------------------------------------------------
-    // MIG_MODEL
-    // ---------------------------------------------------------------
     MIG_MODEL #(
         .CHUNK_PART  (CHUNK_PART),
         .ADDRESS_SIZE(ADDRESS_SIZE)
@@ -103,7 +95,73 @@ module PROGRAM_TEST ();
     );
 
     // ---------------------------------------------------------------
-    // Захват UART TX-байтов из UART_IO_DEVICE
+    // UART bit-bang: отправить 1 байт (start + 8 data LSB first + stop)
+    // ---------------------------------------------------------------
+    task uart_send(input [7:0] data);
+        integer i;
+        uart_rx_pin = 0;                          // start bit
+        repeat(BIT_PERIOD) @(posedge clk);
+        for (i = 0; i < 8; i++) begin
+            uart_rx_pin = data[i];                // LSB first
+            repeat(BIT_PERIOD) @(posedge clk);
+        end
+        uart_rx_pin = 1;                          // stop bit
+        repeat(BIT_PERIOD) @(posedge clk);
+    endtask
+
+    // ---------------------------------------------------------------
+    // Ждать ответ от DEBUG_CONTROLLER (внутренний TX)
+    // ---------------------------------------------------------------
+    task wait_dbg_response(input integer n_bytes);
+        integer timeout, got;
+        got = 0;
+        timeout = 0;
+        while (got < n_bytes && timeout < 50000) begin
+            @(posedge clk); #1;
+            if (dut.dbg_ctrl.dbg.tx_valid_r) got = got + 1;
+            timeout = timeout + 1;
+        end
+    endtask
+
+    // ---------------------------------------------------------------
+    // Debug команды через UART
+    // ---------------------------------------------------------------
+    task dbg_halt();
+        uart_send(8'h01);
+        wait_dbg_response(1); // 0xFF ack
+    endtask
+
+    task dbg_resume();
+        uart_send(8'h02);
+        wait_dbg_response(1); // 0xFF ack
+    endtask
+
+    task dbg_write_mem(input [31:0] addr, input [31:0] data);
+        // CMD_WRITE_MEM (0x05) + ADDR[31:0] + DATA[31:0] little-endian
+        uart_send(8'h05);
+        uart_send(addr[7:0]);
+        uart_send(addr[15:8]);
+        uart_send(addr[23:16]);
+        uart_send(addr[31:24]);
+        uart_send(data[7:0]);
+        uart_send(data[15:8]);
+        uart_send(data[23:16]);
+        uart_send(data[31:24]);
+        wait_dbg_response(1); // 0xFF ack
+    endtask
+
+    task dbg_reset_pc(input [31:0] addr);
+        // CMD_RESET_PC (0x06) + ADDR[31:0] little-endian
+        uart_send(8'h06);
+        uart_send(addr[7:0]);
+        uart_send(addr[15:8]);
+        uart_send(addr[23:16]);
+        uart_send(addr[31:24]);
+        wait_dbg_response(1); // 0xFF ack
+    endtask
+
+    // ---------------------------------------------------------------
+    // Захват UART TX-байтов (CPU passthrough вывод)
     // ---------------------------------------------------------------
     string   out_file;
     integer  out_fd;
@@ -120,7 +178,6 @@ module PROGRAM_TEST ();
         out_byte_count = 0;
     end
 
-    // cpu_tx_valid — 1-тактовый импульс в UART_IO_DEVICE при записи в TX_DATA
     always @(posedge clk) begin
         if (dut.cpu_tx_valid) begin
             $fwrite(out_fd, "%c", dut.cpu_tx_byte[7:0]);
@@ -134,7 +191,9 @@ module PROGRAM_TEST ();
     initial begin
         string  hex_file;
         integer timeout_cycles;
-        integer n;
+        integer n, word_count;
+
+        logic [31:0] words [0:MAX_WORDS-1];
 
         // --- Аргументы ---
         if (!$value$plusargs("HEX_FILE=%s", hex_file)) begin
@@ -145,51 +204,86 @@ module PROGRAM_TEST ();
         if (!$value$plusargs("TIMEOUT=%d", timeout_cycles))
             timeout_cycles = 5_000_000;
 
-        // --- Ждём готовности MC (MIG_MODEL калибруется быстро) ---
-        @(posedge clk);
-        n = 0;
-        while (dut.mc_ready !== 1'b1 && n < 2000) begin
-            @(posedge clk); n = n + 1;
-        end
-        if (dut.mc_ready !== 1'b1) begin
-            $display("ERROR: MEMORY_CONTROLLER not ready after reset");
-            $fclose(out_fd);
-            $finish;
-        end
+        // --- Загрузить hex в массив ---
+        for (n = 0; n < MAX_WORDS; n++) words[n] = 32'h0000_0013; // NOP
+        $readmemh(hex_file, words);
 
-        // --- Загружаем программу в ROM (instruction fetch) ---
-        $readmemh(hex_file, dut.rom);
-
-        // --- Также пре-инициализируем MIG_MODEL для data-доступа к .text/.rodata ---
-        // CPU использует Harvard-like архитектуру: инструкции из ROM, данные через MC.
-        // Строки (.rodata) и константы (.text) читаются через data port (MEMORY_CONTROLLER).
-        // Загружаем те же слова в MIG_MODEL чтобы data reads возвращали правильные байты.
-        // MIG_MODEL.mem индексируется по addr[IDX_BITS+3:4]; ROM занимает адреса 0..ROM_DEPTH*4.
-        // Каждая 16-байтная строка кэша соответствует 4 ROM-словам.
-        begin : preload_mig
-            integer w, chunk;
-            logic [127:0] chunk_data;
-            for (chunk = 0; chunk < ROM_DEPTH / 4; chunk++) begin
-                chunk_data = {dut.rom[chunk*4+3],
-                              dut.rom[chunk*4+2],
-                              dut.rom[chunk*4+1],
-                              dut.rom[chunk*4+0]};
-                mig.mem[chunk] = chunk_data;
+        // Посчитать непустые слова
+        word_count = 0;
+        for (n = MAX_WORDS - 1; n >= 0; n = n - 1) begin
+            if (words[n] !== 32'h0000_0013) begin
+                word_count = n + 1;
+                n = -1; // break
             end
         end
-        @(posedge clk); #1;
+        if (word_count == 0) word_count = 1;
+        $display("PROGRAM_TEST: loading %0d words from %s", word_count, hex_file);
 
-        // --- Запуск CPU ---
+        // --- Снимаем reset, ждём готовности ---
+        #100;
         reset = 0;
+        #100;
 
-        // --- Ждём EBREAK (завершение программы) или timeout ---
+        // --- HALT CPU ---
+        dbg_halt();
+        repeat(50) @(posedge clk);
+        $display("DEBUG after HALT: halted=%b PC=0x%08X", dut.dbg_is_halted, dut.cpu.pc);
+
+        // --- Загрузить программу через WRITE_MEM ---
+        for (n = 0; n < word_count; n++) begin
+            dbg_write_mem(n * 4, words[n]);
+        end
+
+        // --- Verify write: read back addr 0 through debug ---
+        uart_send(8'h04); // CMD_READ_MEM
+        uart_send(8'h00); uart_send(8'h00); uart_send(8'h00); uart_send(8'h00);
+        begin
+            integer timeout2;
+            logic [31:0] readback;
+            readback = 0;
+            timeout2 = 0;
+            // collect 4 bytes response
+            for (int bi = 0; bi < 4 && timeout2 < 50000; ) begin
+                @(posedge clk); #1;
+                if (dut.dbg_ctrl.dbg.tx_valid_r) begin
+                    readback[bi*8 +: 8] = dut.dbg_ctrl.dbg.tx_byte_r;
+                    bi = bi + 1;
+                end
+                timeout2 = timeout2 + 1;
+            end
+            $display("DEBUG: readback addr 0x00 = 0x%08X (expect 0x%08X)", readback, words[0]);
+        end
+
+        // --- Reset PC to 0 ---
+        $display("DEBUG before RESET_PC: halted=%b PC=0x%08X", dut.dbg_is_halted, dut.cpu.pc);
+        dbg_reset_pc(32'h0);
+        repeat(50) @(posedge clk);
+        $display("DEBUG after RESET_PC: halted=%b PC=0x%08X", dut.dbg_is_halted, dut.cpu.pc);
+
+        // --- Check MC state before resume ---
+        $display("DEBUG before RESUME: bus_ready=%b mc_ready=%b pipeline=%0d",
+                 dut.bus_ready, dut.mc_ready, dut.pipeline.state);
+
+        // --- RESUME CPU ---
+        dbg_resume();
+
+        // --- Debug: покажем состояние после resume ---
+        repeat(100) @(posedge clk);
+        $display("DEBUG: PC=0x%08X instr=0x%08X halted=%b pipeline_state=%0d",
+                 dut.cpu.pc, dut.pipeline.instr_reg,
+                 dut.dbg_is_halted, dut.pipeline.state);
+        $display("DEBUG: mc_ready=%b mc_addr=0x%07X mc_rd=%b mc_wr=%b",
+                 dut.pbus.controller_ready, dut.pipeline.mc_address,
+                 dut.pipeline.mc_read_trigger, dut.pipeline.mc_write_trigger);
+
+        // --- Ждём EBREAK или timeout ---
         n = 0;
         while (dut.dbg_is_halted !== 1'b1 && n < timeout_cycles) begin
             @(posedge clk);
             n = n + 1;
         end
 
-        // --- Закрываем выходной файл ---
+        // --- Результат ---
         $fflush(out_fd);
         $fclose(out_fd);
 
@@ -197,15 +291,15 @@ module PROGRAM_TEST ();
             $display("PROGRAM_TEST TIMEOUT after %0d cycles", n);
             $finish(1);
         end else begin
-            $display("PROGRAM_TEST OK: %0d cycles, %0d bytes output → %s",
+            $display("PROGRAM_TEST OK: %0d cycles, %0d bytes output -> %s",
                      n, out_byte_count, out_file);
             $finish(0);
         end
     end
 
-    // Аварийный аппаратный таймаут
+    // Аварийный таймаут
     initial begin
-        #500_000_000;
+        #2_000_000_000;
         $display("PROGRAM_TEST HARD TIMEOUT");
         $fclose(out_fd);
         $finish(1);

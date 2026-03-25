@@ -34,7 +34,10 @@ module CPU_PIPELINE_ADAPTER (
     output logic [31:0] mc_write_value,
     output logic [3:0]  mc_mask,
     input  wire  [31:0] mc_read_value,
-    input  wire         mc_controller_ready
+    input  wire         mc_controller_ready,
+
+    // Flush: сбросить pipeline (при dbg_set_pc)
+    input  wire         flush
 );
     typedef enum logic [2:0] {
         S_FETCH_TRIG,
@@ -79,14 +82,14 @@ module CPU_PIPELINE_ADAPTER (
         case (state)
             S_FETCH_TRIG: begin
                 mc_address      = instr_addr[27:0];
-                mc_read_trigger = 1'b1;
+                mc_read_trigger = mc_controller_ready;
                 mc_mask         = 4'b1111;
             end
 
             S_DATA_TRIG: begin
                 mc_address       = mem_addr[27:0];
-                mc_read_trigger  = mem_read_en;
-                mc_write_trigger = mem_write_en;
+                mc_read_trigger  = mem_read_en & mc_controller_ready;
+                mc_write_trigger = mem_write_en & mc_controller_ready;
                 mc_write_value   = mem_write_data;
                 mc_mask          = mem_byte_mask;
             end
@@ -99,15 +102,17 @@ module CPU_PIPELINE_ADAPTER (
     // FSM
     // ---------------------------------------------------------------
     always_ff @(posedge clk) begin
-        if (reset) begin
+        if (reset || flush) begin
             state     <= S_FETCH_TRIG;
             instr_reg <= 32'h0000_0013; // NOP
             data_reg  <= 32'b0;
         end else begin
             case (state)
                 S_FETCH_TRIG: begin
-                    // trigger выставлен комбинационно, переходим к ожиданию
-                    state <= S_FETCH_WAIT;
+                    // trigger выставлен комбинационно, но только если MC ready
+                    if (mc_controller_ready)
+                        state <= S_FETCH_WAIT;
+                    // иначе остаёмся — trigger будет повторяться
                 end
 
                 S_FETCH_WAIT: begin
@@ -129,8 +134,9 @@ module CPU_PIPELINE_ADAPTER (
                 end
 
                 S_DATA_TRIG: begin
-                    // trigger выставлен комбинационно
-                    state <= S_DATA_WAIT;
+                    // trigger выставлен комбинационно, но только если MC ready
+                    if (mc_controller_ready)
+                        state <= S_DATA_WAIT;
                 end
 
                 S_DATA_WAIT: begin

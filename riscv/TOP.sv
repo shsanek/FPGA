@@ -238,7 +238,8 @@ module TOP #(
         .mc_write_value    (bus_wr_data),
         .mc_mask           (bus_mask),
         .mc_read_value     (bus_rd_data),
-        .mc_controller_ready(bus_ready)
+        .mc_controller_ready(bus_ready),
+        .flush             (dbg_set_pc)
     );
 
     // --- PERIPHERAL_BUS ---
