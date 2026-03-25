@@ -154,7 +154,6 @@ module FPGA_TOP (
         .CHUNK_PART   (128),
         .ADDRESS_SIZE (28),
         .DATA_SIZE    (32),
-        .ROM_DEPTH    (4096),
         .DEBUG_ENABLE (1)
     ) u_top (
         .clk                    (clk_cpu),

@@ -27,7 +27,6 @@ module TOP #(
     parameter CHUNK_PART   = 128,
     parameter ADDRESS_SIZE = 28,
     parameter DATA_SIZE    = 32,
-    parameter ROM_DEPTH    = 256,
     parameter DEBUG_ENABLE = 1
 )(
     input  wire clk,
@@ -57,30 +56,18 @@ module TOP #(
     localparam BIT_PERIOD = CLOCK_FREQ / BAUD_RATE;
 
     // ---------------------------------------------------------------
-    // Instruction ROM (слова по 32 бит, default = NOP)
-    // В тестбенче содержимое задаётся через иерархический доступ:
-    //   dut.rom[i] = instruction;
-    // Для синтеза используй $readmemh("program.hex", rom) или замени
-    // на Block RAM IP.
+    // CPU ↔ CPU_PIPELINE_ADAPTER
     // ---------------------------------------------------------------
-    logic [31:0] rom [0:ROM_DEPTH-1];
-    wire  [31:0] instr_addr;
-    wire  [31:0] instr_data = rom[instr_addr[$clog2(ROM_DEPTH)+1 : 2]];
-
-    initial begin
-        for (int i = 0; i < ROM_DEPTH; i++) rom[i] = 32'h0000_0013; // NOP
-    end
-
-    // ---------------------------------------------------------------
-    // CPU ↔ CPU_DATA_ADAPTER
-    // ---------------------------------------------------------------
+    wire [31:0] instr_addr;
+    wire [31:0] instr_data;
+    wire        instr_stall_w;
     wire        cpu_mem_read_en, cpu_mem_write_en;
     wire [31:0] cpu_mem_addr, cpu_mem_write_data, cpu_mem_read_data;
     wire [3:0]  cpu_mem_byte_mask;
     wire        cpu_mem_stall;
 
     // ---------------------------------------------------------------
-    // CPU_DATA_ADAPTER ↔ PERIPHERAL_BUS
+    // CPU_PIPELINE_ADAPTER ↔ PERIPHERAL_BUS
     // ---------------------------------------------------------------
     wire [27:0] bus_addr;
     wire        bus_rd, bus_wr;
@@ -217,7 +204,7 @@ module TOP #(
         .mem_byte_mask     (cpu_mem_byte_mask),
         .mem_read_data     (cpu_mem_read_data),
         .mem_stall         (cpu_mem_stall),
-        .instr_stall       (1'b0),
+        .instr_stall       (instr_stall_w),
         .dbg_halt          (dbg_halt),
         .dbg_step          (dbg_step),
         .dbg_is_halted     (dbg_is_halted),
@@ -225,17 +212,20 @@ module TOP #(
         .dbg_current_instr (dbg_current_instr)
     );
 
-    // --- CPU_DATA_ADAPTER ---
-    CPU_DATA_ADAPTER adapter (
+    // --- CPU_PIPELINE_ADAPTER (instruction fetch + data access) ---
+    CPU_PIPELINE_ADAPTER pipeline (
         .clk               (clk),
         .reset             (reset),
+        .instr_addr        (instr_addr),
+        .instr_data        (instr_data),
+        .instr_stall       (instr_stall_w),
         .mem_read_en       (cpu_mem_read_en),
         .mem_write_en      (cpu_mem_write_en),
         .mem_addr          (cpu_mem_addr),
         .mem_write_data    (cpu_mem_write_data),
         .mem_byte_mask     (cpu_mem_byte_mask),
         .mem_read_data     (cpu_mem_read_data),
-        .stall             (cpu_mem_stall),
+        .mem_stall         (cpu_mem_stall),
         .mc_address        (bus_addr),
         .mc_read_trigger   (bus_rd),
         .mc_write_trigger  (bus_wr),
