@@ -7,6 +7,7 @@ module CHUNK_STORAGE_TEST;
 
   // Clock: 100 MHz
   reg clk;
+  reg reset;
   initial begin clk = 0; forever #5 clk = ~clk; end
 
   // DUT ports
@@ -38,6 +39,7 @@ module CHUNK_STORAGE_TEST;
     .ADDRESS_SIZE (ADDRESS_SIZE)
   ) dut (
     .clk                     (clk),
+    .reset                   (reset),
     .address                 (address),
     .mask                    (mask),
     .write_trigger           (write_trigger),
@@ -89,6 +91,9 @@ module CHUNK_STORAGE_TEST;
   initial begin
     $dumpfile("CHUNK_STORAGE_TEST.vcd");
     $dumpvars(0, CHUNK_STORAGE_TEST);
+
+    // Reset sequence
+    reset = 1; #20; reset = 0;
 
     // Drive defaults at time 0 — before any posedge
     address         = ADDR_A;

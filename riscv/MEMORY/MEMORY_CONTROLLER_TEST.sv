@@ -6,6 +6,7 @@ module MEMORY_CONTROLLER_TEST;
   localparam ADDRESS_SIZE  = 28;
 
   reg                         clk;
+  reg                         reset;
   initial clk = 0;
   always #5 clk = ~clk;
 
@@ -37,6 +38,7 @@ module MEMORY_CONTROLLER_TEST;
     .ADDRESS_SIZE (ADDRESS_SIZE)
   ) dut (
     .clk                       (clk),
+    .reset                     (reset),
     .ram_controller_ready      (ram_controller_ready),
     .ram_write_trigger         (ram_write_trigger),
     .ram_write_value           (ram_write_value),
@@ -83,6 +85,7 @@ module MEMORY_CONTROLLER_TEST;
   initial begin
     $dumpfile("MEMORY_CONTROLLER_TEST.vcd");
     $dumpvars(0, MEMORY_CONTROLLER_TEST);
+    reset = 1; #20; reset = 0;
     #10;
 
     // init — hold ram_controller_ready=0 so NORMAL does not fire a

@@ -8,6 +8,7 @@ module CHUNK_STORAGE_4_POOL_TEST;
 
   // Тактовый сигнал
   reg clk;
+  reg reset;
   initial begin
     clk = 0;
     forever #5 clk = ~clk;
@@ -46,6 +47,7 @@ module CHUNK_STORAGE_4_POOL_TEST;
     .ADDRESS_SIZE (ADDRESS_SIZE)
   ) dut (
     .clk                      (clk),
+    .reset                    (reset),
     .address                  (address),
     .mask                     (mask),
     .write_trigger            (write_trigger),
@@ -65,6 +67,7 @@ module CHUNK_STORAGE_4_POOL_TEST;
   initial begin
     $dumpfile("CHUNK_STORAGE_4_POOL_TEST.vcd");
     $dumpvars(0, CHUNK_STORAGE_4_POOL_TEST);
+    reset = 1; #20; reset = 0;
     @(posedge clk);
 
     // --- 1) Инициализация ---

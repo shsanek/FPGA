@@ -21,3 +21,5 @@ vivado/project_1/project_1.sim/
 *.ltx
 xsim.dir/
 *.pb
+*.wdb
+dfx_runtime.txt

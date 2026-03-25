@@ -76,18 +76,24 @@ module DEBUG_CONTROLLER_TEST();
     logic [1:0] mc_cnt;
     logic       mc_rd_prev, mc_wr_prev;
     always_ff @(posedge clk) begin
-        mc_ready   <= 0;
-        mc_rd_prev <= mc_rd_w;
-        mc_wr_prev <= mc_wr_w;
-        // Запускаем только по фронту (чтобы не сбрасывать счётчик каждый цикл)
-        if ((mc_rd_w && !mc_rd_prev) || (mc_wr_w && !mc_wr_prev)) begin
-            mc_cnt <= 3;
-        end else if (mc_cnt > 0) begin
-            mc_cnt <= mc_cnt - 1;
-            if (mc_cnt == 1) mc_ready <= 1;
+        if (reset) begin
+            mc_cnt     <= 0;
+            mc_rd_prev <= 0;
+            mc_wr_prev <= 0;
+            mc_ready   <= 0;
+        end else begin
+            mc_ready   <= 0;
+            mc_rd_prev <= mc_rd_w;
+            mc_wr_prev <= mc_wr_w;
+            // Запускаем только по фронту (чтобы не сбрасывать счётчик каждый цикл)
+            if ((mc_rd_w && !mc_rd_prev) || (mc_wr_w && !mc_wr_prev)) begin
+                mc_cnt <= 3;
+            end else if (mc_cnt > 0) begin
+                mc_cnt <= mc_cnt - 1;
+                if (mc_cnt == 1) mc_ready <= 1;
+            end
         end
     end
-    initial begin mc_cnt = 0; mc_rd_prev = 0; mc_wr_prev = 0; end
 
     // ---------------------------------------------------------------
     // Вспомогательные задачи

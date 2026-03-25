@@ -295,6 +295,7 @@ module TOP #(
         .ADDRESS_SIZE(ADDRESS_SIZE)
     ) mem_ctrl (
         .clk                 (clk),
+        .reset               (reset),
         .ram_controller_ready(ram_ready),
         .ram_write_trigger   (ram_wr_trig),
         .ram_write_value     (ram_wr_val),

@@ -5,6 +5,7 @@ module MEMORY_CONTROLLER#(
     parameter ADDRESS_SIZE = 28
 )(
     input wire clk,
+    input wire reset,
 
     // RAM
 
@@ -109,88 +110,88 @@ module MEMORY_CONTROLLER#(
     // LRU order_tick: age cache entries while controller is busy
     wire order_tick = (internal_state != MEMORY_CONTROLLER_STATE_NORMAL);
 
-    initial begin
-        internal_write_trigger = 0;
-        internal_state = MEMORY_CONTROLLER_STATE_NORMAL;
-        new_data_save = 0;
-        ram_write_trigger = 0;
-        ram_read_trigger = 0;
-        had_dirty_evict = 0;
-        dbg_active  = 0;
-        dbg_ready_r = 0;
-    end
-
     always_ff @(posedge clk) begin
-        dbg_ready_r <= 0;  // default: pulse only 1 такт
-
-        // Захватить debug-запрос (приоритет над CPU)
-        if (!dbg_active && (dbg_read_trigger || dbg_write_trigger) &&
-            (internal_state == MEMORY_CONTROLLER_STATE_NORMAL) && ram_controller_ready) begin
-            dbg_active <= 1;
-        end
-
-        // Debug-операция завершена когда контроллер вернулся в NORMAL+ready
-        if (dbg_active &&
-            (internal_state == MEMORY_CONTROLLER_STATE_NORMAL) && ram_controller_ready &&
-            !(dbg_read_trigger || dbg_write_trigger)) begin
-            dbg_active  <= 0;
-            dbg_ready_r <= 1;
-        end
-
-        if (internal_state == MEMORY_CONTROLLER_STATE_SAVE_DATA) begin
-            new_data_save     <= 0;
-            ram_write_trigger <= 0;   // clear the 1-cycle write pulse sent in WATING
-            if (had_dirty_evict)
-                internal_state <= MEMORY_CONTROLLER_STATE_WAIT_DIRTY;
-            else if (internal_write_trigger)
-                internal_state <= MEMORY_CONTROLLER_STATE_WRITE_DATA;
-            else
-                internal_state <= MEMORY_CONTROLLER_STATE_NORMAL;
-
-        end else if (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) begin
+        if (reset) begin
             internal_write_trigger <= 0;
-            internal_state <= MEMORY_CONTROLLER_STATE_NORMAL;
+            internal_state         <= MEMORY_CONTROLLER_STATE_NORMAL;
+            new_data_save          <= 0;
+            ram_write_trigger      <= 0;
+            ram_read_trigger       <= 0;
+            had_dirty_evict        <= 0;
+            dbg_active             <= 0;
+            dbg_ready_r            <= 0;
+        end else begin
+            dbg_ready_r <= 0;  // default: pulse only 1 такт
 
-        end else if (internal_state == MEMORY_CONTROLLER_STATE_WAIT_DIRTY) begin
-            // Wait until RAM controller finishes the dirty writeback.
-            // In real HW: ram_controller_ready drops after write trigger, then returns high.
-            // In stub tests where ready is always 1, we exit in 1 cycle (write was a pulse).
-            if (ram_controller_ready) begin
-                had_dirty_evict <= 0;
-                if (internal_write_trigger)
+            // Захватить debug-запрос (приоритет над CPU)
+            if (!dbg_active && (dbg_read_trigger || dbg_write_trigger) &&
+                (internal_state == MEMORY_CONTROLLER_STATE_NORMAL) && ram_controller_ready) begin
+                dbg_active <= 1;
+            end
+
+            // Debug-операция завершена когда контроллер вернулся в NORMAL+ready
+            if (dbg_active &&
+                (internal_state == MEMORY_CONTROLLER_STATE_NORMAL) && ram_controller_ready &&
+                !(dbg_read_trigger || dbg_write_trigger)) begin
+                dbg_active  <= 0;
+                dbg_ready_r <= 1;
+            end
+
+            if (internal_state == MEMORY_CONTROLLER_STATE_SAVE_DATA) begin
+                new_data_save     <= 0;
+                ram_write_trigger <= 0;   // clear the 1-cycle write pulse sent in WATING
+                if (had_dirty_evict)
+                    internal_state <= MEMORY_CONTROLLER_STATE_WAIT_DIRTY;
+                else if (internal_write_trigger)
                     internal_state <= MEMORY_CONTROLLER_STATE_WRITE_DATA;
                 else
                     internal_state <= MEMORY_CONTROLLER_STATE_NORMAL;
-            end
 
-        end else if (internal_state == MEMORY_CONTROLLER_STATE_NORMAL && ram_controller_ready) begin
-            if ((!internal_contains_address) && (eff_read_trigger || eff_write_trigger)) begin
-                // Cache miss — сохранить запрос, подгрузить из RAM
-                internal_write_trigger <= eff_write_trigger;
-                internal_address       <= eff_address;
-                internal_mask          <= eff_mask;
-                internal_write_data    <= eff_write_value;
+            end else if (internal_state == MEMORY_CONTROLLER_STATE_WRITE_DATA) begin
+                internal_write_trigger <= 0;
+                internal_state <= MEMORY_CONTROLLER_STATE_NORMAL;
 
-                ram_read_trigger  <= 1;
-                ram_read_address  <= { address[ADDRESS_SIZE-1:4], 4'b0000 };
-                internal_state    <= MEMORY_CONTROLLER_STATE_WATING;
-            end
-
-        end else if (internal_state == MEMORY_CONTROLLER_STATE_WATING) begin
-            ram_read_trigger <= 0;
-            if (ram_read_value_ready) begin
-                // Data arrived from RAM. NOW select victim and capture its dirty state
-                // before new_data_save evicts it into that slot.
-                if (save_need_flag) begin
-                    ram_write_trigger <= 1;
-                    ram_write_value   <= save_data;
-                    ram_write_address <= save_address;
-                    had_dirty_evict   <= 1;
+            end else if (internal_state == MEMORY_CONTROLLER_STATE_WAIT_DIRTY) begin
+                // Wait until RAM controller finishes the dirty writeback.
+                // In real HW: ram_controller_ready drops after write trigger, then returns high.
+                // In stub tests where ready is always 1, we exit in 1 cycle (write was a pulse).
+                if (ram_controller_ready) begin
+                    had_dirty_evict <= 0;
+                    if (internal_write_trigger)
+                        internal_state <= MEMORY_CONTROLLER_STATE_WRITE_DATA;
+                    else
+                        internal_state <= MEMORY_CONTROLLER_STATE_NORMAL;
                 end
-                new_address   <= ram_read_address;
-                new_data      <= ram_read_value;
-                new_data_save <= 1;
-                internal_state <= MEMORY_CONTROLLER_STATE_SAVE_DATA;
+
+            end else if (internal_state == MEMORY_CONTROLLER_STATE_NORMAL && ram_controller_ready) begin
+                if ((!internal_contains_address) && (eff_read_trigger || eff_write_trigger)) begin
+                    // Cache miss — сохранить запрос, подгрузить из RAM
+                    internal_write_trigger <= eff_write_trigger;
+                    internal_address       <= eff_address;
+                    internal_mask          <= eff_mask;
+                    internal_write_data    <= eff_write_value;
+
+                    ram_read_trigger  <= 1;
+                    ram_read_address  <= { address[ADDRESS_SIZE-1:4], 4'b0000 };
+                    internal_state    <= MEMORY_CONTROLLER_STATE_WATING;
+                end
+
+            end else if (internal_state == MEMORY_CONTROLLER_STATE_WATING) begin
+                ram_read_trigger <= 0;
+                if (ram_read_value_ready) begin
+                    // Data arrived from RAM. NOW select victim and capture its dirty state
+                    // before new_data_save evicts it into that slot.
+                    if (save_need_flag) begin
+                        ram_write_trigger <= 1;
+                        ram_write_value   <= save_data;
+                        ram_write_address <= save_address;
+                        had_dirty_evict   <= 1;
+                    end
+                    new_address   <= ram_read_address;
+                    new_data      <= ram_read_value;
+                    new_data_save <= 1;
+                    internal_state <= MEMORY_CONTROLLER_STATE_SAVE_DATA;
+                end
             end
         end
     end
@@ -202,6 +203,7 @@ module MEMORY_CONTROLLER#(
         .ADDRESS_SIZE(ADDRESS_SIZE)
     ) storage_pool (
         .clk                   (clk),
+        .reset                 (reset),
         .address               (output_address),
         .mask                  (output_mask),
 

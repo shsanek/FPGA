@@ -14,10 +14,12 @@ module VALUE_STORAGE_TEST();
     logic[3:0] leds;
     logic timer_active_trigger;
 
+    logic reset;
     int error = 0;
 
     VALUE_STORAGE dut (
         .clk(clk),
+        .reset(reset),
         .buttons(buttons),
         .io_input_trigger(io_input_trigger),
         .io_input_value(io_input_value),
@@ -37,6 +39,15 @@ module VALUE_STORAGE_TEST();
     initial begin
         $dumpfile("VALUE_STORAGE.vcd");
         $dumpvars(0, VALUE_STORAGE_TEST);
+
+        reset = 1;
+        buttons = 4'd0;
+        io_input_trigger = 1'b0;
+        io_input_value = 8'd0;
+        io_read_ready_trigger = 1'b1;
+
+        #15
+        reset = 0;
 
         #5
 

@@ -5,6 +5,7 @@ module CHUNK_STORAGE_4_POOL#(
     parameter ADDRESS_SIZE = 28
 )(
     input wire clk,
+    input wire reset,
 
     // COMMON
     input wire[ADDRESS_SIZE - 1:0] address,
@@ -104,6 +105,7 @@ module CHUNK_STORAGE_4_POOL#(
                 .ADDRESS_SIZE(ADDRESS_SIZE)
             ) storage_inst (
                 .clk                   (clk),
+                .reset                 (reset),
                 .address               (address),
                 .mask                  (mask),
 
