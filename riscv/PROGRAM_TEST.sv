@@ -110,16 +110,40 @@ module PROGRAM_TEST ();
     endtask
 
     // ---------------------------------------------------------------
-    // Ждать ответ от DEBUG_CONTROLLER (внутренний TX)
+    // Debug response FIFO — ловим все tx_valid_r в background
     // ---------------------------------------------------------------
+    logic [7:0] dbg_resp_fifo [0:63];
+    integer     dbg_resp_wr_ptr = 0;
+    integer     dbg_resp_rd_ptr = 0;
+
+    always @(posedge clk) begin
+        if (dut.dbg_ctrl.dbg.tx_valid_r) begin
+            dbg_resp_fifo[dbg_resp_wr_ptr[5:0]] = dut.dbg_ctrl.dbg.tx_byte_r;
+            dbg_resp_wr_ptr = dbg_resp_wr_ptr + 1;
+        end
+    end
+
     task wait_dbg_response(input integer n_bytes);
-        integer timeout, got;
-        got = 0;
+        integer timeout;
         timeout = 0;
-        while (got < n_bytes && timeout < 50000) begin
-            @(posedge clk); #1;
-            if (dut.dbg_ctrl.dbg.tx_valid_r) got = got + 1;
+        while ((dbg_resp_wr_ptr - dbg_resp_rd_ptr) < n_bytes && timeout < 100000) begin
+            @(posedge clk);
             timeout = timeout + 1;
+        end
+        dbg_resp_rd_ptr = dbg_resp_rd_ptr + n_bytes;
+    endtask
+
+    task read_dbg_response(input integer n_bytes, output logic [31:0] result);
+        integer timeout, i;
+        result = 0;
+        timeout = 0;
+        while ((dbg_resp_wr_ptr - dbg_resp_rd_ptr) < n_bytes && timeout < 100000) begin
+            @(posedge clk);
+            timeout = timeout + 1;
+        end
+        for (i = 0; i < n_bytes; i++) begin
+            result[i*8 +: 8] = dbg_resp_fifo[dbg_resp_rd_ptr[5:0]];
+            dbg_resp_rd_ptr = dbg_resp_rd_ptr + 1;
         end
     endtask
 
@@ -255,19 +279,8 @@ module PROGRAM_TEST ();
         uart_send(8'h04); // CMD_READ_MEM
         uart_send(8'h00); uart_send(8'h00); uart_send(8'h00); uart_send(8'h00);
         begin
-            integer timeout2;
             logic [31:0] readback;
-            readback = 0;
-            timeout2 = 0;
-            // collect 4 bytes response
-            for (int bi = 0; bi < 4 && timeout2 < 50000; ) begin
-                @(posedge clk); #1;
-                if (dut.dbg_ctrl.dbg.tx_valid_r) begin
-                    readback[bi*8 +: 8] = dut.dbg_ctrl.dbg.tx_byte_r;
-                    bi = bi + 1;
-                end
-                timeout2 = timeout2 + 1;
-            end
+            read_dbg_response(4, readback);
             $display("DEBUG: readback addr 0x00 = 0x%08X (expect 0x%08X)", readback, words[0]);
         end
 
@@ -292,6 +305,17 @@ module PROGRAM_TEST ();
         $display("DEBUG: mc_ready=%b mc_addr=0x%07X mc_rd=%b mc_wr=%b",
                  dut.pbus.controller_ready, dut.pipeline.mc_address,
                  dut.pipeline.mc_read_trigger, dut.pipeline.mc_write_trigger);
+
+        // --- Watch first few fetches ---
+        for (int fi = 0; fi < 5; fi++) begin
+            @(posedge clk); #1;
+            while (dut.pipeline.state != 2) begin  // 2 = S_EXECUTE
+                @(posedge clk); #1;
+                if ($time > 500000) begin fi = 5; break; end // safety
+            end
+            $display("DEBUG fetch[%0d]: PC=0x%08X instr=0x%08X state=%0d",
+                     fi, dut.cpu.pc, dut.pipeline.instr_reg, dut.pipeline.state);
+        end
 
         // --- Ждём EBREAK или timeout ---
         n = 0;

@@ -57,8 +57,9 @@ module DEBUG_CONTROLLER_TEST();
         .mc_dbg_address   (mc_addr_w),
         .mc_dbg_read_trigger (mc_rd_w),
         .mc_dbg_write_trigger(mc_wr_w),
+        .dbg_bus_request  (),
+        .dbg_bus_granted  (1'b1),
         .mc_dbg_write_data(),
-        .mc_dbg_mask      (),
         .mc_dbg_read_data (mc_rdata),
         .mc_dbg_ready     (mc_ready),
         // CPU passthrough — в этом тесте не используется

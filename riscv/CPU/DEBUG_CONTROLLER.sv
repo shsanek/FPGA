@@ -38,12 +38,13 @@ module DEBUG_CONTROLLER #(
     input  wire [31:0] dbg_current_pc,
     input  wire [31:0] dbg_current_instr,
 
-    // MEMORY_CONTROLLER debug-порты
+    // Bus debug-порты (мультиплексируются в TOP.sv когда pipeline paused)
+    output wire                    dbg_bus_request,  // запрос остановки pipeline
+    input  wire                    dbg_bus_granted,  // pipeline остановлен, bus свободен
     output wire [ADDRESS_SIZE-1:0] mc_dbg_address,
     output wire                    mc_dbg_read_trigger,
     output wire                    mc_dbg_write_trigger,
     output wire [DATA_SIZE-1:0]    mc_dbg_write_data,
-    output wire [MASK_SIZE-1:0]    mc_dbg_mask,
     input  wire [DATA_SIZE-1:0]    mc_dbg_read_data,
     input  wire                    mc_dbg_ready,
 
@@ -65,11 +66,16 @@ module DEBUG_CONTROLLER #(
     localparam CMD_WRITE_MEM = 8'h05;
     localparam CMD_RESET_PC  = 8'h06;
 
-    typedef enum logic [2:0] {
+    typedef enum logic [3:0] {
         S_IDLE,
         S_RECV,
+        S_PAUSE_WAIT,   // ждём paused от pipeline
         S_EXEC,
+        S_MEM_TRIG,     // выставляем trigger на bus
+        S_MEM_WAIT,     // ждём bus ready
+        S_MEM_DONE,     // операция завершена, готовим ответ
         S_HALT_WAIT,
+        S_RESUME,       // опускаем bus_request, pipeline продолжает
         S_SEND
     } DBG_STATE;
 
@@ -110,10 +116,14 @@ if (DEBUG_ENABLE) begin : dbg
     logic        set_pc_r;
     logic [31:0] new_pc_r;
 
-    assign dbg_halt   = halt_r;
-    assign dbg_step   = step_r;
-    assign dbg_set_pc = set_pc_r;
-    assign dbg_new_pc = new_pc_r;
+    // Bus request
+    logic bus_request_r;
+
+    assign dbg_halt        = halt_r;
+    assign dbg_step        = step_r;
+    assign dbg_set_pc      = set_pc_r;
+    assign dbg_new_pc      = new_pc_r;
+    assign dbg_bus_request = bus_request_r;
 
     assign cpu_rx_byte  = cpu_rx_byte_r;
     assign cpu_rx_valid = cpu_rx_valid_r;
@@ -122,7 +132,6 @@ if (DEBUG_ENABLE) begin : dbg
 
     assign mc_dbg_address       = mc_addr_r;
     assign mc_dbg_write_data    = mc_data_r;
-    assign mc_dbg_mask          = {MASK_SIZE{1'b1}};  // полное слово
     assign mc_dbg_read_trigger  = mc_read_r;
     assign mc_dbg_write_trigger = mc_write_r;
 
@@ -146,15 +155,16 @@ if (DEBUG_ENABLE) begin : dbg
 
     always_ff @(posedge clk) begin
         if (reset) begin
-            state      <= S_IDLE;
-            halt_r     <= 0;
-            step_r     <= 0;
-            set_pc_r   <= 0;
-            new_pc_r   <= 0;
-            mc_read_r  <= 0;
-            mc_write_r <= 0;
-            mc_addr_r  <= 0;
-            mc_data_r  <= 0;
+            state          <= S_IDLE;
+            halt_r         <= 0;
+            step_r         <= 0;
+            set_pc_r       <= 0;
+            new_pc_r       <= 0;
+            bus_request_r  <= 0;
+            mc_read_r      <= 0;
+            mc_write_r     <= 0;
+            mc_addr_r      <= 0;
+            mc_data_r      <= 0;
             tx_byte_r      <= 0;
             tx_valid_r     <= 0;
             cpu_rx_byte_r  <= 0;
@@ -167,15 +177,10 @@ if (DEBUG_ENABLE) begin : dbg
             payload_data   <= 0;
             for (int i = 0; i < 8; i++) resp[i] <= 0;
         end else begin
-            tx_valid_r     <= 0;   // по умолчанию не слать
-            step_r         <= 0;   // step — 1 такт импульс
-            set_pc_r       <= 0;   // set_pc — 1 такт импульс
-            // mc_read_r/mc_write_r: сбрасываем когда MC подтвердил
-            if (mc_dbg_ready) begin
-                mc_read_r  <= 0;
-                mc_write_r <= 0;
-            end
-            cpu_rx_valid_r <= 0;   // CPU RX — 1 такт импульс
+            tx_valid_r     <= 0;
+            step_r         <= 0;
+            set_pc_r       <= 0;
+            cpu_rx_valid_r <= 0;
 
             case (state)
 
@@ -183,30 +188,26 @@ if (DEBUG_ENABLE) begin : dbg
                 S_IDLE: begin
                     if (rx_valid) begin
                         if (rx_byte >= CMD_HALT && rx_byte <= CMD_RESET_PC) begin
-                            // Дебаг-команда
                             cmd <= rx_byte;
                             if (payload_bytes(rx_byte) == 0) begin
-                                byte_idx <= 0;
-                                state    <= S_EXEC;
+                                byte_idx       <= 0;
+                                bus_request_r  <= 1;  // запрашиваем bus
+                                state          <= S_PAUSE_WAIT;
                             end else begin
                                 byte_idx <= 0;
                                 state    <= S_RECV;
                             end
                         end else begin
-                            // Не дебаг-команда → форвардим в CPU RX буфер
                             cpu_rx_byte_r  <= rx_byte;
                             cpu_rx_valid_r <= 1;
                         end
                     end else if (cpu_tx_valid && tx_ready) begin
-                        // Форвардим CPU TX байт в физический UART
                         tx_byte_r  <= cpu_tx_byte;
                         tx_valid_r <= 1;
                     end
                 end
 
                 // -------------------------------------------------------
-                // Получаем payload little-endian: ADDR[7:0] … ADDR[31:24]
-                // затем DATA[7:0] … DATA[31:24]  (для WRITE_MEM)
                 S_RECV: begin
                     if (rx_valid) begin
                         if (byte_idx < 4)
@@ -215,11 +216,20 @@ if (DEBUG_ENABLE) begin : dbg
                             payload_data[(byte_idx-4)*8 +: 8] <= rx_byte;
 
                         if (byte_idx == payload_bytes(cmd) - 1) begin
-                            byte_idx <= 0;
-                            state    <= S_EXEC;
+                            byte_idx       <= 0;
+                            bus_request_r  <= 1;  // запрашиваем bus
+                            state          <= S_PAUSE_WAIT;
                         end else begin
                             byte_idx <= byte_idx + 1;
                         end
+                    end
+                end
+
+                // -------------------------------------------------------
+                // Ждём пока pipeline остановится
+                S_PAUSE_WAIT: begin
+                    if (dbg_bus_granted) begin
+                        state <= S_EXEC;
                     end
                 end
 
@@ -228,21 +238,24 @@ if (DEBUG_ENABLE) begin : dbg
                     case (cmd)
                         CMD_HALT: begin
                             halt_r      <= 1;
-                            state       <= S_HALT_WAIT;
-                        end
-
-                        CMD_RESUME: begin
-                            halt_r      <= 0;
+                            // bus_request остаётся 1 (CPU остановлен)
                             resp[0]     <= 8'hFF;
                             resp_len    <= 1;
                             resp_idx    <= 0;
                             state       <= S_SEND;
                         end
 
+                        CMD_RESUME: begin
+                            halt_r         <= 0;
+                            bus_request_r  <= 0;  // отпускаем bus
+                            resp[0]        <= 8'hFF;
+                            resp_len       <= 1;
+                            resp_idx       <= 0;
+                            state          <= S_SEND;
+                        end
+
                         CMD_STEP: begin
-                            // CPU должен быть уже halted; выдаём step
                             step_r      <= 1;
-                            // Ждём 2 такта чтобы CPU обновил PC/INSTR, потом шлём
                             resp[0]     <= dbg_current_pc[7:0];
                             resp[1]     <= dbg_current_pc[15:8];
                             resp[2]     <= dbg_current_pc[23:16];
@@ -259,14 +272,14 @@ if (DEBUG_ENABLE) begin : dbg
                         CMD_READ_MEM: begin
                             mc_addr_r   <= payload_addr[ADDRESS_SIZE-1:0];
                             mc_read_r   <= 1;
-                            state       <= S_HALT_WAIT;   // ждём mc_dbg_ready
+                            state       <= S_MEM_TRIG;
                         end
 
                         CMD_WRITE_MEM: begin
                             mc_addr_r   <= payload_addr[ADDRESS_SIZE-1:0];
                             mc_data_r   <= payload_data;
                             mc_write_r  <= 1;
-                            state       <= S_HALT_WAIT;   // ждём mc_dbg_ready
+                            state       <= S_MEM_TRIG;
                         end
 
                         CMD_RESET_PC: begin
@@ -288,43 +301,46 @@ if (DEBUG_ENABLE) begin : dbg
                 end
 
                 // -------------------------------------------------------
-                // Ожидание завершения асинхронной операции
+                // Trigger на bus (1 такт), потом ждём
+                S_MEM_TRIG: begin
+                    // mc_read_r/mc_write_r уже выставлены в S_EXEC
+                    state <= S_MEM_WAIT;
+                end
+
+                // -------------------------------------------------------
+                // Ждём bus ready
+                S_MEM_WAIT: begin
+                    if (mc_dbg_ready) begin
+                        mc_read_r  <= 0;
+                        mc_write_r <= 0;
+                        state      <= S_MEM_DONE;
+                    end
+                end
+
+                // -------------------------------------------------------
+                // Формируем ответ
+                S_MEM_DONE: begin
+                    if (cmd == CMD_READ_MEM) begin
+                        resp[0]   <= mc_dbg_read_data[7:0];
+                        resp[1]   <= mc_dbg_read_data[15:8];
+                        resp[2]   <= mc_dbg_read_data[23:16];
+                        resp[3]   <= mc_dbg_read_data[31:24];
+                        resp_len  <= 4;
+                    end else begin
+                        resp[0]   <= 8'hFF;
+                        resp_len  <= 1;
+                    end
+                    resp_idx <= 0;
+                    // Если не HALT — отпускаем bus
+                    if (!halt_r)
+                        bus_request_r <= 0;
+                    state <= S_SEND;
+                end
+
+                // -------------------------------------------------------
                 S_HALT_WAIT: begin
-                    case (cmd)
-                        CMD_HALT: begin
-                            if (dbg_is_halted) begin
-                                resp[0]  <= 8'hFF;
-                                resp_len <= 1;
-                                resp_idx <= 0;
-                                state    <= S_SEND;
-                            end
-                        end
-
-                        CMD_READ_MEM: begin
-                            if (mc_dbg_ready) begin
-                                mc_read_r <= 0;
-                                resp[0]   <= mc_dbg_read_data[7:0];
-                                resp[1]   <= mc_dbg_read_data[15:8];
-                                resp[2]   <= mc_dbg_read_data[23:16];
-                                resp[3]   <= mc_dbg_read_data[31:24];
-                                resp_len  <= 4;
-                                resp_idx  <= 0;
-                                state     <= S_SEND;
-                            end
-                        end
-
-                        CMD_WRITE_MEM: begin
-                            if (mc_dbg_ready) begin
-                                mc_write_r <= 0;
-                                resp[0]    <= 8'hFF;
-                                resp_len   <= 1;
-                                resp_idx   <= 0;
-                                state      <= S_SEND;
-                            end
-                        end
-
-                        default: state <= S_IDLE;
-                    endcase
+                    // Не используется в новом flow
+                    state <= S_IDLE;
                 end
 
                 // -------------------------------------------------------
@@ -346,21 +362,20 @@ if (DEBUG_ENABLE) begin : dbg
     end
 
 end else begin : no_dbg
-    // DEBUG_ENABLE=0 — заглушка
     assign dbg_halt             = 0;
     assign dbg_step             = 0;
     assign dbg_set_pc           = 0;
     assign dbg_new_pc           = 0;
+    assign dbg_bus_request      = 0;
     assign mc_dbg_address       = 0;
     assign mc_dbg_read_trigger  = 0;
     assign mc_dbg_write_trigger = 0;
     assign mc_dbg_write_data    = 0;
-    assign mc_dbg_mask          = 0;
     assign tx_byte              = 0;
     assign tx_valid             = 0;
     assign cpu_rx_byte          = 0;
     assign cpu_rx_valid         = 0;
-    assign cpu_tx_ready         = 1;  // всегда готов (нет дебага)
+    assign cpu_tx_ready         = 1;
 end
 endgenerate
 

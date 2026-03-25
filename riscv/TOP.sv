@@ -121,6 +121,8 @@ module TOP #(
     wire        dbg_set_pc;
     wire [31:0] dbg_new_pc;
     wire        dbg_is_halted;
+    wire        dbg_bus_request;
+    wire        pipeline_paused;
     wire [31:0] dbg_current_pc, dbg_current_instr;
 
     // ---------------------------------------------------------------
@@ -129,7 +131,6 @@ module TOP #(
     wire [ADDRESS_SIZE-1:0] mc_dbg_addr;
     wire        mc_dbg_rd, mc_dbg_wr;
     wire [31:0] mc_dbg_wr_data, mc_dbg_rd_data;
-    wire [MASK_SIZE-1:0]    mc_dbg_mask;
     wire        mc_dbg_ready;
 
     wire [7:0]  cpu_rx_byte;
@@ -192,11 +193,12 @@ module TOP #(
         .dbg_is_halted     (dbg_is_halted),
         .dbg_current_pc    (dbg_current_pc),
         .dbg_current_instr (dbg_current_instr),
+        .dbg_bus_request   (dbg_bus_request),
+        .dbg_bus_granted   (pipeline_paused),
         .mc_dbg_address    (mc_dbg_addr),
         .mc_dbg_read_trigger (mc_dbg_rd),
         .mc_dbg_write_trigger(mc_dbg_wr),
         .mc_dbg_write_data (mc_dbg_wr_data),
-        .mc_dbg_mask       (mc_dbg_mask),
         .mc_dbg_read_data  (mc_dbg_rd_data),
         .mc_dbg_ready      (mc_dbg_ready),
         .cpu_rx_byte       (cpu_rx_byte),
@@ -250,69 +252,22 @@ module TOP #(
         .mc_mask           (pipe_mask),
         .mc_read_value     (bus_rd_data),
         .mc_controller_ready(bus_ready),
-        .flush             (dbg_set_pc)
+        .flush             (dbg_set_pc),
+        .pause             (dbg_bus_request),
+        .paused            (pipeline_paused)
     );
 
-    // --- DEBUG/CPU MUX → PERIPHERAL_BUS ---
-    // When CPU is halted, debug controller owns the bus.
-    // FSM for debug memory access: proper handshake.
-    //   DBG_IDLE → (dbg trigger) → DBG_TRIG → DBG_WAIT → DBG_DONE → DBG_IDLE
-    typedef enum logic [2:0] {
-        DBG_IDLE,
-        DBG_TRIG,
-        DBG_SETTLE,
-        DBG_WAIT,
-        DBG_DONE
-    } DBG_MUX_STATE;
+    // --- DEBUG/CPU BUS MUX ---
+    // When pipeline paused, debug owns the bus. Simple combinational mux.
 
-    DBG_MUX_STATE dbg_mux_state;
-    logic [31:0]  dbg_rd_result;
+    assign bus_addr    = pipeline_paused ? mc_dbg_addr[27:0]     : pipe_addr;
+    assign bus_rd      = pipeline_paused ? mc_dbg_rd             : pipe_rd;
+    assign bus_wr      = pipeline_paused ? mc_dbg_wr             : pipe_wr;
+    assign bus_wr_data = pipeline_paused ? mc_dbg_wr_data        : pipe_wr_data;
+    assign bus_mask    = pipeline_paused ? {MASK_SIZE{1'b1}}     : pipe_mask;
 
-    always_ff @(posedge clk) begin
-        if (reset) begin
-            dbg_mux_state <= DBG_IDLE;
-            dbg_rd_result <= 32'b0;
-        end else begin
-            case (dbg_mux_state)
-                DBG_IDLE: begin
-                    if (dbg_is_halted && (mc_dbg_rd || mc_dbg_wr))
-                        dbg_mux_state <= DBG_TRIG;
-                end
-                DBG_TRIG: begin
-                    // trigger on bus for 1 cycle
-                    dbg_mux_state <= DBG_SETTLE;
-                end
-                DBG_SETTLE: begin
-                    // 1 cycle for MC to process trigger and update ready
-                    dbg_mux_state <= DBG_WAIT;
-                end
-                DBG_WAIT: begin
-                    if (bus_ready) begin
-                        dbg_rd_result <= bus_rd_data;
-                        dbg_mux_state <= DBG_DONE;
-                    end
-                end
-
-                DBG_DONE: begin
-                    dbg_mux_state <= DBG_IDLE;
-                end
-                DBG_DONE: begin
-                    dbg_mux_state <= DBG_IDLE;
-                end
-            endcase
-        end
-    end
-
-    wire dbg_bus_active = (dbg_mux_state == DBG_TRIG);
-
-    assign bus_addr    = dbg_is_halted ? mc_dbg_addr[27:0]       : pipe_addr;
-    assign bus_rd      = dbg_is_halted ? (dbg_bus_active && mc_dbg_rd) : pipe_rd;
-    assign bus_wr      = dbg_is_halted ? (dbg_bus_active && mc_dbg_wr) : pipe_wr;
-    assign bus_wr_data = dbg_is_halted ? mc_dbg_wr_data          : pipe_wr_data;
-    assign bus_mask    = dbg_is_halted ? {MASK_SIZE{1'b1}}       : pipe_mask;
-
-    assign mc_dbg_rd_data = dbg_rd_result;
-    assign mc_dbg_ready   = (dbg_mux_state == DBG_DONE);
+    assign mc_dbg_rd_data = bus_rd_data;
+    assign mc_dbg_ready   = pipeline_paused ? bus_ready : 1'b0;
 
     // --- PERIPHERAL_BUS ---
     PERIPHERAL_BUS pbus (

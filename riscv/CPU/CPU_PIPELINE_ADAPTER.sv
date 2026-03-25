@@ -2,13 +2,12 @@
 // через один порт MEMORY_CONTROLLER (time-multiplexed).
 //
 // Фазы:
-//   FETCH_TRIG  → FETCH_WAIT → EXECUTE → [DATA_TRIG → DATA_WAIT → DATA_DONE] → FETCH_TRIG
+//   FETCH_TRIG → FETCH_WAIT → EXECUTE → [DATA_TRIG → DATA_WAIT → DATA_DONE] → FETCH_TRIG
 //
-// FETCH: читает 32-бит слово по instr_addr из памяти, выдаёт instr_data.
-// EXECUTE: instr_stall=0, CPU исполняет инструкцию за 1 такт.
-//   Если CPU делает load/store (mem_read_en | mem_write_en) → DATA фаза.
-//   Иначе → сразу FETCH следующей инструкции.
-// DATA: выполняет load/store через тот же порт памяти.
+// Debug pause:
+//   Когда pause=1, pipeline завершает текущую фазу и переходит в S_PAUSED.
+//   В S_PAUSED: bus свободен (triggers=0), CPU stalled.
+//   Debug использует bus пока paused=1. Когда pause=0 → S_FETCH_TRIG.
 module CPU_PIPELINE_ADAPTER (
     input  wire        clk,
     input  wire        reset,
@@ -37,7 +36,11 @@ module CPU_PIPELINE_ADAPTER (
     input  wire         mc_controller_ready,
 
     // Flush: сбросить pipeline (при dbg_set_pc)
-    input  wire         flush
+    input  wire         flush,
+
+    // Debug pause: debug запрашивает bus
+    input  wire         pause,
+    output wire         paused
 );
     typedef enum logic [2:0] {
         S_FETCH_TRIG,
@@ -45,7 +48,8 @@ module CPU_PIPELINE_ADAPTER (
         S_EXECUTE,
         S_DATA_TRIG,
         S_DATA_WAIT,
-        S_DATA_DONE
+        S_DATA_DONE,
+        S_PAUSED
     } PIPELINE_STATE;
 
     PIPELINE_STATE state;
@@ -55,10 +59,11 @@ module CPU_PIPELINE_ADAPTER (
     // ---------------------------------------------------------------
     // Outputs to CPU
     // ---------------------------------------------------------------
-    assign instr_data  = instr_reg;
+    assign instr_data    = instr_reg;
     assign mem_read_data = data_reg;
+    assign paused        = (state == S_PAUSED);
 
-    // instr_stall: CPU stalled unless we're in EXECUTE (or DATA phases where CPU already executed)
+    // instr_stall: CPU stalled unless in EXECUTE or DATA phases
     assign instr_stall = (state != S_EXECUTE) &&
                          (state != S_DATA_TRIG) &&
                          (state != S_DATA_WAIT) &&
@@ -70,7 +75,7 @@ module CPU_PIPELINE_ADAPTER (
                        (state == S_EXECUTE && (mem_read_en || mem_write_en));
 
     // ---------------------------------------------------------------
-    // MC port mux (combinational)
+    // MC port (combinational) — off when paused
     // ---------------------------------------------------------------
     always_comb begin
         mc_address       = 28'b0;
@@ -94,6 +99,7 @@ module CPU_PIPELINE_ADAPTER (
                 mc_mask          = mem_byte_mask;
             end
 
+            // S_PAUSED: all triggers = 0 (default)
             default: ;
         endcase
     end
@@ -109,32 +115,33 @@ module CPU_PIPELINE_ADAPTER (
         end else begin
             case (state)
                 S_FETCH_TRIG: begin
-                    // trigger выставлен комбинационно, но только если MC ready
-                    if (mc_controller_ready)
+                    if (pause)
+                        state <= S_PAUSED;
+                    else if (mc_controller_ready)
                         state <= S_FETCH_WAIT;
-                    // иначе остаёмся — trigger будет повторяться
                 end
 
                 S_FETCH_WAIT: begin
                     if (mc_controller_ready) begin
                         instr_reg <= mc_read_value;
-                        state     <= S_EXECUTE;
+                        if (pause)
+                            state <= S_PAUSED;
+                        else
+                            state <= S_EXECUTE;
                     end
                 end
 
                 S_EXECUTE: begin
-                    // CPU исполняет инструкцию (instr_stall=0 на этот такт)
                     if (mem_read_en || mem_write_en) begin
-                        // Data access needed
                         state <= S_DATA_TRIG;
+                    end else if (pause) begin
+                        state <= S_PAUSED;
                     end else begin
-                        // No data access, fetch next
                         state <= S_FETCH_TRIG;
                     end
                 end
 
                 S_DATA_TRIG: begin
-                    // trigger выставлен комбинационно, но только если MC ready
                     if (mc_controller_ready)
                         state <= S_DATA_WAIT;
                 end
@@ -147,8 +154,15 @@ module CPU_PIPELINE_ADAPTER (
                 end
 
                 S_DATA_DONE: begin
-                    // mem_stall=0, CPU получает результат load
-                    state <= S_FETCH_TRIG;
+                    if (pause)
+                        state <= S_PAUSED;
+                    else
+                        state <= S_FETCH_TRIG;
+                end
+
+                S_PAUSED: begin
+                    if (!pause)
+                        state <= S_FETCH_TRIG;
                 end
             endcase
         end
