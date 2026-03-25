@@ -6,3 +6,16 @@
 *.elf
 __pycache__/
 *.pyc
+
+# Vivado
+vivado/project_1/project_1.cache/
+vivado/project_1/project_1.gen/
+vivado/project_1/project_1.hw/
+vivado/project_1/project_1.ip_user_files/
+vivado/project_1/project_1.runs/
+vivado/project_1/project_1.sim/
+*.jou
+*.log
+*.str
+*.bit
+*.ltx
