@@ -125,6 +125,7 @@ module CPU_MEMORY_INTEGRATION_TEST();
         .ADDRESS_SIZE(ADDRESS_SIZE)
     ) mem_ctrl (
         .clk                (clk),
+        .reset              (reset),
         .ram_controller_ready(ram_controller_ready),
         .ram_write_trigger  (ram_write_trigger),
         .ram_write_value    (ram_write_value),
@@ -175,6 +176,7 @@ module CPU_MEMORY_INTEGRATION_TEST();
         .ADDRESS_SIZE(ADDRESS_SIZE)
     ) ram_ctrl (
         .clk                    (clk),
+        .reset                  (reset),
         .controller_ready       (ram_controller_ready),
         .error                  (),
         .write_trigger          (ram_write_trigger),
@@ -234,9 +236,12 @@ module CPU_MEMORY_INTEGRATION_TEST();
     end
 
     initial begin
-        // Держим reset пока MEMORY_CONTROLLER не готов
+        // Assert reset briefly, then release and wait for memory to initialize
         reset = 1;
-        @(posedge clk);
+        repeat(5) @(posedge clk);
+        #1;
+        reset = 0;
+
         $display("Waiting for mc_controller_ready...");
         begin : wait_init
             integer n;
@@ -246,12 +251,10 @@ module CPU_MEMORY_INTEGRATION_TEST();
             end
         end
         $display("mc_controller_ready=%b after init", mc_controller_ready);
-        @(posedge clk); #1;
-        reset = 0;
 
-        // Ждём достаточно тактов для выполнения программы
-        // Каждая SW/LW — до ~50 тактов (CDC + MIG), итого ~7 инструкций × 50 = 350
-        repeat(500) @(posedge clk); #1;
+        // Wait for program execution after memory system is ready
+        // Each SW/LW takes ~50 cycles (CDC + MIG), 7 instructions x 50 = 350
+        repeat(1000) @(posedge clk); #1;
 
         // Проверяем регистры
         assert(cpu.regfile.reg_values[1] === 32'd42) else begin

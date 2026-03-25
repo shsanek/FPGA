@@ -23,3 +23,8 @@ xsim.dir/
 *.pb
 *.wdb
 dfx_runtime.txt
+*_out.txt
+run_xsim.bat
+run_prog_test.tcl
+vivado.log
+vivado.jou

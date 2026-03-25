@@ -7,8 +7,11 @@ module I_O_INPUT_CONTROLLER_TEST();
   int out_count = 0;
   int out_value = 0;
 
+  logic reset;
+
   I_O_INPUT_CONTROLLER #(.BIT_PERIOD(6)) dut (
     .clk(clk),
+    .reset(reset),
     .TXD(TXD),
     .io_input_trigger(io_input_trigger),
     .io_input_value(io_input_value)
@@ -27,7 +30,10 @@ module I_O_INPUT_CONTROLLER_TEST();
   initial begin
     $dumpfile("I_O_INPUT_CONTROLLER.vcd");
     $dumpvars(0, I_O_INPUT_CONTROLLER_TEST);
+    reset = 1;
     TXD = 1;
+    #20;
+    reset = 0;
     #80;
     TXD = 1;
     #60;

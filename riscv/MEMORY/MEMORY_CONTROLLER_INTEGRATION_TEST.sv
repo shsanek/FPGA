@@ -10,6 +10,7 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
     // clk=100 MHz (T=10ns), mig_ui_clk=125 MHz (T=8ns)
     reg clk;
     reg mig_ui_clk;
+    reg reset;
     initial begin clk = 0;        forever #5 clk        = ~clk;        end
     initial begin mig_ui_clk = 0; forever #4 mig_ui_clk = ~mig_ui_clk; end
 
@@ -66,6 +67,7 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         .ADDRESS_SIZE(ADDRESS_SIZE)
     ) dut (
         .clk                      (clk),
+        .reset                    (reset),
         .ram_controller_ready     (ram_controller_ready),
         .ram_write_trigger        (ram_write_trigger),
         .ram_write_value          (ram_write_value),
@@ -92,6 +94,7 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         .ADDRESS_SIZE(ADDRESS_SIZE)
     ) ram (
         .clk                    (clk),
+        .reset                  (reset),
         .controller_ready       (ram_controller_ready),
         .write_trigger          (ram_write_trigger),
         .write_value            (ram_write_value),
@@ -228,14 +231,16 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         write_value     = 0;
         read_trigger    = 0;
         errors          = 0;
+        reset           = 1;
+
+        // Hold reset for a few cycles
+        repeat(5) @(posedge clk);
+        #1;
+        reset = 0;
 
         // Wait for RAM_CONTROLLER INIT to complete and controller_ready to rise.
-        // Use wait_ready task which has robust repeat+while logic.
-        // First wait a few cycles for initial X values to resolve, then
-        // wait until controller_ready is a solid 1.
         begin : wait_init
             integer n;
-            // Let initial blocks settle and first posedge occur
             @(posedge clk); #1;
             n = 0;
             while (controller_ready !== 1'b1 && n < 4000) begin

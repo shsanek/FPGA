@@ -10,6 +10,7 @@ module SIGNAL_ACCAMULATOR #(
     parameter int VALUE = 1
 )(
   input wire clk,
+  input wire reset,
   input wire signal,
   output logic active_trigger
 );
@@ -24,7 +25,10 @@ module SIGNAL_ACCAMULATOR #(
   localparam int CENTER_CONSTANT = (1 << (SIZE - 1));
 
   always_ff @(posedge clk) begin
-    if (signal == VALUE) begin
+    if (reset) begin
+      counter <= 0;
+      active_trigger <= 0;
+    end else if (signal == VALUE) begin
       if (!counter[SIZE]) begin
         if (counter == CENTER_CONSTANT[SIZE: 0]) begin
           counter <= MAX_CONSTANT[SIZE: 0];
@@ -33,7 +37,7 @@ module SIGNAL_ACCAMULATOR #(
           counter <= counter_inc;
         end;
       end;
-    end else if (counter != 0) begin 
+    end else if (counter != 0) begin
       if (counter == CENTER_CONSTANT[SIZE: 0]) begin
           counter <= 0;
           active_trigger <= 0;
@@ -43,10 +47,6 @@ module SIGNAL_ACCAMULATOR #(
     end
   end;
 
-  initial begin
-    counter = 0;
-    active_trigger = 0;
-  end;
 endmodule
 
 module CLK_DELAY #(
@@ -54,6 +54,7 @@ module CLK_DELAY #(
   parameter int SIZE = $clog2(CLK_COUNT + 1)
 )(
   input wire clk,
+  input wire reset,
   input wire reset_trigger,
   input wire[SIZE - 1: 0] reset_value,
   output logic active_trigger
@@ -61,19 +62,19 @@ module CLK_DELAY #(
   logic[SIZE - 1: 0] counter;
 
   always_ff @(posedge clk) begin
-    if (reset_trigger) begin
+    if (reset) begin
+      counter <= CLK_COUNT;
+      active_trigger <= 0;
+    end else if (reset_trigger) begin
       counter <= reset_value - 3;
       active_trigger <= 0;
     end else if (counter == 0) begin
       active_trigger <= 1;
-    end else begin 
+    end else begin
       counter <= counter - 1;
     end
   end;
 
-  initial begin
-    counter = CLK_COUNT;
-  end;
 endmodule
 
 module I_O_INPUT_CONTROLLER #(
@@ -84,6 +85,7 @@ module I_O_INPUT_CONTROLLER #(
   parameter int SIZE = $clog2(BIT_PERIOD + TIME_SHIFT + 1)
 ) (
   input wire clk,
+  input wire reset,
 
   input wire TXD,
 
@@ -102,6 +104,7 @@ module I_O_INPUT_CONTROLLER #(
     .VALUE(0)
   ) signal_acc(
     .clk(clk),
+    .reset(reset),
     .signal(TXD),
     .active_trigger(internal_current_invert_siggnal)
   );
@@ -114,6 +117,7 @@ module I_O_INPUT_CONTROLLER #(
     .SIZE(SIZE)
   ) timer(
     .clk(clk),
+    .reset(reset),
     .reset_trigger(internal_timer_reset),
     .reset_value(internal_timer_reset_value),
     .active_trigger(internal_timmer_trigger)
@@ -123,7 +127,14 @@ module I_O_INPUT_CONTROLLER #(
   assign io_input_trigger = internal_io_input_trigger;
 
   always_ff @(posedge clk) begin
-      if (internal_state == IN_WATING_STOP_SIGNAL) begin
+      if (reset) begin
+        internal_io_input_trigger <= 0;
+        internal_input_counter <= 0;
+        internal_current_value <= 8'd0;
+        internal_state <= IN_WATING_STOP_SIGNAL;
+        internal_timer_reset <= 0;
+        internal_timer_reset_value <= '0;
+      end else if (internal_state == IN_WATING_STOP_SIGNAL) begin
         internal_timer_reset <= 0;
         internal_io_input_trigger <= 0;
         if (internal_timmer_trigger && !internal_current_invert_siggnal) begin
@@ -142,7 +153,7 @@ module I_O_INPUT_CONTROLLER #(
         if (internal_timmer_trigger) begin
           internal_current_value <= (internal_current_value << 1) + !internal_current_invert_siggnal;
           internal_input_counter <= internal_input_counter + 1;
-        
+
           internal_timer_reset <= 1;
           internal_timer_reset_value <= BIT_PERIOD;
 
@@ -156,11 +167,4 @@ module I_O_INPUT_CONTROLLER #(
       end
   end
 
-  initial begin
-    internal_io_input_trigger = 0;
-    internal_input_counter = 0;
-    internal_current_value = 8'd0;
-
-    internal_state = IN_WATING_STOP_SIGNAL;
-  end;
 endmodule

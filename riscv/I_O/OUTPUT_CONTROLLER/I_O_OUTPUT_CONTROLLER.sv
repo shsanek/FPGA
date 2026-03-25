@@ -11,6 +11,7 @@ module I_O_OUTPUT_CONTROLLER #(
   parameter BIT_PERIOD = CLOCK_FREQ / BAUD_RATE
 )(
   input wire clk,
+  input wire reset,
 
   input wire[7:0] io_output_value,
   input wire io_output_trigger,
@@ -30,6 +31,7 @@ module I_O_OUTPUT_CONTROLLER #(
     .BIT_PERIOD(BIT_PERIOD)
   ) timer_generator(
    .clk(clk),
+   .reset(reset),
    .active(active)
   );
     
@@ -40,7 +42,13 @@ module I_O_OUTPUT_CONTROLLER #(
   assign io_output_ready_trigger = internal_io_output_ready_trigger;
 
   always_ff @(posedge clk) begin
-    if (OUT_WATING_VALUE == internal_state && io_output_trigger) begin
+    if (reset) begin
+      internal_output <= 1;
+      internal_output_counter <= 3'd0;
+      internal_state <= OUT_WATING_VALUE;
+      internal_io_output_ready_trigger <= 1;
+      internal_current_value <= 8'd0;
+    end else if (OUT_WATING_VALUE == internal_state && io_output_trigger) begin
       internal_current_value <= io_output_value;
       internal_io_output_ready_trigger <= 0;
       internal_state <= OUT_START_SIGNAL;
@@ -64,11 +72,4 @@ module I_O_OUTPUT_CONTROLLER #(
     end
   end
 
-  initial begin
-    internal_output = 1;
-    internal_output_counter = 3'd0;
-    internal_state = OUT_WATING_VALUE;
-    internal_io_output_ready_trigger = 1;
-    internal_current_value = 8'd0;
-  end;
 endmodule

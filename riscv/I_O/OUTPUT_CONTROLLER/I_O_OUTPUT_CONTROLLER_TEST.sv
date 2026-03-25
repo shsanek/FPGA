@@ -7,8 +7,11 @@ module I_O_OUTPUT_CONTROLLER_TEST();
   int   error = 0;
 
   // BIT_PERIOD=4: each bit takes 4 clock cycles (active fires every 4 clk)
+  logic reset;
+
   I_O_OUTPUT_CONTROLLER #(.BIT_PERIOD(4)) dut (
     .clk(clk),
+    .reset(reset),
     .io_output_value(io_output_value),
     .io_output_trigger(io_output_trigger),
     .io_output_ready_trigger(io_output_ready_trigger),
@@ -23,9 +26,12 @@ module I_O_OUTPUT_CONTROLLER_TEST();
   initial begin
     $dumpfile("I_O_OUTPUT_CONTROLLER.vcd");
     $dumpvars(0, I_O_OUTPUT_CONTROLLER_TEST);
+    reset = 1;
     io_output_value   = 8'd0;
     io_output_trigger = 1'b0;
     #20;
+    reset = 0;
+    #10;
     assert(io_output_ready_trigger === 1 && RXD === 1) else error = error + 1;
 
     // Send 0xAA = 8'b1010_1010, LSB first → 0,1,0,1,0,1,0,1

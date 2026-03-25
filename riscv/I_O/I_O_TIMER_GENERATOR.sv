@@ -18,6 +18,7 @@ module I_O_TIMER_GENERATOR #(
   parameter BIT_PERIOD = CLOCK_FREQ / BAUD_RATE
 ) (
   input  wire clk,
+  input  wire reset,
   output wire active
 );
   localparam integer TIMER_WIDTH = ceil_log2(BIT_PERIOD);
@@ -27,18 +28,16 @@ module I_O_TIMER_GENERATOR #(
   assign active = internal_active;
 
   always_ff @(posedge clk) begin
-    if (counter == BIT_PERIOD - 1) begin
-          counter <= 0;
-          internal_active <= 1;
+    if (reset) begin
+      counter <= 0;
+      internal_active <= 0;
+    end else if (counter == BIT_PERIOD - 1) begin
+      counter <= 0;
+      internal_active <= 1;
     end else begin
       counter <= counter + 1;
       internal_active <= 0;
     end
   end
-
-  initial begin
-    counter = 0;
-    internal_active = 0;
-  end;
 
 endmodule

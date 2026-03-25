@@ -157,6 +157,7 @@ module TOP #(
         .BIT_PERIOD(BIT_PERIOD)
     ) uart_in (
         .clk              (clk),
+        .reset            (reset),
         .TXD              (uart_rx),
         .io_input_trigger (uart_rx_valid),
         .io_input_value   (uart_rx_byte)
@@ -169,6 +170,7 @@ module TOP #(
         .BIT_PERIOD(BIT_PERIOD)
     ) uart_out (
         .clk                    (clk),
+        .reset                  (reset),
         .io_output_value        (uart_tx_byte),
         .io_output_trigger      (uart_tx_valid),
         .io_output_ready_trigger(uart_tx_ready),
