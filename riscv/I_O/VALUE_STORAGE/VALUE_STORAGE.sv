@@ -8,6 +8,7 @@ typedef enum logic [1:0] {
         
 module VALUE_STORAGE (
     input wire clk,
+    input wire reset,
 
     input wire[3:0] buttons,
 
@@ -32,7 +33,11 @@ module VALUE_STORAGE (
     assign io_output_trigger = internal_io_output_trigger;
 
     always_ff @(posedge clk) begin
-        if (io_input_trigger) begin 
+        if (reset) begin
+            internal_value <= 8'd0;
+            internal_io_output_trigger <= 0;
+            state <= VSS_WATING_BUTTON_INPUT;
+        end else if (io_input_trigger) begin
             internal_value <= io_input_value;
         end else begin
             case(state)
@@ -71,18 +76,13 @@ module VALUE_STORAGE (
         end
     end;
 
-    initial begin
-        internal_value = 8'd0;
-        internal_io_output_trigger = 0;
-        state = VSS_WATING_BUTTON_INPUT;
-    end;
-
 endmodule
 
         
 module VALUE_STORAGE2 (
     input wire clk,
-    
+    input wire reset,
+
     output logic[27:0] address,
 
     input wire[3:0] buttons,
@@ -108,7 +108,13 @@ module VALUE_STORAGE2 (
     assign leds = internal_value[3:0];
 
     always_ff @(posedge clk) begin
-        if (ram_read_ready_trigger) begin 
+        if (reset) begin
+            internal_value <= 8'd0;
+            ram_write_trigger <= 0;
+            ram_read_trigger <= 0;
+            internal_address <= 16;
+            state <= VSS_WATING_BUTTON_INPUT;
+        end else if (ram_read_ready_trigger) begin
             internal_value <= io_input_value;
         end else begin
             case(state)
@@ -152,14 +158,6 @@ module VALUE_STORAGE2 (
                 end
             endcase
         end
-    end;
-
-    initial begin
-        internal_value = 8'd0;
-        ram_write_trigger = 0;
-        ram_read_trigger = 0;
-        internal_address = 16;
-        state = VSS_WATING_BUTTON_INPUT;
     end;
 
 endmodule

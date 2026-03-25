@@ -97,10 +97,4 @@ module CPU_DATA_ADAPTER (
         end
     end
 
-    initial begin
-        state       = S_IDLE;
-        data_result = 32'b0;
-        is_read     = 1'b0;
-    end
-
 endmodule

@@ -134,27 +134,6 @@ if (DEBUG_ENABLE) begin : dbg
         endcase
     endfunction
 
-    initial begin
-        state      = S_IDLE;
-        halt_r     = 0;
-        step_r     = 0;
-        mc_read_r  = 0;
-        mc_write_r = 0;
-        mc_addr_r  = 0;
-        mc_data_r  = 0;
-        tx_byte_r    = 0;
-        tx_valid_r   = 0;
-        cpu_rx_byte_r  = 0;
-        cpu_rx_valid_r = 0;
-        byte_idx     = 0;
-        resp_idx   = 0;
-        resp_len   = 0;
-        cmd        = 0;
-        payload_addr = 0;
-        payload_data = 0;
-        for (int i = 0; i < 8; i++) resp[i] = 0;
-    end
-
     always_ff @(posedge clk) begin
         if (reset) begin
             state      <= S_IDLE;
@@ -162,10 +141,19 @@ if (DEBUG_ENABLE) begin : dbg
             step_r     <= 0;
             mc_read_r  <= 0;
             mc_write_r <= 0;
+            mc_addr_r  <= 0;
+            mc_data_r  <= 0;
+            tx_byte_r      <= 0;
             tx_valid_r     <= 0;
+            cpu_rx_byte_r  <= 0;
             cpu_rx_valid_r <= 0;
             byte_idx       <= 0;
             resp_idx       <= 0;
+            resp_len       <= 0;
+            cmd            <= 0;
+            payload_addr   <= 0;
+            payload_data   <= 0;
+            for (int i = 0; i < 8; i++) resp[i] <= 0;
         end else begin
             tx_valid_r     <= 0;   // по умолчанию не слать
             step_r         <= 0;   // step — 1 такт импульс

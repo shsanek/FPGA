@@ -95,10 +95,4 @@ module UART_IO_DEVICE (
         end
     end
 
-    initial begin
-        tx_data_r  = 8'h00;
-        rx_data_r  = 8'h00;
-        rx_avail_r = 1'b0;
-    end
-
 endmodule
