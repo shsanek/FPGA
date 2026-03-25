@@ -7,8 +7,10 @@
 set_property -dict { PACKAGE_PIN E3    IOSTANDARD LVCMOS33 } [get_ports { sys_clk_i }]; #IO_L12P_T1_MRCC_35 Sch=gclk[100]
 create_clock -add -name sys_clk_pin -period 10.00 -waveform {0 5} [get_ports { sys_clk_i }];
 
-## 200 MHz generated clock for MIG IDELAYCTRL reference
-create_generated_clock -name clk_200 -source [get_pins pll_refclk/CLKIN1] -multiply_by 2 [get_pins pll_refclk/CLKOUT0]
+## CDC: RAM_CONTROLLER handshake between clk_cpu and MIG ui_clk (asynchronous domains)
+set_clock_groups -asynchronous \
+    -group [get_clocks -of_objects [get_pins u_clk_wiz/clk_out2]] \
+    -group [get_clocks -of_objects [get_pins u_mig/ui_clk]]
 
 ## Switches
 #set_property -dict { PACKAGE_PIN A8    IOSTANDARD LVCMOS33 } [get_ports { sw[0] }]; #IO_L12N_T1_MRCC_16 Sch=sw[0]

@@ -16,9 +16,8 @@ Source: DIGILENT_410-319-1.pdf
 ### FPGA Options
 | Parameter | Value |
 |-----------|-------|
-| System Clock Type | Single-Ended |
-| System Clock Pin | E3 (Bank 35, 100 MHz) |
-| Reference Clock Type | No Buffer |
+| System Clock Type | No Buffer (325 MHz from clk_wiz_0 clk_out3) |
+| Reference Clock Type | No Buffer (200 MHz from clk_wiz_0 clk_out1) |
 | Debug Port | OFF |
 | Internal Vref | Enabled |
 | IO Power Reduction | ON |

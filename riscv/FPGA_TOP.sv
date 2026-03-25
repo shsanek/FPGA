@@ -5,9 +5,12 @@
 //   uart_rx/tx — FTDI UART
 //   ddr3_*     — DDR3L memory (MT41K128M16JT-125)
 //
-// Clocking (two clock domains):
-//   sys_clk_i (100 MHz) — CPU and all logic in TOP (via BUFG)
-//   ui_clk (~81.25 MHz) — MIG user interface, used by RAM_CONTROLLER mig_ui_clk domain
+// Clocking:
+//   clk_wiz_0: 100 MHz → clk_out1 (200 MHz), clk_out2 (81.25 MHz), clk_out3 (325 MHz)
+//   clk_out1 (200 MHz)  → MIG clk_ref_i (IDELAYCTRL reference)
+//   clk_out2 (81.25 MHz) → TOP.clk (CPU, UART, caches)
+//   clk_out3 (325 MHz)  → MIG sys_clk_i (DDR PHY clock source)
+//   ui_clk (~81.25 MHz) → TOP.mig_ui_clk (RAM_CONTROLLER MIG side)
 
 module FPGA_TOP (
     // System clock (100 MHz, pin E3)
@@ -36,36 +39,21 @@ module FPGA_TOP (
 );
 
     // ---------------------------------------------------------------
-    // 200 MHz reference clock for MIG IDELAYCTRL
-    // PLL: 100 MHz × 10 / 5 = 200 MHz (VCO = 1000 MHz)
+    // Clocking Wizard: 100 MHz → 200 MHz + 81.25 MHz + 325 MHz
     // ---------------------------------------------------------------
-    wire clk_200_unbuf;
-    wire clk_200;
-    wire pll_locked;
-    wire pll_fb;
+    wire clk_200;           // MIG IDELAYCTRL reference
+    wire clk_cpu;           // CPU clock (~81.25 MHz)
+    wire clk_325;           // MIG DDR PHY clock
+    wire clk_wiz_locked;
 
-    PLLE2_BASE #(
-        .CLKFBOUT_MULT  (10),       // VCO = 100 × 10 = 1000 MHz
-        .CLKOUT0_DIVIDE (5),        // 1000 / 5 = 200 MHz
-        .CLKIN1_PERIOD   (10.0),    // 100 MHz = 10 ns
-        .DIVCLK_DIVIDE  (1)
-    ) pll_refclk (
-        .CLKOUT0  (clk_200_unbuf),
-        .CLKFBOUT (pll_fb),
-        .CLKIN1   (sys_clk_i),
-        .CLKFBIN  (pll_fb),
-        .PWRDWN   (1'b0),
-        .RST      (1'b0),
-        .LOCKED   (pll_locked),
-        // Unused outputs
-        .CLKOUT1  (),
-        .CLKOUT2  (),
-        .CLKOUT3  (),
-        .CLKOUT4  (),
-        .CLKOUT5  ()
+    clk_wiz_0 u_clk_wiz (
+        .clk_in1  (sys_clk_i),
+        .clk_out1 (clk_200),
+        .clk_out2 (clk_cpu),
+        .clk_out3 (clk_325),
+        .locked   (clk_wiz_locked),
+        .reset    (1'b0)
     );
-
-    BUFG bufg_clk200 (.I(clk_200_unbuf), .O(clk_200));
 
     // ---------------------------------------------------------------
     // MIG ↔ TOP interconnect wires
@@ -88,7 +76,7 @@ module FPGA_TOP (
     wire         app_rdy;
 
     // ---------------------------------------------------------------
-    // MIG 7 Series IP
+    // MIG 7 Series IP (both clocks from clk_wiz, No Buffer mode)
     // ---------------------------------------------------------------
     mig_7series_0 u_mig (
         // DDR3 physical
@@ -108,10 +96,10 @@ module FPGA_TOP (
         .ddr3_dm             (ddr3_dm),
         .ddr3_odt            (ddr3_odt),
 
-        // Clock & reset
-        .sys_clk_i           (sys_clk_i),
+        // Clock & reset (No Buffer mode — clocks from clk_wiz)
+        .sys_clk_i           (clk_325),
         .clk_ref_i           (clk_200),
-        .sys_rst             (1'b0),        // ACTIVE HIGH, always inactive
+        .sys_rst             (~clk_wiz_locked),  // hold reset until clk_wiz locked
 
         // User interface clock
         .ui_clk              (ui_clk),
@@ -146,22 +134,27 @@ module FPGA_TOP (
     );
 
     // ---------------------------------------------------------------
+    // Reset: wait for both clk_wiz and MIG to be ready
+    // ---------------------------------------------------------------
+    wire sys_reset = ui_clk_sync_rst | ~clk_wiz_locked;
+
+    // ---------------------------------------------------------------
     // TOP (RISC-V system)
     // Two clock domains:
-    //   clk        = sys_clk_i (100 MHz) — CPU, UART, caches
+    //   clk        = clk_cpu (81.25 MHz) — CPU, UART, caches
     //   mig_ui_clk = ui_clk (~81.25 MHz) — RAM_CONTROLLER MIG side
     // ---------------------------------------------------------------
     TOP #(
-        .CLOCK_FREQ   (100_000_000),  // sys_clk_i = 100 MHz
+        .CLOCK_FREQ   (81_250_000),
         .BAUD_RATE    (115_200),
         .CHUNK_PART   (128),
         .ADDRESS_SIZE (28),
         .DATA_SIZE    (32),
-        .ROM_DEPTH    (256),
+        .ROM_DEPTH    (4096),
         .DEBUG_ENABLE (1)
     ) u_top (
-        .clk                    (sys_clk_i),
-        .reset                  (ui_clk_sync_rst),
+        .clk                    (clk_cpu),
+        .reset                  (sys_reset),
 
         .uart_rx                (uart_rx),
         .uart_tx                (uart_tx),
