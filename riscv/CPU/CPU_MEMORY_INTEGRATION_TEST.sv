@@ -67,6 +67,7 @@ module CPU_MEMORY_INTEGRATION_TEST();
         .clk            (clk),
         .reset          (reset),
         .mem_stall      (mem_stall),
+        .instr_stall    (1'b0),
         .instr_addr     (instr_addr),
         .instr_data     (instr_data),
         .mem_read_en    (mem_read_en),

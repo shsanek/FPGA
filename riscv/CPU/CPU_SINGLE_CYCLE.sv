@@ -24,6 +24,9 @@ module CPU_SINGLE_CYCLE #(
     // Stall от памяти (MEMORY_CONTROLLER не готов)
     input  wire        mem_stall,
 
+    // Stall от instruction fetch (инструкция ещё не готова)
+    input  wire        instr_stall,
+
     // Debug-интерфейс
     input  wire        dbg_halt,
     input  wire        dbg_step,
@@ -96,7 +99,7 @@ module CPU_SINGLE_CYCLE #(
                         (is_ebreak && !ebreak_acked_r || ebreak_halted_r) &&
                         !dbg_step;
 
-    wire cpu_stall = mem_stall ||
+    wire cpu_stall = mem_stall || instr_stall ||
                      (DEBUG_ENABLE ? (dbg_halted_r && !dbg_step) : 1'b0) ||
                      ebreak_stall;
 

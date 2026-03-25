@@ -217,6 +217,7 @@ module TOP #(
         .mem_byte_mask     (cpu_mem_byte_mask),
         .mem_read_data     (cpu_mem_read_data),
         .mem_stall         (cpu_mem_stall),
+        .instr_stall       (1'b0),
         .dbg_halt          (dbg_halt),
         .dbg_step          (dbg_step),
         .dbg_is_halted     (dbg_is_halted),

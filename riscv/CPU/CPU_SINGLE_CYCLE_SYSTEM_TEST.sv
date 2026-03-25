@@ -49,6 +49,7 @@ module CPU_SINGLE_CYCLE_SYSTEM_TEST();
         .mem_byte_mask    (mem_byte_mask),
         .mem_read_data    (mem_read_data),
         .mem_stall        (mem_stall),
+        .instr_stall      (1'b0),
         .dbg_halt         (dbg_halt),
         .dbg_step         (dbg_step),
         .dbg_is_halted    (dbg_is_halted),
