@@ -90,7 +90,7 @@ module memory_test_controller #(
             S_IDLE: begin
                 if (bc_valid) begin
                     hdr_hash <= bc_bytes[0] ^ bc_bytes[1] ^ bc_bytes[2] ^ bc_bytes[3];
-                    cmd      <= cmd_t(bc_bytes[0][7:6]);
+                    cmd      <= cmd_t'(bc_bytes[0][7:6]);
                     addr     <= {bc_bytes[0][5:0], bc_bytes[1], bc_bytes[2], bc_bytes[3]};
                     state    <= S_SEND_HASH;
                 end
