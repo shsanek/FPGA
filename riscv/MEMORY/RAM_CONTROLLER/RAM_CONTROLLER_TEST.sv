@@ -6,6 +6,7 @@ module RAM_CONTROLLER_TEST();
   // Clocks: clk=100MHz (T=10ns), mig_ui_clk=125MHz (T=8ns)
   reg clk;
   reg mig_ui_clk;
+  reg reset;
   initial begin clk = 0;       forever #5 clk       = ~clk;       end
   initial begin mig_ui_clk = 0; forever #4 mig_ui_clk = ~mig_ui_clk; end
 
@@ -50,6 +51,7 @@ module RAM_CONTROLLER_TEST();
     .ADDRESS_SIZE(ADDRESS_SIZE)
   ) dut (
     .clk                   (clk),
+    .reset                 (reset),
     .controller_ready      (controller_ready),
     .error                 (error),
     .write_trigger         (write_trigger),
@@ -175,6 +177,11 @@ module RAM_CONTROLLER_TEST();
     write_count    = 0;
     write_captured = 0;
     read_captured  = 0;
+
+    // Reset
+    reset = 1;
+    #50;
+    reset = 0;
 
     // Wait for MIG calibration handshake to complete
     #100;

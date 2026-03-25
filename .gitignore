@@ -19,3 +19,5 @@ vivado/project_1/project_1.sim/
 *.str
 *.bit
 *.ltx
+xsim.dir/
+*.pb
