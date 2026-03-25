@@ -27,6 +27,8 @@ module CPU_SINGLE_CYCLE_TEST();
         .mem_read_data  (mem_read_data),
         .dbg_halt       (1'b0),
         .dbg_step       (1'b0),
+        .dbg_set_pc     (1'b0),
+        .dbg_new_pc     (32'b0),
         .dbg_is_halted  (),
         .dbg_current_pc (),
         .dbg_current_instr()

@@ -52,6 +52,8 @@ module CPU_SINGLE_CYCLE_SYSTEM_TEST();
         .instr_stall      (1'b0),
         .dbg_halt         (dbg_halt),
         .dbg_step         (dbg_step),
+        .dbg_set_pc       (1'b0),
+        .dbg_new_pc       (32'b0),
         .dbg_is_halted    (dbg_is_halted),
         .dbg_current_pc   (dbg_current_pc),
         .dbg_current_instr(dbg_current_instr)

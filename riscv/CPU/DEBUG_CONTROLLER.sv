@@ -32,6 +32,8 @@ module DEBUG_CONTROLLER #(
     // CPU debug-порты
     output wire        dbg_halt,
     output wire        dbg_step,
+    output wire        dbg_set_pc,
+    output wire [31:0] dbg_new_pc,
     input  wire        dbg_is_halted,
     input  wire [31:0] dbg_current_pc,
     input  wire [31:0] dbg_current_instr,
@@ -61,6 +63,7 @@ module DEBUG_CONTROLLER #(
     localparam CMD_STEP      = 8'h03;
     localparam CMD_READ_MEM  = 8'h04;
     localparam CMD_WRITE_MEM = 8'h05;
+    localparam CMD_RESET_PC  = 8'h06;
 
     typedef enum logic [2:0] {
         S_IDLE,
@@ -103,8 +106,14 @@ if (DEBUG_ENABLE) begin : dbg
     logic [7:0] cpu_rx_byte_r;
     logic       cpu_rx_valid_r;
 
-    assign dbg_halt  = halt_r;
-    assign dbg_step  = step_r;
+    // PC reset control
+    logic        set_pc_r;
+    logic [31:0] new_pc_r;
+
+    assign dbg_halt   = halt_r;
+    assign dbg_step   = step_r;
+    assign dbg_set_pc = set_pc_r;
+    assign dbg_new_pc = new_pc_r;
 
     assign cpu_rx_byte  = cpu_rx_byte_r;
     assign cpu_rx_valid = cpu_rx_valid_r;
@@ -130,6 +139,7 @@ if (DEBUG_ENABLE) begin : dbg
             CMD_STEP:      payload_bytes = 0;
             CMD_READ_MEM:  payload_bytes = 4;
             CMD_WRITE_MEM: payload_bytes = 8;
+            CMD_RESET_PC:  payload_bytes = 4;
             default:       payload_bytes = 0;
         endcase
     endfunction
@@ -139,6 +149,8 @@ if (DEBUG_ENABLE) begin : dbg
             state      <= S_IDLE;
             halt_r     <= 0;
             step_r     <= 0;
+            set_pc_r   <= 0;
+            new_pc_r   <= 0;
             mc_read_r  <= 0;
             mc_write_r <= 0;
             mc_addr_r  <= 0;
@@ -157,6 +169,7 @@ if (DEBUG_ENABLE) begin : dbg
         end else begin
             tx_valid_r     <= 0;   // по умолчанию не слать
             step_r         <= 0;   // step — 1 такт импульс
+            set_pc_r       <= 0;   // set_pc — 1 такт импульс
             mc_read_r      <= 0;   // trigger — 1 такт импульс
             mc_write_r     <= 0;   // trigger — 1 такт импульс
             cpu_rx_valid_r <= 0;   // CPU RX — 1 такт импульс
@@ -166,7 +179,7 @@ if (DEBUG_ENABLE) begin : dbg
                 // -------------------------------------------------------
                 S_IDLE: begin
                     if (rx_valid) begin
-                        if (rx_byte >= CMD_HALT && rx_byte <= CMD_WRITE_MEM) begin
+                        if (rx_byte >= CMD_HALT && rx_byte <= CMD_RESET_PC) begin
                             // Дебаг-команда
                             cmd <= rx_byte;
                             if (payload_bytes(rx_byte) == 0) begin
@@ -253,6 +266,15 @@ if (DEBUG_ENABLE) begin : dbg
                             state       <= S_HALT_WAIT;   // ждём mc_dbg_ready
                         end
 
+                        CMD_RESET_PC: begin
+                            set_pc_r    <= 1;
+                            new_pc_r    <= payload_addr;
+                            resp[0]     <= 8'hFF;
+                            resp_len    <= 1;
+                            resp_idx    <= 0;
+                            state       <= S_SEND;
+                        end
+
                         default: begin
                             resp[0]  <= 8'hFF;
                             resp_len <= 1;
@@ -324,6 +346,8 @@ end else begin : no_dbg
     // DEBUG_ENABLE=0 — заглушка
     assign dbg_halt             = 0;
     assign dbg_step             = 0;
+    assign dbg_set_pc           = 0;
+    assign dbg_new_pc           = 0;
     assign mc_dbg_address       = 0;
     assign mc_dbg_read_trigger  = 0;
     assign mc_dbg_write_trigger = 0;

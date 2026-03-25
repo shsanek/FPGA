@@ -30,6 +30,8 @@ module CPU_SINGLE_CYCLE #(
     // Debug-интерфейс
     input  wire        dbg_halt,
     input  wire        dbg_step,
+    input  wire        dbg_set_pc,
+    input  wire [31:0] dbg_new_pc,
     output wire        dbg_is_halted,
     output wire [31:0] dbg_current_pc,
     output wire [31:0] dbg_current_instr
@@ -255,8 +257,9 @@ module CPU_SINGLE_CYCLE #(
     // PC register
     // -------------------------------------------------------------------------
     always_ff @(posedge clk) begin
-        if (reset)           pc <= 32'b0;
-        else if (!cpu_stall) pc <= next_pc;
+        if (reset)              pc <= 32'b0;
+        else if (dbg_set_pc)    pc <= dbg_new_pc;
+        else if (!cpu_stall)    pc <= next_pc;
     end
 
 endmodule

@@ -49,6 +49,8 @@ module DEBUG_CONTROLLER_TEST();
         .tx_ready         (tx_ready),
         .dbg_halt         (dbg_halt_w),
         .dbg_step         (dbg_step_w),
+        .dbg_set_pc       (),
+        .dbg_new_pc       (),
         .dbg_is_halted    (cpu_halted),
         .dbg_current_pc   (cpu_pc),
         .dbg_current_instr(cpu_instr),

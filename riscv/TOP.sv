@@ -110,6 +110,8 @@ module TOP #(
     // DEBUG_CONTROLLER ↔ CPU / MEMORY_CONTROLLER / UART_IO_DEVICE
     // ---------------------------------------------------------------
     wire        dbg_halt, dbg_step;
+    wire        dbg_set_pc;
+    wire [31:0] dbg_new_pc;
     wire        dbg_is_halted;
     wire [31:0] dbg_current_pc, dbg_current_instr;
 
@@ -174,6 +176,8 @@ module TOP #(
         .tx_ready          (uart_tx_ready),
         .dbg_halt          (dbg_halt),
         .dbg_step          (dbg_step),
+        .dbg_set_pc        (dbg_set_pc),
+        .dbg_new_pc        (dbg_new_pc),
         .dbg_is_halted     (dbg_is_halted),
         .dbg_current_pc    (dbg_current_pc),
         .dbg_current_instr (dbg_current_instr),
@@ -207,6 +211,8 @@ module TOP #(
         .instr_stall       (instr_stall_w),
         .dbg_halt          (dbg_halt),
         .dbg_step          (dbg_step),
+        .dbg_set_pc        (dbg_set_pc),
+        .dbg_new_pc        (dbg_new_pc),
         .dbg_is_halted     (dbg_is_halted),
         .dbg_current_pc    (dbg_current_pc),
         .dbg_current_instr (dbg_current_instr)
