@@ -67,7 +67,15 @@ module TOP #(
     wire        cpu_mem_stall;
 
     // ---------------------------------------------------------------
-    // CPU_PIPELINE_ADAPTER ↔ PERIPHERAL_BUS
+    // CPU_PIPELINE_ADAPTER outputs (before debug mux)
+    // ---------------------------------------------------------------
+    wire [27:0] pipe_addr;
+    wire        pipe_rd, pipe_wr;
+    wire [31:0] pipe_wr_data;
+    wire [3:0]  pipe_mask;
+
+    // ---------------------------------------------------------------
+    // Bus (after debug mux) ↔ PERIPHERAL_BUS
     // ---------------------------------------------------------------
     wire [27:0] bus_addr;
     wire        bus_rd, bus_wr;
@@ -107,7 +115,7 @@ module TOP #(
     wire        ram_rd_ready;
 
     // ---------------------------------------------------------------
-    // DEBUG_CONTROLLER ↔ CPU / MEMORY_CONTROLLER / UART_IO_DEVICE
+    // DEBUG_CONTROLLER ↔ CPU
     // ---------------------------------------------------------------
     wire        dbg_halt, dbg_step;
     wire        dbg_set_pc;
@@ -115,6 +123,9 @@ module TOP #(
     wire        dbg_is_halted;
     wire [31:0] dbg_current_pc, dbg_current_instr;
 
+    // ---------------------------------------------------------------
+    // DEBUG_CONTROLLER memory port (muxed with CPU onto bus)
+    // ---------------------------------------------------------------
     wire [ADDRESS_SIZE-1:0] mc_dbg_addr;
     wire        mc_dbg_rd, mc_dbg_wr;
     wire [31:0] mc_dbg_wr_data, mc_dbg_rd_data;
@@ -232,15 +243,76 @@ module TOP #(
         .mem_byte_mask     (cpu_mem_byte_mask),
         .mem_read_data     (cpu_mem_read_data),
         .mem_stall         (cpu_mem_stall),
-        .mc_address        (bus_addr),
-        .mc_read_trigger   (bus_rd),
-        .mc_write_trigger  (bus_wr),
-        .mc_write_value    (bus_wr_data),
-        .mc_mask           (bus_mask),
+        .mc_address        (pipe_addr),
+        .mc_read_trigger   (pipe_rd),
+        .mc_write_trigger  (pipe_wr),
+        .mc_write_value    (pipe_wr_data),
+        .mc_mask           (pipe_mask),
         .mc_read_value     (bus_rd_data),
         .mc_controller_ready(bus_ready),
         .flush             (dbg_set_pc)
     );
+
+    // --- DEBUG/CPU MUX → PERIPHERAL_BUS ---
+    // When CPU is halted, debug controller owns the bus.
+    // FSM for debug memory access: proper handshake.
+    //   DBG_IDLE → (dbg trigger) → DBG_TRIG → DBG_WAIT → DBG_DONE → DBG_IDLE
+    typedef enum logic [2:0] {
+        DBG_IDLE,
+        DBG_TRIG,
+        DBG_SETTLE,
+        DBG_WAIT,
+        DBG_DONE
+    } DBG_MUX_STATE;
+
+    DBG_MUX_STATE dbg_mux_state;
+    logic [31:0]  dbg_rd_result;
+
+    always_ff @(posedge clk) begin
+        if (reset) begin
+            dbg_mux_state <= DBG_IDLE;
+            dbg_rd_result <= 32'b0;
+        end else begin
+            case (dbg_mux_state)
+                DBG_IDLE: begin
+                    if (dbg_is_halted && (mc_dbg_rd || mc_dbg_wr))
+                        dbg_mux_state <= DBG_TRIG;
+                end
+                DBG_TRIG: begin
+                    // trigger on bus for 1 cycle
+                    dbg_mux_state <= DBG_SETTLE;
+                end
+                DBG_SETTLE: begin
+                    // 1 cycle for MC to process trigger and update ready
+                    dbg_mux_state <= DBG_WAIT;
+                end
+                DBG_WAIT: begin
+                    if (bus_ready) begin
+                        dbg_rd_result <= bus_rd_data;
+                        dbg_mux_state <= DBG_DONE;
+                    end
+                end
+
+                DBG_DONE: begin
+                    dbg_mux_state <= DBG_IDLE;
+                end
+                DBG_DONE: begin
+                    dbg_mux_state <= DBG_IDLE;
+                end
+            endcase
+        end
+    end
+
+    wire dbg_bus_active = (dbg_mux_state == DBG_TRIG);
+
+    assign bus_addr    = dbg_is_halted ? mc_dbg_addr[27:0]       : pipe_addr;
+    assign bus_rd      = dbg_is_halted ? (dbg_bus_active && mc_dbg_rd) : pipe_rd;
+    assign bus_wr      = dbg_is_halted ? (dbg_bus_active && mc_dbg_wr) : pipe_wr;
+    assign bus_wr_data = dbg_is_halted ? mc_dbg_wr_data          : pipe_wr_data;
+    assign bus_mask    = dbg_is_halted ? {MASK_SIZE{1'b1}}       : pipe_mask;
+
+    assign mc_dbg_rd_data = dbg_rd_result;
+    assign mc_dbg_ready   = (dbg_mux_state == DBG_DONE);
 
     // --- PERIPHERAL_BUS ---
     PERIPHERAL_BUS pbus (
@@ -310,14 +382,7 @@ module TOP #(
         .write_value         (mc_wr_data),
         .read_trigger        (mc_rd),
         .read_value          (mc_rd_data),
-        .contains_address    (mc_contains_addr),
-        .dbg_read_trigger    (mc_dbg_rd),
-        .dbg_write_trigger   (mc_dbg_wr),
-        .dbg_address         (mc_dbg_addr),
-        .dbg_write_data      (mc_dbg_wr_data),
-        .dbg_mask            (mc_dbg_mask),
-        .dbg_read_data       (mc_dbg_rd_data),
-        .dbg_ready           (mc_dbg_ready)
+        .contains_address    (mc_contains_addr)
     );
 
     // --- RAM_CONTROLLER ---

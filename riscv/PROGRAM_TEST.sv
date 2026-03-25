@@ -231,8 +231,25 @@ module PROGRAM_TEST ();
 
         // --- Загрузить программу через WRITE_MEM ---
         for (n = 0; n < word_count; n++) begin
+            $display("DEBUG: writing addr=0x%08X data=0x%08X", n*4, words[n]);
             dbg_write_mem(n * 4, words[n]);
+            $display("DEBUG: write done, bus_wr_data=0x%08X mc_dbg_wr_data=0x%08X",
+                     dut.bus_wr_data, dut.dbg_ctrl.dbg.mc_data_r);
         end
+
+        // --- Direct peek at cache ---
+        $display("DEBUG: c0 v=%b a=0x%06X d0=0x%08X d1=0x%08X", dut.mem_ctrl.storage_pool.gen_storage[0].storage_inst.chunk_valid, dut.mem_ctrl.storage_pool.gen_storage[0].storage_inst.chunk_addr, dut.mem_ctrl.storage_pool.gen_storage[0].storage_inst.chunk_data0, dut.mem_ctrl.storage_pool.gen_storage[0].storage_inst.chunk_data1);
+        $display("DEBUG: c1 v=%b a=0x%06X d0=0x%08X d1=0x%08X", dut.mem_ctrl.storage_pool.gen_storage[1].storage_inst.chunk_valid, dut.mem_ctrl.storage_pool.gen_storage[1].storage_inst.chunk_addr, dut.mem_ctrl.storage_pool.gen_storage[1].storage_inst.chunk_data0, dut.mem_ctrl.storage_pool.gen_storage[1].storage_inst.chunk_data1);
+        $display("DEBUG: c2 v=%b a=0x%06X d0=0x%08X d1=0x%08X", dut.mem_ctrl.storage_pool.gen_storage[2].storage_inst.chunk_valid, dut.mem_ctrl.storage_pool.gen_storage[2].storage_inst.chunk_addr, dut.mem_ctrl.storage_pool.gen_storage[2].storage_inst.chunk_data0, dut.mem_ctrl.storage_pool.gen_storage[2].storage_inst.chunk_data1);
+        $display("DEBUG: c3 v=%b a=0x%06X d0=0x%08X d1=0x%08X", dut.mem_ctrl.storage_pool.gen_storage[3].storage_inst.chunk_valid, dut.mem_ctrl.storage_pool.gen_storage[3].storage_inst.chunk_addr, dut.mem_ctrl.storage_pool.gen_storage[3].storage_inst.chunk_data0, dut.mem_ctrl.storage_pool.gen_storage[3].storage_inst.chunk_data1);
+        $display("DEBUG: MIG[0]=0x%032X", mig.mem[0]);
+        // Direct cache read test
+        $display("DEBUG: MC read_value=0x%08X contains=%b out_addr=0x%07X",
+                 dut.mem_ctrl.storage_pool.read_value,
+                 dut.mem_ctrl.storage_pool.contains_address,
+                 dut.mem_ctrl.output_address);
+        $display("DEBUG: PBUS read_value=0x%08X mc_read_value=0x%08X io_sel=%b",
+                 dut.pbus.read_value, dut.pbus.mc_read_value, dut.pbus.io_sel);
 
         // --- Verify write: read back addr 0 through debug ---
         uart_send(8'h04); // CMD_READ_MEM
