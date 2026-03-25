@@ -170,8 +170,11 @@ if (DEBUG_ENABLE) begin : dbg
             tx_valid_r     <= 0;   // по умолчанию не слать
             step_r         <= 0;   // step — 1 такт импульс
             set_pc_r       <= 0;   // set_pc — 1 такт импульс
-            mc_read_r      <= 0;   // trigger — 1 такт импульс
-            mc_write_r     <= 0;   // trigger — 1 такт импульс
+            // mc_read_r/mc_write_r: сбрасываем когда MC подтвердил
+            if (mc_dbg_ready) begin
+                mc_read_r  <= 0;
+                mc_write_r <= 0;
+            end
             cpu_rx_valid_r <= 0;   // CPU RX — 1 такт импульс
 
             case (state)

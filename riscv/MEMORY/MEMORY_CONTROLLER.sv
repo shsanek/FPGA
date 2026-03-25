@@ -78,7 +78,8 @@ module MEMORY_CONTROLLER#(
     // ---------------------------------------------------------------
     // Debug mux — debug имеет приоритет над CPU
     // ---------------------------------------------------------------
-    logic dbg_active;   // идёт debug-операция
+    logic dbg_active;      // идёт debug-операция
+    logic dbg_done_cycle;  // MC прошёл хотя бы 1 такт после захвата
 
     wire eff_write_trigger = dbg_active ? dbg_write_trigger : write_trigger;
     wire eff_read_trigger  = dbg_active ? dbg_read_trigger  : read_trigger;
@@ -119,6 +120,7 @@ module MEMORY_CONTROLLER#(
             ram_read_trigger       <= 0;
             had_dirty_evict        <= 0;
             dbg_active             <= 0;
+            dbg_done_cycle         <= 0;
             dbg_ready_r            <= 0;
         end else begin
             dbg_ready_r <= 0;  // default: pulse only 1 такт
@@ -126,13 +128,17 @@ module MEMORY_CONTROLLER#(
             // Захватить debug-запрос (приоритет над CPU)
             if (!dbg_active && (dbg_read_trigger || dbg_write_trigger) &&
                 (internal_state == MEMORY_CONTROLLER_STATE_NORMAL) && ram_controller_ready) begin
-                dbg_active <= 1;
+                dbg_active     <= 1;
+                dbg_done_cycle <= 0;
+            end
+            if (dbg_active && !dbg_done_cycle) begin
+                dbg_done_cycle <= 1;  // следующий такт после захвата
             end
 
             // Debug-операция завершена когда контроллер вернулся в NORMAL+ready
-            if (dbg_active &&
-                (internal_state == MEMORY_CONTROLLER_STATE_NORMAL) && ram_controller_ready &&
-                !(dbg_read_trigger || dbg_write_trigger)) begin
+            // после обработки (dbg_done_cycle = такт после захвата)
+            if (dbg_active && dbg_done_cycle &&
+                (internal_state == MEMORY_CONTROLLER_STATE_NORMAL) && ram_controller_ready) begin
                 dbg_active  <= 0;
                 dbg_ready_r <= 1;
             end
@@ -172,7 +178,7 @@ module MEMORY_CONTROLLER#(
                     internal_write_data    <= eff_write_value;
 
                     ram_read_trigger  <= 1;
-                    ram_read_address  <= { address[ADDRESS_SIZE-1:4], 4'b0000 };
+                    ram_read_address  <= { eff_address[ADDRESS_SIZE-1:4], 4'b0000 };
                     internal_state    <= MEMORY_CONTROLLER_STATE_WATING;
                 end
 
