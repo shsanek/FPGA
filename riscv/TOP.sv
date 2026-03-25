@@ -151,16 +151,15 @@ module TOP #(
     // ---------------------------------------------------------------
 
     // --- UART RX: физический сигнал → байт ---
-    I_O_INPUT_CONTROLLER #(
+    SIMPLE_UART_RX #(
         .CLOCK_FREQ(CLOCK_FREQ),
-        .BAUD_RATE (BAUD_RATE),
-        .BIT_PERIOD(BIT_PERIOD)
+        .BAUD_RATE (BAUD_RATE)
     ) uart_in (
-        .clk              (clk),
-        .reset            (reset),
-        .TXD              (uart_rx),
-        .io_input_trigger (uart_rx_valid),
-        .io_input_value   (uart_rx_byte)
+        .clk       (clk),
+        .reset     (reset),
+        .rx        (uart_rx),
+        .rx_data   (uart_rx_byte),
+        .rx_valid  (uart_rx_valid)
     );
 
     // --- UART TX: байт → физический сигнал ---

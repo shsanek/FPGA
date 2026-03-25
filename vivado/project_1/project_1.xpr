@@ -349,6 +349,22 @@
           <Attr Name="ScopedToCell" Val="mig_7series_0"/>
         </FileInfo>
       </File>
+      <File Path="$PPRDIR/../../riscv/I_O/INPUT_CONTROLLER/I_O_INPUT_CONTROLLER.sv">
+        <FileInfo>
+          <Attr Name="AutoDisabled" Val="1"/>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../../riscv/UART_FIFO.sv">
+        <FileInfo>
+          <Attr Name="AutoDisabled" Val="1"/>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
       <File Path="$PPRDIR/../../riscv/BRANCH_UNIT/BRANCH_UNIT.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
@@ -405,13 +421,6 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../riscv/I_O/INPUT_CONTROLLER/I_O_INPUT_CONTROLLER.sv">
-        <FileInfo>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
       <File Path="$PPRDIR/../../riscv/I_O/OUTPUT_CONTROLLER/I_O_OUTPUT_CONTROLLER.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
@@ -455,6 +464,13 @@
         </FileInfo>
       </File>
       <File Path="$PPRDIR/../../riscv/Register/REGISTER_32_BLOCK_32.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../../riscv/SIMPLE_UART_RX.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>

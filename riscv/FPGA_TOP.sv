@@ -20,6 +20,9 @@ module FPGA_TOP (
     input  wire        uart_rx,
     output wire        uart_tx,
 
+    // Debug LEDs
+    output wire [3:0]  led,
+
     // DDR3 physical pins (directly to MIG)
     inout  wire [15:0] ddr3_dq,
     inout  wire [1:0]  ddr3_dqs_n,
@@ -134,9 +137,10 @@ module FPGA_TOP (
     );
 
     // ---------------------------------------------------------------
-    // Reset: wait for both clk_wiz and MIG to be ready
+    // Reset: wait for clk_wiz to lock
+    // (MIG calibration is handled by RAM_CONTROLLER via init_calib_complete)
     // ---------------------------------------------------------------
-    wire sys_reset = ui_clk_sync_rst | ~clk_wiz_locked;
+    wire sys_reset = ~clk_wiz_locked;
 
     // ---------------------------------------------------------------
     // TOP (RISC-V system)
@@ -175,5 +179,25 @@ module FPGA_TOP (
         .mig_app_rd_data_valid  (app_rd_data_valid),
         .mig_app_rd_data_end    (app_rd_data_end)
     );
+
+    // ---------------------------------------------------------------
+    // Debug LEDs
+    //   led[0] = clk_cpu heartbeat (blink ~1 Hz)
+    //   led[1] = clk_wiz_locked
+    //   led[2] = init_calib_complete (MIG DDR3 ready)
+    //   led[3] = ~sys_reset (system running)
+    // ---------------------------------------------------------------
+    reg [25:0] heartbeat_cnt;
+    always @(posedge clk_cpu) begin
+        if (sys_reset)
+            heartbeat_cnt <= 0;
+        else
+            heartbeat_cnt <= heartbeat_cnt + 1;
+    end
+
+    assign led[0] = heartbeat_cnt[25];  // ~1.2 Hz blink at 81.25 MHz
+    assign led[1] = clk_wiz_locked;
+    assign led[2] = init_calib_complete;
+    assign led[3] = ~sys_reset;
 
 endmodule
