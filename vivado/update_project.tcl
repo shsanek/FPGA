@@ -9,6 +9,8 @@ set sv_files [list \
     ${src_dir}/BASE_TYPE.sv \
     ${src_dir}/FPGA_TOP.sv \
     ${src_dir}/TOP.sv \
+    ${src_dir}/SIMPLE_UART_RX.sv \
+    ${src_dir}/UART_FIFO.sv \
     ${src_dir}/Register/REGISTER_32_BLOCK_32.sv \
     ${src_dir}/ALU/OP_0110011/OP_0110011.sv \
     ${src_dir}/ALU/OP_0010011/OP_0010011.sv \
@@ -25,8 +27,8 @@ set sv_files [list \
     ${src_dir}/MEMORY/RAM_CONTROLLER/RAM_CONTROLLER.sv \
     ${src_dir}/MEMORY/MEMORY_CONTROLLER.sv \
     ${src_dir}/CPU/CPU_ALU.sv \
-    ${src_dir}/CPU/CPU_DATA_ADAPTER.sv \
     ${src_dir}/CPU/CPU_SINGLE_CYCLE.sv \
+    ${src_dir}/CPU/CPU_PIPELINE_ADAPTER.sv \
     ${src_dir}/CPU/PERIPHERAL_BUS.sv \
     ${src_dir}/CPU/UART_IO_DEVICE.sv \
     ${src_dir}/CPU/DEBUG_CONTROLLER.sv \
