@@ -72,9 +72,12 @@ module CPU_SINGLE_CYCLE #(
         end
     end
 
-    wire cpu_stall = mem_stall || instr_stall || ebreak_halted_r;
+    // is_ebreak — комбинационный stall (срабатывает в тот же такт, не даёт PC обновиться)
+    wire ebreak_stall = is_ebreak || ebreak_halted_r;
 
-    assign dbg_is_halted = ebreak_halted_r;
+    wire cpu_stall = mem_stall || instr_stall || ebreak_stall;
+
+    assign dbg_is_halted = ebreak_stall;
 
     // -------------------------------------------------------------------------
     // PC

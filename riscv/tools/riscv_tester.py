@@ -332,8 +332,10 @@ class RiscVDebug:
         self.resume()
 
     def upload_hex(self, hex_path: str, base_addr: int = 0,
-                   progress: bool = True):
-        """Загрузить hex в память (CPU должен быть HALT)."""
+                   progress: bool = True,
+                   ram_base: int = 0x10000, ram_zero_words: int = 512):
+        """Загрузить hex в память (CPU должен быть HALT).
+        ram_base/ram_zero_words — обнулить RAM (BSS секция, Harvard arch)."""
         words = _load_hex_file(hex_path)
         total = len(words)
         for i, w in enumerate(words):
@@ -341,6 +343,23 @@ class RiscVDebug:
             if progress and (i % 64 == 0 or i == total - 1):
                 pct = (i + 1) * 100 // total
                 print(f"\r  Загрузка: {pct:3d}% ({i+1}/{total} слов)  ",
+                      end="", flush=True)
+        if progress:
+            print()
+        if ram_zero_words > 0:
+            self.zero_bss(ram_base, ram_base + ram_zero_words * 4,
+                          progress=progress)
+
+    def zero_bss(self, start: int, end: int, progress: bool = False):
+        """Обнулить память от start до end (выравнено по 4)."""
+        count = (end - start) // 4
+        if count <= 0:
+            return
+        for i in range(count):
+            self.write_mem(start + i * 4, 0)
+            if progress and (i % 64 == 0 or i == count - 1):
+                pct = (i + 1) * 100 // count
+                print(f"\r  BSS zero: {pct:3d}% ({i+1}/{count} слов)  ",
                       end="", flush=True)
         if progress:
             print()
