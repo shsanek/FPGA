@@ -374,7 +374,7 @@ if (DEBUG_ENABLE) begin : dbg
                             state <= S_SEND_DATA;
                         end else begin
                             // Нет данных → завершаем
-                            if (cmd != CMD_HALT)
+                            if (!halt_r)
                                 bus_request_r <= 0;
                             state <= S_IDLE;
                         end
@@ -390,7 +390,7 @@ if (DEBUG_ENABLE) begin : dbg
                         tx_valid_r <= 1;
 
                         if (resp_idx == resp_len - 1) begin
-                            if (cmd != CMD_HALT)
+                            if (!halt_r)
                                 bus_request_r <= 0;
                             state <= S_IDLE;
                         end else begin

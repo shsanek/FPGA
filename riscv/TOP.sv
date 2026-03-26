@@ -322,7 +322,6 @@ module TOP #(
         .mem_read_data     (cpu_mem_read_data),
         .mem_stall         (cpu_mem_stall),
         .instr_stall       (instr_stall_w),
-        .dbg_halt          (dbg_halt),
         .dbg_set_pc        (dbg_set_pc),
         .dbg_new_pc        (dbg_new_pc),
         .dbg_is_halted     (dbg_is_halted),

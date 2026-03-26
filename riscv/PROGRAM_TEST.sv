@@ -318,10 +318,10 @@ module PROGRAM_TEST ();
                 @(posedge clk); #1;
                 if ($time > 500000) begin fi = 3; break; end
             end
-            $display("DEBUG exec[%0d]: PC=0x%08X instr=0x%08X ebreak=%b halted=%b acked=%b stall=%b",
+            $display("DEBUG exec[%0d]: PC=0x%08X instr=0x%08X ebreak=%b halted=%b stall=%b",
                      fi, dut.cpu.pc, dut.pipeline.instr_reg,
                      dut.cpu.is_ebreak, dut.cpu.dbg_is_halted,
-                     dut.cpu.ebreak_acked_r, dut.cpu.cpu_stall);
+                     dut.cpu.cpu_stall);
             @(posedge clk); // let it advance
         end
 
