@@ -66,21 +66,40 @@ FPGA/
 │
 └── riscv/                              # RISC-V processor
     ├── BASE_TYPE.sv                    # Shared type definitions
+    ├── TOP.sv                          # System top (CPU + peripherals + DDR)
+    ├── FPGA_TOP.sv                     # FPGA wrapper (clocking, MIG IP, pin assignments)
     ├── ALU/OP_0110011/                 # R-type ALU (ADD, SUB, SLL, SLT, XOR, OR, AND, SR*)
     ├── Register/                       # 32×32-bit register file
+    ├── CPU/
+    │   ├── CPU_SINGLE_CYCLE.sv         # Single-cycle RV32I core
+    │   ├── CPU_PIPELINE_ADAPTER.sv     # Instruction fetch / data access FSM
+    │   ├── CPU_ALU.sv                  # ALU wrapper
+    │   ├── DEBUG_CONTROLLER.sv         # UART debug protocol (HALT/STEP/MEM)
+    │   ├── PERIPHERAL_BUS.sv           # Address decoder (MC / UART / OLED / SD)
+    │   ├── UART_IO_DEVICE.sv           # Memory-mapped UART TX/RX
+    │   ├── SPI_MASTER.sv               # Full-duplex SPI (MOSI+MISO), configurable clock
+    │   ├── OLED_IO_DEVICE.sv           # PmodOLEDrgb (SSD1331) controller
+    │   └── SD_IO_DEVICE.sv             # PmodMicroSD (SPI mode) controller
     ├── I_O/
-    │   ├── I_O_TIMER_GENERATOR.sv      # UART baud timer (100MHz / 115200)
+    │   ├── I_O_TIMER_GENERATOR.sv      # UART baud timer
     │   ├── INPUT_CONTROLLER/           # UART receiver
     │   ├── OUTPUT_CONTROLLER/          # UART transmitter
-    │   ├── VALUE_STORAGE/              # Button/LED buffer
-    │   └── RUN_TIME_TEST/              # Hardware runtime test for memory controller
-    └── MEMORY/
-        ├── MEMORY_CONTROLLER.sv        # Cache controller (4-pool, write-back)
-        ├── MEMORY_CONTROLLER_TEST.sv
-        ├── CHUNK_STORAGE/              # Single cache line storage
-        ├── CHUNK_STORAGE_4_POOL/       # 4-entry cache pool (LRU eviction)
-        └── RAM_CONTROLLER/             # MIG DDR interface controller
-            └── MIG_MODEL.sv            # Simulation model of MIG7 (used in tests)
+    │   └── VALUE_STORAGE/              # Button/LED buffer
+    ├── MEMORY/
+    │   ├── MEMORY_CONTROLLER.sv        # Cache controller (4-pool, write-back)
+    │   ├── CHUNK_STORAGE/              # Single cache line storage
+    │   ├── CHUNK_STORAGE_4_POOL/       # 4-entry cache pool (LRU eviction)
+    │   └── RAM_CONTROLLER/             # MIG DDR controller + MIG_MODEL (sim)
+    ├── tools/
+    │   └── riscv_tester.py             # UART debug tester (upload/run/step/memdump)
+    └── tests/
+        ├── crt0.s, runtime.c, linker.ld, check.h  # Bare-metal runtime
+        └── programs/                   # Test programs (C → hex)
+            ├── hello/                  # UART hello world
+            ├── fib/, sum/              # Algorithms
+            ├── test_alu/branch/jump/mem/upper/  # CPU ISA tests
+            ├── test_oled/              # SSD1331 RGB stripe test
+            └── test_sd/               # SD card raw write/read test
 ```
 
 ---
@@ -130,6 +149,40 @@ MEMORY_CONTROLLER
 - Simulation-only MIG7 mock with 16-entry × 128-bit internal memory (indexed by `addr[7:4]`)
 - Stores writes when `wdf_wren = 1`, returns reads with 1-cycle latency
 - `mig_app_rdy` and `mig_app_wdf_rdy` always `1` (no back-pressure)
+
+### Peripheral Bus — адресная карта (28-bit)
+
+```
+0x000_0000 – 0x7FF_FFFF  →  MEMORY_CONTROLLER (DDR3 через кеш)
+0x800_0000 – 0x800_FFFF  →  UART_IO_DEVICE
+  0x800_0000 : TX_DATA   (W/R)
+  0x800_0004 : RX_DATA   (R)
+  0x800_0008 : STATUS    (R) {tx_ready, rx_avail}
+0x801_0000 – 0x801_FFFF  →  OLED_IO_DEVICE (PmodOLEDrgb SSD1331, JA)
+  0x801_0000 : DATA      (W)   — SPI byte
+  0x801_0004 : CONTROL   (W/R) — {PMODEN, VCCEN, RES, DC, CS}
+  0x801_0008 : STATUS    (R)   — {spi_busy}
+  0x801_000C : DIVIDER   (W/R) — SPI clock divider
+0x802_0000 – 0x802_FFFF  →  SD_IO_DEVICE (PmodMicroSD, JC)
+  0x802_0000 : DATA      (W/R) — SPI full-duplex TX/RX
+  0x802_0004 : CONTROL   (W/R) — {CS}
+  0x802_0008 : STATUS    (R)   — {card_detect, spi_busy}
+  0x802_000C : DIVIDER   (W/R) — SPI clock divider (init=101/~400kHz, fast=7/~5MHz)
+```
+
+Декодирование: `addr[27]=1` → I/O, `addr[17:16]` → устройство (00=UART, 01=OLED, 10=SD, 11=free).
+
+### `riscv/CPU/SPI_MASTER.sv`
+Full-duplex SPI Mode 0 (CPOL=0, CPHA=0), MSB first. Настраиваемый делитель тактовой.
+MOSI выход + MISO вход, `rx_data` содержит принятый байт после `done=1`.
+Используется как OLED_IO_DEVICE, так и SD_IO_DEVICE.
+
+### PMOD подключения
+
+| PMOD | Устройство | Пины |
+|------|-----------|------|
+| JA | PmodOLEDrgb (SSD1331) | CS, MOSI, SCK, D/C, RES, VCCEN, PMODEN |
+| JC | PmodMicroSD | CS, MOSI, MISO, SCK, Card Detect |
 
 ### `first/first.sv`
 Brainfuck interpreter state machine. Supports `+ - [ ] > <`. Uses a stack counter for nested loops.
