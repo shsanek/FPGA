@@ -14,8 +14,11 @@ FPGA hardware design project implementing two subsystems in SystemVerilog:
 ## Technology Stack
 
 - **Language:** SystemVerilog (IEEE 1800-2012)
-- **Simulator:** `iverilog` + `vvp`
+- **Simulator:** `iverilog` + `vvp` → `/c/iverilog/bin/iverilog`, `/c/iverilog/bin/vvp`
+- **Synthesis:** Vivado 2025.2 → `/c/AMDDesignTools/2025.2/Vivado/bin/vivado.bat`
+- **RISC-V GCC:** xpack riscv-none-elf-gcc 14.2.0 → `/c/riscv-gcc/xpack-riscv-none-elf-gcc-14.2.0-3/bin/riscv-none-elf-gcc`
 - **Waveforms:** VCD files (excluded from git)
+- **Board:** Arty A7-100T, UART на COM4 (115200 baud)
 
 ---
 
@@ -177,3 +180,9 @@ Complex modules (RAM_CONTROLLER) use tasks + a separate simulation model:
 - Clock period: `#5` half-period → 10 time-unit cycle (100 MHz equivalent)
 - VCD files are gitignored; generate them locally via simulation
 - UART default: 100 MHz clock, 115200 baud → ~868 cycles per bit
+
+---
+
+## TODO
+
+- **DDR init wait:** После прошивки FPGA нужно ждать ~5 секунд пока MIG завершит калибровку DDR (`init_calib_complete`). Без этого bus-операции (READ_MEM, WRITE_MEM, STEP) зависают. Нужно добавить hardware-механизм: CPU/pipeline должен стоять в stall пока `init_calib_complete=0`, а не полагаться на таймаут в тестере.

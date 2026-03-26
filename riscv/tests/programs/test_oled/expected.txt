@@ -1,0 +1,6 @@
+OLED init...
+OLED init done
+Red stripe
+Green stripe
+Blue stripe
+OLED OK
