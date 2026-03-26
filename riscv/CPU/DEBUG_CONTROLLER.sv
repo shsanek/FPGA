@@ -35,7 +35,6 @@ module DEBUG_CONTROLLER #(
 
     // CPU debug-порты
     output wire        dbg_halt,
-    output wire        dbg_step,
     output wire        dbg_set_pc,
     output wire [31:0] dbg_new_pc,
     input  wire        dbg_is_halted,
@@ -109,7 +108,6 @@ if (DEBUG_ENABLE) begin : dbg
 
     // CPU control
     logic halt_r;
-    logic step_r;
     logic set_pc_r;
     logic [31:0] new_pc_r;
 
@@ -137,7 +135,6 @@ if (DEBUG_ENABLE) begin : dbg
 
     // Assigns
     assign dbg_halt        = halt_r;
-    assign dbg_step        = step_r;
     assign dbg_set_pc      = set_pc_r;
     assign dbg_new_pc      = new_pc_r;
     assign dbg_bus_request    = bus_request_r;
@@ -177,7 +174,6 @@ if (DEBUG_ENABLE) begin : dbg
             state          <= S_IDLE;
             cmd            <= 0;
             halt_r         <= 0;
-            step_r         <= 0;
             set_pc_r       <= 0;
             new_pc_r       <= 0;
             bus_request_r  <= 0;
@@ -198,7 +194,6 @@ if (DEBUG_ENABLE) begin : dbg
         end else begin
             // Auto-clear импульсы
             tx_valid_r      <= 0;
-            step_r          <= 0;
             set_pc_r        <= 0;
             cpu_rx_valid_r  <= 0;
             step_pipeline_r <= 0;
@@ -408,13 +403,11 @@ if (DEBUG_ENABLE) begin : dbg
                 // STEP: ждём pipeline выполнит 1 инструкцию
                 // ---------------------------------------------------------
                 S_STEP_RUN: begin
-                    // Pipeline получил step, выходит из S_PAUSED → granted упадёт
                     if (!dbg_bus_granted)
                         state <= S_STEP_DONE;
                 end
 
                 S_STEP_DONE: begin
-                    // Pipeline вернулся в S_PAUSED → granted=1
                     if (dbg_bus_granted) begin
                         // Захватываем PC/INSTR после шага
                         resp[0] <= dbg_current_pc[7:0];
@@ -448,7 +441,6 @@ if (DEBUG_ENABLE) begin : dbg
 
 end else begin : no_dbg
     assign dbg_halt             = 0;
-    assign dbg_step             = 0;
     assign dbg_set_pc           = 0;
     assign dbg_new_pc           = 0;
     assign dbg_bus_request      = 0;

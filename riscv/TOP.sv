@@ -117,7 +117,7 @@ module TOP #(
     // ---------------------------------------------------------------
     // DEBUG_CONTROLLER ↔ CPU
     // ---------------------------------------------------------------
-    wire        dbg_halt, dbg_step;
+    wire        dbg_halt;
     wire        dbg_set_pc;
     wire [31:0] dbg_new_pc;
     wire        dbg_is_halted;
@@ -286,7 +286,6 @@ module TOP #(
         .tx_valid          (uart_tx_valid),
         .tx_ready          (uart_tx_ready),
         .dbg_halt          (dbg_halt),
-        .dbg_step          (dbg_step),
         .dbg_set_pc        (dbg_set_pc),
         .dbg_new_pc        (dbg_new_pc),
         .dbg_is_halted     (dbg_is_halted),
@@ -324,7 +323,6 @@ module TOP #(
         .mem_stall         (cpu_mem_stall),
         .instr_stall       (instr_stall_w),
         .dbg_halt          (dbg_halt),
-        .dbg_step          (dbg_step),
         .dbg_set_pc        (dbg_set_pc),
         .dbg_new_pc        (dbg_new_pc),
         .dbg_is_halted     (dbg_is_halted),

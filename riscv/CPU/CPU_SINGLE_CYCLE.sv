@@ -29,7 +29,6 @@ module CPU_SINGLE_CYCLE #(
 
     // Debug-интерфейс
     input  wire        dbg_halt,
-    input  wire        dbg_step,
     input  wire        dbg_set_pc,
     input  wire [31:0] dbg_new_pc,
     output wire        dbg_is_halted,
@@ -50,63 +49,57 @@ module CPU_SINGLE_CYCLE #(
     localparam OP_SYSTEM = 7'b1110011;  // ECALL / EBREAK
 
     // -------------------------------------------------------------------------
-    // Debug halt — объявляем wire cpu_stall первым (используется везде ниже)
-    // Полные assign dbg_current_pc/instr ниже, после объявления pc и instr
+    // Debug — halt/step управляется через pipeline adapter (instr_stall).
+    // CPU только обрабатывает EBREAK (самоостанов по инструкции).
+    // dbg_halt используется для определения момента resume (снятие ebreak).
     // -------------------------------------------------------------------------
-    logic dbg_halted_r;
-    logic ebreak_halted_r;  // CPU остановлен по EBREAK
-    logic ebreak_acked_r;   // предотвращает повторный останов после resume/step
+    logic ebreak_halted_r;
+    logic ebreak_acked_r;
+    logic dbg_halt_prev;
 
-    // EBREAK: opcode=SYSTEM, funct3=000, instr[20]=1
-    // Проверяем до объявления instr_data, т.к. instr = instr_data ниже
     wire is_ebreak = DEBUG_ENABLE &&
                      (instr_data[6:0]   == OP_SYSTEM) &&
                      (instr_data[14:12] == 3'b000)    &&
                      (instr_data[20]    == 1'b1);
 
-    // Детектируем CMD_RESUME: dbg_halt упал пока CPU был остановлен
-    wire dbg_resume_pulse = dbg_halted_r && !dbg_halt;
+    // Детектируем resume: dbg_halt было 1, стало 0
+    wire dbg_resume_pulse = dbg_halt_prev && !dbg_halt;
 
     always_ff @(posedge clk) begin
         if (reset) begin
-            dbg_halted_r    <= 1'b0;
             ebreak_halted_r <= 1'b0;
             ebreak_acked_r  <= 1'b0;
-        end else begin
-            dbg_halted_r <= DEBUG_ENABLE ? dbg_halt : 1'b0;
+            dbg_halt_prev   <= 1'b0;
+        end else if (DEBUG_ENABLE) begin
+            dbg_halt_prev <= dbg_halt;
 
-            if (DEBUG_ENABLE) begin
-                // Приоритет 1: step или resume — снимаем ebreak-останов
-                if ((dbg_step || dbg_resume_pulse) && ebreak_halted_r) begin
-                    ebreak_halted_r <= 1'b0;
-                    ebreak_acked_r  <= 1'b1;
-                end
-                // Приоритет 2: новый EBREAK — ставим останов
-                else if (is_ebreak && !ebreak_acked_r && !mem_stall) begin
-                    ebreak_halted_r <= 1'b1;
-                end
-
-                // Сбрасываем acked как только PC ушёл с EBREAK
-                if (!is_ebreak)
-                    ebreak_acked_r <= 1'b0;
-            end else begin
+            // Resume снимает ebreak-останов
+            if (dbg_resume_pulse && ebreak_halted_r) begin
                 ebreak_halted_r <= 1'b0;
-                ebreak_acked_r  <= 1'b0;
+                ebreak_acked_r  <= 1'b1;
             end
+            // Новый EBREAK
+            else if (is_ebreak && !ebreak_acked_r && !mem_stall && !instr_stall) begin
+                ebreak_halted_r <= 1'b1;
+            end
+
+            if (!is_ebreak)
+                ebreak_acked_r <= 1'b0;
+        end else begin
+            ebreak_halted_r <= 1'b0;
+            ebreak_acked_r  <= 1'b0;
+            dbg_halt_prev   <= 1'b0;
         end
     end
 
-    // Stall от EBREAK: активен с первого такта инструкции до step/resume
     wire ebreak_stall = DEBUG_ENABLE &&
-                        (is_ebreak && !ebreak_acked_r || ebreak_halted_r) &&
-                        !dbg_step;
+                        (is_ebreak && !ebreak_acked_r || ebreak_halted_r);
 
-    wire cpu_stall = mem_stall || instr_stall ||
-                     (DEBUG_ENABLE ? (dbg_halted_r && !dbg_step) : 1'b0) ||
-                     ebreak_stall;
+    wire cpu_stall = mem_stall || instr_stall || ebreak_stall;
 
+    // dbg_is_halted теперь включает instr_stall (pipeline paused) + ebreak
     assign dbg_is_halted = DEBUG_ENABLE ?
-        (dbg_halted_r || ebreak_halted_r || (is_ebreak && !ebreak_acked_r)) : 1'b0;
+        (instr_stall || ebreak_halted_r || (is_ebreak && !ebreak_acked_r)) : 1'b0;
 
     // -------------------------------------------------------------------------
     // PC
