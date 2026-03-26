@@ -57,6 +57,13 @@ module CPU_PIPELINE_ADAPTER (
     logic [31:0] data_reg;
     logic [27:0] addr_reg;    // latched address for WAIT states
 
+    // Защёлкнутые CPU data-выходы (разрыв критического пути ALU → cache)
+    logic [27:0] data_addr_reg;
+    logic [31:0] data_wr_data_reg;
+    logic [3:0]  data_mask_reg;
+    logic        data_rd_en_reg;
+    logic        data_wr_en_reg;
+
     // ---------------------------------------------------------------
     // Outputs to CPU
     // ---------------------------------------------------------------
@@ -92,11 +99,11 @@ module CPU_PIPELINE_ADAPTER (
             end
 
             S_DATA_TRIG: begin
-                mc_address       = mem_addr[27:0];
-                mc_read_trigger  = mem_read_en & mc_controller_ready;
-                mc_write_trigger = mem_write_en & mc_controller_ready;
-                mc_write_value   = mem_write_data;
-                mc_mask          = mem_byte_mask;
+                mc_address       = data_addr_reg;
+                mc_read_trigger  = data_rd_en_reg & mc_controller_ready;
+                mc_write_trigger = data_wr_en_reg & mc_controller_ready;
+                mc_write_value   = data_wr_data_reg;
+                mc_mask          = data_mask_reg;
             end
 
             S_PAUSED: begin
@@ -112,10 +119,15 @@ module CPU_PIPELINE_ADAPTER (
     // ---------------------------------------------------------------
     always_ff @(posedge clk) begin
         if (reset || flush) begin
-            state     <= S_FETCH_TRIG;
-            instr_reg <= 32'h0000_0013; // NOP
-            data_reg  <= 32'b0;
-            addr_reg  <= 28'b0;
+            state            <= S_FETCH_TRIG;
+            instr_reg        <= 32'h0000_0013; // NOP
+            data_reg         <= 32'b0;
+            addr_reg         <= 28'b0;
+            data_addr_reg    <= 28'b0;
+            data_wr_data_reg <= 32'b0;
+            data_mask_reg    <= 4'b0;
+            data_rd_en_reg   <= 1'b0;
+            data_wr_en_reg   <= 1'b0;
         end else begin
             case (state)
                 S_FETCH_TRIG: begin
@@ -139,6 +151,12 @@ module CPU_PIPELINE_ADAPTER (
 
                 S_EXECUTE: begin
                     if (mem_read_en || mem_write_en) begin
+                        // Защёлкиваем CPU data-выходы → разрыв комбинационного пути
+                        data_addr_reg    <= mem_addr[27:0];
+                        data_wr_data_reg <= mem_write_data;
+                        data_mask_reg    <= mem_byte_mask;
+                        data_rd_en_reg   <= mem_read_en;
+                        data_wr_en_reg   <= mem_write_en;
                         state <= S_DATA_TRIG;
                     end else if (pause) begin
                         state <= S_PAUSED;
@@ -149,7 +167,7 @@ module CPU_PIPELINE_ADAPTER (
 
                 S_DATA_TRIG: begin
                     if (mc_controller_ready) begin
-                        addr_reg <= mem_addr[27:0];
+                        addr_reg <= data_addr_reg;
                         state    <= S_DATA_WAIT;
                     end
                 end
