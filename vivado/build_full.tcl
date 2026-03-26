@@ -65,6 +65,7 @@ puts "Synthesis reports saved"
 puts "========================================="
 puts "STEP 2: Implementation"
 puts "========================================="
+set_property strategy Performance_ExtraTimingOpt [get_runs impl_1]
 launch_runs impl_1 -jobs 4
 wait_on_run impl_1
 
