@@ -150,18 +150,20 @@ module PROGRAM_TEST ();
     // ---------------------------------------------------------------
     // Debug команды через UART
     // ---------------------------------------------------------------
+    // ACK = 0xAA + CMD + CMD = 3 байта
+    // ACK + DATA = 3 + N байт
+
     task dbg_halt();
         uart_send(8'h01);
-        wait_dbg_response(1); // 0xFF ack
+        wait_dbg_response(3); // 0xAA 0x01 0x01
     endtask
 
     task dbg_resume();
         uart_send(8'h02);
-        wait_dbg_response(1); // 0xFF ack
+        wait_dbg_response(3); // 0xAA 0x02 0x02
     endtask
 
     task dbg_write_mem(input [31:0] addr, input [31:0] data);
-        // CMD_WRITE_MEM (0x05) + ADDR[31:0] + DATA[31:0] little-endian
         uart_send(8'h05);
         uart_send(addr[7:0]);
         uart_send(addr[15:8]);
@@ -171,17 +173,16 @@ module PROGRAM_TEST ();
         uart_send(data[15:8]);
         uart_send(data[23:16]);
         uart_send(data[31:24]);
-        wait_dbg_response(1); // 0xFF ack
+        wait_dbg_response(3); // 0xAA 0x05 0x05
     endtask
 
     task dbg_reset_pc(input [31:0] addr);
-        // CMD_RESET_PC (0x07) + ADDR[31:0] little-endian
         uart_send(8'h07);
         uart_send(addr[7:0]);
         uart_send(addr[15:8]);
         uart_send(addr[23:16]);
         uart_send(addr[31:24]);
-        wait_dbg_response(1); // 0xFF ack
+        wait_dbg_response(3); // 0xAA 0x07 0x07
     endtask
 
     // ---------------------------------------------------------------
@@ -202,8 +203,11 @@ module PROGRAM_TEST ();
         out_byte_count = 0;
     end
 
+    // cpu_tx_valid теперь уровень (TX_WAIT_ACCEPT), ловим только фронт
+    logic cpu_tx_prev = 0;
     always @(posedge clk) begin
-        if (dut.cpu_tx_valid) begin
+        cpu_tx_prev <= dut.cpu_tx_valid;
+        if (dut.cpu_tx_valid && !cpu_tx_prev) begin
             $fwrite(out_fd, "%c", dut.cpu_tx_byte[7:0]);
             out_byte_count = out_byte_count + 1;
         end
@@ -280,7 +284,8 @@ module PROGRAM_TEST ();
         uart_send(8'h00); uart_send(8'h00); uart_send(8'h00); uart_send(8'h00);
         begin
             logic [31:0] readback;
-            read_dbg_response(4, readback);
+            wait_dbg_response(3);            // skip ACK: 0xAA 0x04 0x04
+            read_dbg_response(4, readback);  // read DATA[31:0]
             $display("DEBUG: readback addr 0x00 = 0x%08X (expect 0x%08X)", readback, words[0]);
         end
 

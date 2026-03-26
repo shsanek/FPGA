@@ -160,32 +160,45 @@ UART-передатчик. Формат: 1 start + 8 data (LSB first) + 1 stop.
 
 ## Интеграция в TOP.sv
 
-### RX-путь
+### RX-путь (UART → CPU)
 
 ```
 uart_rx pin
   → SIMPLE_UART_RX (raw_rx_byte, raw_rx_valid)
   → RX FIFO (DEPTH=4): буферизация, при переполнении байт теряется
-  → Логика чтения: rd_en → захват данных в регистр → valid на след. такт
-  → DEBUG_CONTROLLER (uart_rx_byte, uart_rx_valid)
+  → Логика чтения с backpressure: pop только если rx_ready || head==0xFD
+  → DEBUG_CONTROLLER (uart_rx_byte, uart_rx_valid, rx_ready)
 ```
 
-**Логика чтения из RX FIFO:**
-1. Если FIFO не пуст и не идёт чтение → `rd_en=1` (1 такт)
-2. На том же фронте `rd_en=1` — данные захватываются в регистр `rx_fifo_captured` (до NBA-обновления rd_ptr)
+**Логика чтения из RX FIFO (valid/ready handshake):**
+1. FIFO не пуст И DEBUG готов (`rx_ready`) ИЛИ голова = `0xFD` → `rd_en=1`
+2. На том же фронте `rd_en=1` — данные захватываются в регистр `rx_fifo_captured`
 3. Следующий такт — `rx_fifo_valid_r=1` с корректными данными
+4. `0xFD` bypass: голова FIFO (`rd_data`, комбинационный) сравнивается с `0xFD` — попается даже при `rx_ready=0`
 
-### TX-путь
+### TX-путь (CPU → UART)
 
 ```
-DEBUG_CONTROLLER (uart_tx_byte, uart_tx_valid)
+UART_IO_DEVICE (cpu_tx_byte, cpu_tx_valid — уровень, cpu_tx_ready)
+  → DEBUG_CONTROLLER: добавляет заголовок 0xBB (S_IDLE → S_CPU_TX)
   → TX FIFO (DEPTH=4): буферизация, при переполнении байт теряется
   → Логика чтения: rd_en → захват в регистр → trigger на след. такт
   → I_O_OUTPUT_CONTROLLER (raw_tx_byte, raw_tx_valid)
   → uart_tx pin
 ```
 
-**TX ready:** DEBUG_CONTROLLER видит `uart_tx_ready = !tx_fifo_full` — может слать пока FIFO не заполнен.
+**TX ready:** DEBUG_CONTROLLER видит `uart_tx_ready = !tx_fifo_full`.
+
+**Блокирующий TX в UART_IO_DEVICE:** запись в TX_DATA опускает `controller_ready=0`. CPU pipeline стоит пока байт не будет принят DEBUG_CONTROLLER'ом и отправлен. FSM: `TX_IDLE → TX_WAIT_ACCEPT → TX_WAIT_DONE → TX_IDLE`.
+
+### Интерфейсы (сводка)
+
+| Граница | Направление | valid | ready | Тип |
+|---------|------------|-------|-------|-----|
+| RX FIFO → DEBUG | RX | импульс | `rx_ready` + FD bypass | valid/ready |
+| DEBUG → UART_IO | RX (CPU input) | импульс | нет (fire-and-forget) | push |
+| UART_IO → DEBUG | TX (CPU output) | уровень | `cpu_tx_ready` | valid/ready |
+| DEBUG → TX FIFO | TX | импульс | `!tx_fifo_full` | valid/ready |
 
 ---
 

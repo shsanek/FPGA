@@ -184,8 +184,11 @@ module TOP #(
         .empty   (rx_fifo_empty)
     );
 
-    // Выдача из RX FIFO — 1-тактовый импульс когда есть данные
-    // rd_en на 1 такт → захватываем данные в регистр → valid на след. такт
+    // Выдача из RX FIFO — valid/ready handshake с DEBUG_CONTROLLER
+    // Попаем из FIFO если DEBUG готов (rx_ready) ИЛИ голова = 0xFD (SYNC_RESET)
+    wire       dbg_rx_ready;       // от DEBUG_CONTROLLER
+    wire       fifo_head_is_fd = (rx_fifo_data == 8'hFD);
+
     reg        rx_fifo_valid_r;
     reg  [7:0] rx_fifo_captured;
     always @(posedge clk) begin
@@ -196,11 +199,12 @@ module TOP #(
         end else begin
             rx_fifo_valid_r <= 0;
             rx_fifo_rd_en   <= 0;
-            if (!rx_fifo_empty && !rx_fifo_rd_en && !rx_fifo_valid_r) begin
+            if (!rx_fifo_empty && !rx_fifo_rd_en && !rx_fifo_valid_r
+                && (dbg_rx_ready || fifo_head_is_fd)) begin
                 rx_fifo_rd_en <= 1;
             end
             if (rx_fifo_rd_en) begin
-                rx_fifo_captured <= rx_fifo_data;  // данные валидны ДО NBA-обновления rd_ptr
+                rx_fifo_captured <= rx_fifo_data;
                 rx_fifo_valid_r  <= 1;
             end
         end
@@ -299,7 +303,8 @@ module TOP #(
         .cpu_rx_valid      (cpu_rx_valid),
         .cpu_tx_byte       (cpu_tx_byte),
         .cpu_tx_valid      (cpu_tx_valid),
-        .cpu_tx_ready      (cpu_tx_ready)
+        .cpu_tx_ready      (cpu_tx_ready),
+        .rx_ready          (dbg_rx_ready)
     );
 
     // --- CPU ---

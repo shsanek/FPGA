@@ -57,7 +57,10 @@ module DEBUG_CONTROLLER #(
     output wire        cpu_rx_valid,
     input  wire [7:0]  cpu_tx_byte,
     input  wire        cpu_tx_valid,
-    output wire        cpu_tx_ready
+    output wire        cpu_tx_ready,
+
+    // RX backpressure: DEBUG готов принять байт из FIFO
+    output wire        rx_ready
 );
 
     // ---------------------------------------------------------------
@@ -144,6 +147,7 @@ if (DEBUG_ENABLE) begin : dbg
     assign cpu_rx_byte  = cpu_rx_byte_r;
     assign cpu_rx_valid = cpu_rx_valid_r;
     assign cpu_tx_ready = (state == S_IDLE) && tx_ready && !tx_valid_r;
+    assign rx_ready     = (state == S_IDLE) || (state == S_RECV);
 
     // Сколько байт payload для команды
     function automatic [3:0] payload_bytes(input [7:0] c);
@@ -430,6 +434,7 @@ end else begin : no_dbg
     assign cpu_rx_byte          = 0;
     assign cpu_rx_valid         = 0;
     assign cpu_tx_ready         = 1;
+    assign rx_ready             = 1;
 end
 endgenerate
 
