@@ -6,12 +6,15 @@ module SPI_MASTER_TEST();
     reg [15:0] divider = 16'd1; // быстрый для теста: полупериод = 2 такта clk
 
     wire busy, done, sck, mosi;
+    reg  miso_r = 1;  // MISO input (simulated slave response)
+    wire [7:0] rx_data;
 
     SPI_MASTER #(.DATA_WIDTH(8)) dut (
         .clk(clk), .reset(reset),
         .data(data), .trigger(trigger), .divider(divider),
         .busy(busy), .done(done),
-        .sck(sck), .mosi(mosi)
+        .sck(sck), .mosi(mosi),
+        .miso(miso_r), .rx_data(rx_data)
     );
 
     always #5 clk = ~clk;
@@ -23,6 +26,10 @@ module SPI_MASTER_TEST();
     integer cap_idx;
     reg sck_prev;
 
+    // Simulated MISO: shift out miso_pattern on falling edge SCK
+    reg [7:0] miso_pattern;
+    integer miso_idx;
+
     always @(posedge clk) begin
         sck_prev <= sck;
         if (sck && !sck_prev) begin
@@ -30,20 +37,28 @@ module SPI_MASTER_TEST();
             captured[7 - cap_idx] <= mosi;
             cap_idx <= cap_idx + 1;
         end
+        if (!sck && sck_prev) begin
+            // Falling edge SCK — shift out next MISO bit
+            miso_idx <= miso_idx + 1;
+            if (miso_idx < 7)
+                miso_r <= miso_pattern[6 - miso_idx];
+        end
     end
 
-    task send_byte(input [7:0] val);
+    task send_byte(input [7:0] tx_val, input [7:0] miso_val);
         begin
-            cap_idx  = 0;
-            captured = 8'h00;
-            data     = val;
+            cap_idx      = 0;
+            captured     = 8'h00;
+            miso_idx     = 0;
+            miso_pattern = miso_val;
+            miso_r       = miso_val[7]; // MSB ready before first rising edge
+            data         = tx_val;
             @(posedge clk);
             trigger = 1;
             @(posedge clk);
             trigger = 0;
-            // Ждём done
             while (!done) @(posedge clk);
-            @(posedge clk); // один такт на settle
+            @(posedge clk); // settle
         end
     endtask
 
@@ -51,55 +66,60 @@ module SPI_MASTER_TEST();
         $dumpfile("SPI_MASTER_TEST.vcd");
         $dumpvars(0, SPI_MASTER_TEST);
 
-        // Reset
         #20;
         reset = 0;
         #20;
 
-        // ---- Test 1: Send 0xA5 ----
-        $display("Test 1: Send 0xA5");
-        send_byte(8'hA5);
+        // ---- Test 1: Send 0xA5, MISO=0xFF ----
+        $display("Test 1: TX=0xA5, MISO=0xFF");
+        send_byte(8'hA5, 8'hFF);
         if (captured !== 8'hA5) begin
-            $display("  FAIL: captured=0x%02X, expected=0xA5", captured);
+            $display("  FAIL: MOSI captured=0x%02X, expected=0xA5", captured);
+            errors = errors + 1;
+        end else if (rx_data !== 8'hFF) begin
+            $display("  FAIL: rx_data=0x%02X, expected=0xFF", rx_data);
             errors = errors + 1;
         end else begin
-            $display("  PASS: captured=0x%02X", captured);
+            $display("  PASS: MOSI=0x%02X, MISO rx=0x%02X", captured, rx_data);
         end
 
         #20;
 
-        // ---- Test 2: Send 0x3C ----
-        $display("Test 2: Send 0x3C");
-        send_byte(8'h3C);
-        if (captured !== 8'h3C) begin
-            $display("  FAIL: captured=0x%02X, expected=0x3C", captured);
-            errors = errors + 1;
-        end else begin
-            $display("  PASS: captured=0x%02X", captured);
-        end
-
-        #20;
-
-        // ---- Test 3: Send 0xFF ----
-        $display("Test 3: Send 0xFF");
-        send_byte(8'hFF);
-        if (captured !== 8'hFF) begin
-            $display("  FAIL: captured=0x%02X, expected=0xFF", captured);
-            errors = errors + 1;
-        end else begin
-            $display("  PASS: captured=0x%02X", captured);
-        end
-
-        #20;
-
-        // ---- Test 4: Send 0x00 ----
-        $display("Test 4: Send 0x00");
-        send_byte(8'h00);
+        // ---- Test 2: Send 0x00, MISO=0xA5 ----
+        $display("Test 2: TX=0x00, MISO=0xA5");
+        send_byte(8'h00, 8'hA5);
         if (captured !== 8'h00) begin
-            $display("  FAIL: captured=0x%02X, expected=0x00", captured);
+            $display("  FAIL: MOSI captured=0x%02X", captured);
+            errors = errors + 1;
+        end else if (rx_data !== 8'hA5) begin
+            $display("  FAIL: rx_data=0x%02X, expected=0xA5", rx_data);
             errors = errors + 1;
         end else begin
-            $display("  PASS: captured=0x%02X", captured);
+            $display("  PASS: MOSI=0x%02X, MISO rx=0x%02X", captured, rx_data);
+        end
+
+        #20;
+
+        // ---- Test 3: Full duplex 0x3C / 0xC3 ----
+        $display("Test 3: TX=0x3C, MISO=0xC3");
+        send_byte(8'h3C, 8'hC3);
+        if (captured !== 8'h3C || rx_data !== 8'hC3) begin
+            $display("  FAIL: MOSI=0x%02X(exp 0x3C), rx=0x%02X(exp 0xC3)", captured, rx_data);
+            errors = errors + 1;
+        end else begin
+            $display("  PASS: MOSI=0x%02X, MISO rx=0x%02X", captured, rx_data);
+        end
+
+        #20;
+
+        // ---- Test 4: MISO=0x00 ----
+        $display("Test 4: TX=0xFF, MISO=0x00");
+        send_byte(8'hFF, 8'h00);
+        if (rx_data !== 8'h00) begin
+            $display("  FAIL: rx_data=0x%02X, expected=0x00", rx_data);
+            errors = errors + 1;
+        end else begin
+            $display("  PASS: rx_data=0x%02X", rx_data);
         end
 
         #20;
@@ -113,7 +133,7 @@ module SPI_MASTER_TEST();
             $display("  PASS: SCK idle low");
         end
 
-        // ---- Test 6: busy/done signals ----
+        // ---- Test 6: busy=0 when idle ----
         $display("Test 6: busy=0 when idle");
         if (busy !== 1'b0) begin
             $display("  FAIL: busy should be 0");
@@ -124,7 +144,6 @@ module SPI_MASTER_TEST();
 
         #20;
 
-        // ---- Summary ----
         if (errors == 0)
             $display("ALL TESTS PASSED");
         else

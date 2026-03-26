@@ -48,7 +48,17 @@ module FPGA_TOP (
     output wire        ja_oled_dc,      // JA[4] pin 7
     output wire        ja_oled_res_n,   // JA[5] pin 8
     output wire        ja_oled_vccen,   // JA[6] pin 9
-    output wire        ja_oled_pmoden   // JA[7] pin 10
+    output wire        ja_oled_pmoden,  // JA[7] pin 10
+
+    // PMOD JC — PmodMicroSD
+    output wire        jc_sd_cs_n,     // JC[0] pin 1
+    output wire        jc_sd_mosi,     // JC[1] pin 2
+    input  wire        jc_sd_miso,     // JC[2] pin 3
+    output wire        jc_sd_sck,      // JC[3] pin 4
+    // JC[4] pin 7 = DAT1 (unused in SPI)
+    // JC[5] pin 8 = DAT2 (unused in SPI)
+    input  wire        jc_sd_cd_n      // JC[6] pin 9  card detect
+    // JC[7] pin 10 = NC
 );
 
     // ---------------------------------------------------------------
@@ -195,7 +205,14 @@ module FPGA_TOP (
         .oled_dc                (ja_oled_dc),
         .oled_res_n             (ja_oled_res_n),
         .oled_vccen             (ja_oled_vccen),
-        .oled_pmoden            (ja_oled_pmoden)
+        .oled_pmoden            (ja_oled_pmoden),
+
+        // SD
+        .sd_cs_n                (jc_sd_cs_n),
+        .sd_mosi                (jc_sd_mosi),
+        .sd_miso                (jc_sd_miso),
+        .sd_sck                 (jc_sd_sck),
+        .sd_cd_n                (jc_sd_cd_n)
     );
 
     // ---------------------------------------------------------------

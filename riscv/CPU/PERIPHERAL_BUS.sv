@@ -4,9 +4,11 @@
 //   address[27] == 0  →  MEMORY_CONTROLLER  (ОЗУ, кэш)
 //   address[27] == 1  →  I/O устройства
 //
-// I/O подразбивка по биту 16:
-//   address[16] == 0  →  UART_IO_DEVICE   (0x8000000)
-//   address[16] == 1  →  OLED_IO_DEVICE   (0x8010000)
+// I/O подразбивка по битам [17:16]:
+//   00 → UART_IO_DEVICE   (0x8000000)
+//   01 → OLED_IO_DEVICE   (0x8010000)
+//   10 → SD_IO_DEVICE     (0x8020000)
+//   11 → (свободно)
 module PERIPHERAL_BUS (
     // Интерфейс с CPU_DATA_ADAPTER (upstream)
     input  wire [27:0] address,
@@ -42,11 +44,23 @@ module PERIPHERAL_BUS (
     output wire [31:0] oled_write_value,
     output wire [3:0]  oled_mask,
     input  wire [31:0] oled_read_value,
-    input  wire        oled_controller_ready
+    input  wire        oled_controller_ready,
+
+    // SD_IO_DEVICE (downstream)
+    output wire [27:0] sd_address,
+    output wire        sd_read_trigger,
+    output wire        sd_write_trigger,
+    output wire [31:0] sd_write_value,
+    output wire [3:0]  sd_mask,
+    input  wire [31:0] sd_read_value,
+    input  wire        sd_controller_ready
 );
-    wire io_sel   = address[27];              // 1 → I/O пространство
-    wire oled_sel = io_sel & address[16];     // I/O + bit16 → OLED
-    wire uart_sel = io_sel & ~address[16];    // I/O + !bit16 → UART
+    wire io_sel   = address[27];
+    wire [1:0] io_dev = address[17:16];
+
+    wire uart_sel = io_sel & (io_dev == 2'b00);
+    wire oled_sel = io_sel & (io_dev == 2'b01);
+    wire sd_sel   = io_sel & (io_dev == 2'b10);
 
     // --- MEMORY_CONTROLLER ---
     assign mc_address       = address;
@@ -69,12 +83,21 @@ module PERIPHERAL_BUS (
     assign oled_write_value   = write_value;
     assign oled_mask          = mask;
 
+    // --- SD ---
+    assign sd_address       = address;
+    assign sd_read_trigger  = sd_sel ? read_trigger  : 1'b0;
+    assign sd_write_trigger = sd_sel ? write_trigger : 1'b0;
+    assign sd_write_value   = write_value;
+    assign sd_mask          = mask;
+
     // --- Мультиплексирование ответа ---
-    assign read_value       = oled_sel ? oled_read_value :
+    assign read_value       = sd_sel   ? sd_read_value   :
+                              oled_sel ? oled_read_value :
                               uart_sel ? io_read_value   :
                                          mc_read_value;
 
-    assign controller_ready = oled_sel ? oled_controller_ready :
+    assign controller_ready = sd_sel   ? sd_controller_ready   :
+                              oled_sel ? oled_controller_ready :
                               uart_sel ? io_controller_ready   :
                                          mc_controller_ready;
 

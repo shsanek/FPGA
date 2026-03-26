@@ -6,6 +6,13 @@ set src_dir  "C:/Users/ssane/Documents/FPGA/riscv"
 
 open_project ${proj_dir}/project_1.xpr
 
+# Add peripheral source files (catch if already added)
+foreach f {CPU/SPI_MASTER.sv CPU/OLED_IO_DEVICE.sv CPU/SD_IO_DEVICE.sv} {
+    set fpath "${src_dir}/${f}"
+    catch {add_files -norecurse -fileset [get_filesets sources_1] $fpath}
+    catch {set_property file_type SystemVerilog [get_files $fpath]}
+}
+
 # Ensure FPGA_TOP is added and set as top
 catch {add_files -norecurse -fileset [get_filesets sources_1] ${src_dir}/FPGA_TOP.sv}
 catch {set_property file_type SystemVerilog [get_files ${src_dir}/FPGA_TOP.sv]}

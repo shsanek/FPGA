@@ -59,7 +59,9 @@ module OLED_IO_DEVICE (
         .busy(spi_busy),
         .done(spi_done),
         .sck(oled_sck),
-        .mosi(oled_mosi)
+        .mosi(oled_mosi),
+        .miso(1'b1),
+        .rx_data()
     );
 
     // ---------------------------------------------------------------

@@ -485,6 +485,13 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
+      <File Path="$PPRDIR/../../riscv/CPU/SD_IO_DEVICE.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
       <File Path="$PPRDIR/../../riscv/SIMPLE_UART_RX.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>

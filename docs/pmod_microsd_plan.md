@@ -4,17 +4,17 @@
 
 PmodMicroSD — SPI ридер microSD карт. В SPI-режиме используются 4 сигнала + card detect.
 
-## Распиновка (dual-row PMOD, подключаем к JB)
+## Распиновка (dual-row PMOD, подключаем к JC)
 
 ```
-JB[0] = pin 1  = CS     (chip select, active low)
-JB[1] = pin 2  = MOSI   (SPI data out → SD)
-JB[2] = pin 3  = MISO   (SPI data in  ← SD)
-JB[3] = pin 4  = SCK    (SPI clock, max 25 MHz при init, потом до 50 MHz)
-JB[4] = pin 7  = DAT1   (не используется в SPI mode)
-JB[5] = pin 8  = DAT2   (не используется в SPI mode)
-JB[6] = pin 9  = CD     (card detect, input: 0=карта вставлена)
-JB[7] = pin 10 = NC
+JC[0] = pin 1  = CS     (chip select, active low)
+JC[1] = pin 2  = MOSI   (SPI data out → SD)
+JC[2] = pin 3  = MISO   (SPI data in  ← SD)
+JC[3] = pin 4  = SCK    (SPI clock, max 25 MHz при init, потом до 50 MHz)
+JC[4] = pin 7  = DAT1   (не используется в SPI mode)
+JC[5] = pin 8  = DAT2   (не используется в SPI mode)
+JC[6] = pin 9  = CD     (card detect, input: 0=карта вставлена)
+JC[7] = pin 10 = NC
 ```
 
 DAT1/DAT2 в SPI mode не нужны — подтянуть к VCC или оставить.

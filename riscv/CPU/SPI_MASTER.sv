@@ -13,6 +13,7 @@
 //   1. Установить divider (кол-во тактов clk на полупериод SCK)
 //   2. Подать data + trigger=1 на один такт
 //   3. Дождаться done=1 (busy=0)
+//   4. Прочитать rx_data (принятые данные по MISO)
 module SPI_MASTER #(
     parameter DATA_WIDTH = 8
 )(
@@ -28,9 +29,11 @@ module SPI_MASTER #(
     output wire                  busy,
     output wire                  done,     // импульс 1 такт по завершении
 
-    // SPI выходы
+    // SPI
     output wire                  sck,
-    output wire                  mosi
+    output wire                  mosi,
+    input  wire                  miso,     // данные от slave
+    output wire [DATA_WIDTH-1:0] rx_data   // принятый байт (valid при done=1)
 );
     localparam BIT_CNT_W = $clog2(DATA_WIDTH + 1);
 
@@ -42,19 +45,22 @@ module SPI_MASTER #(
 
     state_t                 state;
     logic [DATA_WIDTH-1:0]  shift_reg;
+    logic [DATA_WIDTH-1:0]  rx_shift;   // MISO receive shift register
     logic [BIT_CNT_W-1:0]  bit_cnt;    // сколько бит осталось
     logic [15:0]            clk_cnt;    // счётчик делителя
     logic                   sck_r;      // текущее значение SCK
 
-    assign busy = (state != S_IDLE);
-    assign done = (state == S_DONE);
-    assign sck  = sck_r;
-    assign mosi = shift_reg[DATA_WIDTH-1]; // MSB
+    assign busy    = (state != S_IDLE);
+    assign done    = (state == S_DONE);
+    assign sck     = sck_r;
+    assign mosi    = shift_reg[DATA_WIDTH-1]; // MSB
+    assign rx_data = rx_shift;
 
     always_ff @(posedge clk) begin
         if (reset) begin
             state     <= S_IDLE;
             shift_reg <= '0;
+            rx_shift  <= '0;
             bit_cnt   <= '0;
             clk_cnt   <= '0;
             sck_r     <= 1'b0;
@@ -76,8 +82,9 @@ module SPI_MASTER #(
                     end else begin
                         clk_cnt <= '0;
                         if (!sck_r) begin
-                            // Rising edge — data sampled by slave
-                            sck_r <= 1'b1;
+                            // Rising edge — sample MISO, slave samples MOSI
+                            sck_r    <= 1'b1;
+                            rx_shift <= {rx_shift[DATA_WIDTH-2:0], miso};
                         end else begin
                             // Falling edge — shift next bit
                             sck_r   <= 1'b0;

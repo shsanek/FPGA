@@ -23,6 +23,11 @@
 //     0x801_0004 : CONTROL   (W/R) — {PMODEN, VCCEN, RES, DC, CS}
 //     0x801_0008 : STATUS    (R)   — {…, spi_busy, 0}
 //     0x801_000C : DIVIDER   (W/R) — SPI clock divider
+//   0x802_0000 – 0x802_FFFF  →  SD_IO_DEVICE (PmodMicroSD, SPI mode)
+//     0x802_0000 : DATA      (W/R) — SPI byte TX/RX (full-duplex)
+//     0x802_0004 : CONTROL   (W/R) — {CS}
+//     0x802_0008 : STATUS    (R)   — {…, card_detect, spi_busy, 0}
+//     0x802_000C : DIVIDER   (W/R) — SPI clock divider
 //
 // Синтез: mig_* порты подключаются к Xilinx MIG7 IP core.
 // Симуляция: подключить MIG_MODEL к mig_* портам в тестбенче.
@@ -64,7 +69,14 @@ module TOP #(
     output wire        oled_dc,
     output wire        oled_res_n,
     output wire        oled_vccen,
-    output wire        oled_pmoden
+    output wire        oled_pmoden,
+
+    // SD (PmodMicroSD, SPI mode)
+    output wire        sd_cs_n,
+    output wire        sd_mosi,
+    input  wire        sd_miso,
+    output wire        sd_sck,
+    input  wire        sd_cd_n       // card detect (0=inserted)
 );
     localparam MASK_SIZE  = DATA_SIZE / 8;
     localparam BIT_PERIOD = CLOCK_FREQ / BAUD_RATE;
@@ -124,6 +136,15 @@ module TOP #(
     wire [31:0] oled_wr_data, oled_rd_data;
     wire [3:0]  oled_mask;
     wire        oled_ready;
+
+    // ---------------------------------------------------------------
+    // PERIPHERAL_BUS ↔ SD_IO_DEVICE
+    // ---------------------------------------------------------------
+    wire [27:0] sd_addr;
+    wire        sd_rd, sd_wr;
+    wire [31:0] sd_wr_data, sd_rd_data;
+    wire [3:0]  sd_mask_w;
+    wire        sd_ready;
 
     // ---------------------------------------------------------------
     // MEMORY_CONTROLLER ↔ RAM_CONTROLLER
@@ -423,7 +444,15 @@ module TOP #(
         .oled_write_value    (oled_wr_data),
         .oled_mask           (oled_mask),
         .oled_read_value     (oled_rd_data),
-        .oled_controller_ready(oled_ready)
+        .oled_controller_ready(oled_ready),
+
+        .sd_address          (sd_addr),
+        .sd_read_trigger     (sd_rd),
+        .sd_write_trigger    (sd_wr),
+        .sd_write_value      (sd_wr_data),
+        .sd_mask             (sd_mask_w),
+        .sd_read_value       (sd_rd_data),
+        .sd_controller_ready (sd_ready)
     );
 
     // --- UART_IO_DEVICE ---
@@ -462,6 +491,24 @@ module TOP #(
         .oled_res_n        (oled_res_n),
         .oled_vccen        (oled_vccen),
         .oled_pmoden       (oled_pmoden)
+    );
+
+    // --- SD_IO_DEVICE ---
+    SD_IO_DEVICE sd_io (
+        .clk               (clk),
+        .reset             (reset),
+        .address           (sd_addr),
+        .read_trigger      (sd_rd),
+        .write_trigger     (sd_wr),
+        .write_value       (sd_wr_data),
+        .mask              (sd_mask_w),
+        .read_value        (sd_rd_data),
+        .controller_ready  (sd_ready),
+        .sd_sck            (sd_sck),
+        .sd_mosi           (sd_mosi),
+        .sd_miso           (sd_miso),
+        .sd_cs_n           (sd_cs_n),
+        .sd_cd_n           (sd_cd_n)
     );
 
     // --- MEMORY_CONTROLLER ---
