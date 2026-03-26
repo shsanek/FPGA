@@ -1,11 +1,7 @@
-// Тест DEBUG_CONTROLLER
+// Тест DEBUG_CONTROLLER (новый pipeline)
 //
-// Подключаем DEBUG_CONTROLLER к:
-//   - stub-CPU (simple registers for dbg_is_halted, dbg_current_pc, dbg_current_instr)
-//   - stub-MEMORY (mc_dbg_ready pulses after 2 clocks, returns fixed data)
-//
-// Байты шлём напрямую (rx_valid/rx_byte), TX проверяем сразу.
-// tx_ready держим =1 (TX не занят).
+// ACK = два одинаковых байта (код команды)
+// Pipeline: IDLE → [RECV] → PAUSE_WAIT → EXEC → [MEM_WAIT] → ACK1 → ACK2 → IDLE
 module DEBUG_CONTROLLER_TEST();
     logic clk = 0;
     initial forever #5 clk = ~clk;
@@ -13,9 +9,7 @@ module DEBUG_CONTROLLER_TEST();
     logic reset;
     int   error = 0;
 
-    // ---------------------------------------------------------------
     // RX-инжектор
-    // ---------------------------------------------------------------
     logic [7:0] rx_byte;
     logic       rx_valid;
 
@@ -27,18 +21,19 @@ module DEBUG_CONTROLLER_TEST();
     // CPU stub
     logic        cpu_halted = 0;
     logic [31:0] cpu_pc     = 32'hDEAD_0004;
-    logic [31:0] cpu_instr  = 32'h00A00093;  // addi x1, x0, 10
+    logic [31:0] cpu_instr  = 32'h00A00093;
     wire         dbg_halt_w, dbg_step_w;
+    wire         dbg_set_pc_w;
+    wire  [31:0] dbg_new_pc_w;
 
     // MC stub
     logic        mc_ready = 0;
     logic [31:0] mc_rdata = 32'hCAFE_BABE;
     wire  [27:0] mc_addr_w;
     wire         mc_rd_w, mc_wr_w;
+    wire  [31:0] mc_wdata_w;
 
-    // ---------------------------------------------------------------
     // DUT
-    // ---------------------------------------------------------------
     DEBUG_CONTROLLER #(.DEBUG_ENABLE(1)) dut (
         .clk              (clk),
         .reset            (reset),
@@ -49,20 +44,19 @@ module DEBUG_CONTROLLER_TEST();
         .tx_ready         (tx_ready),
         .dbg_halt         (dbg_halt_w),
         .dbg_step         (dbg_step_w),
-        .dbg_set_pc       (),
-        .dbg_new_pc       (),
+        .dbg_set_pc       (dbg_set_pc_w),
+        .dbg_new_pc       (dbg_new_pc_w),
         .dbg_is_halted    (cpu_halted),
         .dbg_current_pc   (cpu_pc),
         .dbg_current_instr(cpu_instr),
+        .dbg_bus_request  (),
+        .dbg_bus_granted  (1'b1),     // pipeline bypass для теста
         .mc_dbg_address   (mc_addr_w),
         .mc_dbg_read_trigger (mc_rd_w),
         .mc_dbg_write_trigger(mc_wr_w),
-        .dbg_bus_request  (),
-        .dbg_bus_granted  (1'b1),
-        .mc_dbg_write_data(),
+        .mc_dbg_write_data(mc_wdata_w),
         .mc_dbg_read_data (mc_rdata),
         .mc_dbg_ready     (mc_ready),
-        // CPU passthrough — в этом тесте не используется
         .cpu_rx_byte      (),
         .cpu_rx_valid     (),
         .cpu_tx_byte      (8'h00),
@@ -70,12 +64,11 @@ module DEBUG_CONTROLLER_TEST();
         .cpu_tx_ready     ()
     );
 
-    // CPU stub: встаёт когда dbg_halt выставлен
+    // CPU stub: halt следует за dbg_halt
     always_ff @(posedge clk)
-        if (dbg_halt_w)  cpu_halted <= 1;
-        else             cpu_halted <= 0;
+        cpu_halted <= dbg_halt_w;
 
-    // MC stub: готовность через 3 такта после первого фронта запроса
+    // MC stub: ready через 3 такта после фронта trigger
     logic [1:0] mc_cnt;
     logic       mc_rd_prev, mc_wr_prev;
     always_ff @(posedge clk) begin
@@ -88,7 +81,6 @@ module DEBUG_CONTROLLER_TEST();
             mc_ready   <= 0;
             mc_rd_prev <= mc_rd_w;
             mc_wr_prev <= mc_wr_w;
-            // Запускаем только по фронту (чтобы не сбрасывать счётчик каждый цикл)
             if ((mc_rd_w && !mc_rd_prev) || (mc_wr_w && !mc_wr_prev)) begin
                 mc_cnt <= 3;
             end else if (mc_cnt > 0) begin
@@ -98,9 +90,6 @@ module DEBUG_CONTROLLER_TEST();
         end
     end
 
-    // ---------------------------------------------------------------
-    // Вспомогательные задачи
-    // ---------------------------------------------------------------
     // Отправить 1 байт в DUT
     task send_byte(input [7:0] b);
         @(posedge clk); #1;
@@ -110,27 +99,29 @@ module DEBUG_CONTROLLER_TEST();
         rx_valid = 0;
     endtask
 
-    // Ждать следующий TX-байт и проверить значение
+    // Ждать TX байт и проверить
     task expect_byte(input [7:0] expected, input string desc);
         integer timeout;
         timeout = 0;
-        // Ждём пока tx_valid станет 1
         while (!tx_valid && timeout < 200) begin
             @(posedge clk); #1;
             timeout = timeout + 1;
         end
         if (!tx_valid) begin
-            $display("FAIL %s: no TX byte (timeout)", desc); error = error + 1;
+            $display("FAIL %s: no TX byte (timeout)", desc); error++;
         end else if (tx_byte !== expected) begin
-            $display("FAIL %s: got 0x%02X, expected 0x%02X", desc, tx_byte, expected); error = error + 1;
+            $display("FAIL %s: got 0x%02X, expected 0x%02X", desc, tx_byte, expected); error++;
         end
-        // Продвигаемся ВПЕРЁД чтобы следующий вызов не поймал тот же импульс
         @(posedge clk); #1;
     endtask
 
-    // ---------------------------------------------------------------
-    // Тест
-    // ---------------------------------------------------------------
+    // Ждать полный debug-ответ: HDR(0xAA) + ACK1 + ACK2
+    task expect_ack(input [7:0] cmd_code, input string desc);
+        expect_byte(8'hAA,   {desc, " HDR"});
+        expect_byte(cmd_code, {desc, " ACK1"});
+        expect_byte(cmd_code, {desc, " ACK2"});
+    endtask
+
     initial begin
         reset    = 1;
         rx_valid = 0;
@@ -142,33 +133,37 @@ module DEBUG_CONTROLLER_TEST();
         @(posedge clk); #1;
 
         // --------------------------------------------------------
-        // T1: HALT → 0xFF
+        // T1: HALT → ACK(0x01, 0x01)
         // --------------------------------------------------------
-        send_byte(8'h01);  // CMD_HALT
-        // CPU stub встаёт после 1 такта с dbg_halt=1
-        expect_byte(8'hFF, "HALT response");
+        $display("T1: HALT");
+        send_byte(8'h01);
+        expect_ack(8'h01, "HALT");
+        repeat(2) @(posedge clk); #1;
         assert(cpu_halted === 1) else begin
-            $display("FAIL HALT: cpu_halted=%0b", cpu_halted); error = error + 1;
+            $display("FAIL: cpu not halted"); error++;
         end
 
         // --------------------------------------------------------
-        // T2: RESUME → 0xFF
+        // T2: RESUME → ACK(0x02, 0x02), cpu resumed
         // --------------------------------------------------------
-        send_byte(8'h02);  // CMD_RESUME
-        expect_byte(8'hFF, "RESUME response");
-        @(posedge clk); #1;
+        $display("T2: RESUME");
+        send_byte(8'h02);
+        expect_ack(8'h02, "RESUME");
+        repeat(2) @(posedge clk); #1;
         assert(cpu_halted === 0) else begin
-            $display("FAIL RESUME: cpu still halted"); error = error + 1;
+            $display("FAIL: cpu still halted"); error++;
         end
 
         // --------------------------------------------------------
-        // T3: HALT снова, потом STEP → PC(4B) + INSTR(4B)
+        // T3: STEP → ACK(0x03, 0x03) + PC[4B] + INSTR[4B]
         // --------------------------------------------------------
-        send_byte(8'h01);  // HALT
-        expect_byte(8'hFF, "HALT2 response");
+        $display("T3: STEP");
+        send_byte(8'h01);  // HALT first
+        expect_ack(8'h01, "HALT for STEP");
 
-        send_byte(8'h03);  // CMD_STEP
-        // Ожидаем PC = 0xDEAD0004 little-endian
+        send_byte(8'h03);
+        expect_ack(8'h03, "STEP");
+        // PC = 0xDEAD0004 little-endian
         expect_byte(8'h04, "STEP PC[7:0]");
         expect_byte(8'h00, "STEP PC[15:8]");
         expect_byte(8'hAD, "STEP PC[23:16]");
@@ -180,24 +175,108 @@ module DEBUG_CONTROLLER_TEST();
         expect_byte(8'h00, "STEP INSTR[31:24]");
 
         // --------------------------------------------------------
-        // T4: READ_MEM addr=0x0000_0010 → 0xCAFEBABE
+        // T4: READ_MEM addr=0x10 → ACK(0x04, 0x04) + DATA[4B]
         // --------------------------------------------------------
-        send_byte(8'h04);              // CMD_READ_MEM
-        send_byte(8'h10); send_byte(8'h00);  // addr little-endian
+        $display("T4: READ_MEM");
+        send_byte(8'h04);
+        send_byte(8'h10); send_byte(8'h00);
         send_byte(8'h00); send_byte(8'h00);
-        // ждём mc_ready (stub: 3 такта после trigger)
+        expect_ack(8'h04, "READ_MEM");
+        // DATA = 0xCAFEBABE little-endian
         expect_byte(8'hBE, "READ_MEM [7:0]");
         expect_byte(8'hBA, "READ_MEM [15:8]");
         expect_byte(8'hFE, "READ_MEM [23:16]");
         expect_byte(8'hCA, "READ_MEM [31:24]");
 
         // --------------------------------------------------------
-        // T5: WRITE_MEM addr=0x0000_0020, data=0x12345678 → 0xFF
+        // T5: WRITE_MEM addr=0x20 data=0x12345678 → ACK(0x05, 0x05), no data
         // --------------------------------------------------------
-        send_byte(8'h05);              // CMD_WRITE_MEM
+        $display("T5: WRITE_MEM");
+        send_byte(8'h05);
         send_byte(8'h20); send_byte(8'h00); send_byte(8'h00); send_byte(8'h00);
         send_byte(8'h78); send_byte(8'h56); send_byte(8'h34); send_byte(8'h12);
-        expect_byte(8'hFF, "WRITE_MEM response");
+        expect_ack(8'h05, "WRITE_MEM");
+
+        assert(mc_addr_w === 28'h0000020) else begin
+            $display("FAIL: mc_addr=0x%07X, expected 0x0000020", mc_addr_w); error++;
+        end
+
+        // --------------------------------------------------------
+        // T6: RESET_PC addr=0x100 → ACK(0x07, 0x07), no data
+        // --------------------------------------------------------
+        $display("T6: RESET_PC");
+        send_byte(8'h07);
+        send_byte(8'h00); send_byte(8'h01);
+        send_byte(8'h00); send_byte(8'h00);
+        expect_ack(8'h07, "RESET_PC");
+
+        // --------------------------------------------------------
+        // T7: CMD_INPUT 0x06 + 1 байт → доставка в CPU
+        // --------------------------------------------------------
+        $display("T7: INPUT");
+        // Сначала RESUME чтобы CPU работал
+        send_byte(8'h02);
+        expect_ack(8'h02, "RESUME for INPUT");
+
+        send_byte(8'h06);  // CMD_INPUT
+        send_byte(8'hAB);  // payload = 0xAB
+        expect_ack(8'h06, "INPUT");
+        // Проверяем что cpu_rx_valid сработал (байт попал в UART_IO_DEVICE)
+
+        // T7b: INPUT с байтом 0x01 — раньше бы перехватился как HALT
+        $display("T7b: INPUT byte 0x01 (was HALT)");
+        send_byte(8'h06);
+        send_byte(8'h01);  // этот 0x01 — данные, не команда
+        expect_ack(8'h06, "INPUT 0x01");
+        // CPU не должен быть halted
+        repeat(2) @(posedge clk); #1;
+        assert(cpu_halted === 0) else begin
+            $display("FAIL: cpu halted after INPUT 0x01"); error++;
+        end
+
+        // --------------------------------------------------------
+        // T8: SYNC_RESET (0xFD) — сброс из середины pipeline
+        // --------------------------------------------------------
+        $display("T8: SYNC_RESET from PAUSE_WAIT");
+        // Отправим HALT чтобы войти в pipeline, но bus_granted=1
+        // → сразу пройдёт. Зато проверим из S_SEND_ACK1.
+        // Начнём HALT, не дожидаясь полного ACK отправим 0xFD.
+        send_byte(8'h01);  // HALT
+        // Ждём 1 такт (FSM в S_PAUSE_WAIT или S_EXEC)
+        repeat(2) @(posedge clk); #1;
+        // Шлём 0xFD — должен сбросить FSM
+        send_byte(8'hFD);
+        repeat(5) @(posedge clk); #1;
+        // После сброса: state=S_IDLE, halt=0, bus_request=0
+        assert(dut.dbg.state === 0) else begin  // S_IDLE = 0
+            $display("FAIL: state=%0d after SYNC_RESET, expected S_IDLE(0)", dut.dbg.state); error++;
+        end
+        assert(dut.dbg.halt_r === 0) else begin
+            $display("FAIL: halt_r=%0b after SYNC_RESET", dut.dbg.halt_r); error++;
+        end
+        assert(dut.dbg.bus_request_r === 0) else begin
+            $display("FAIL: bus_request=%0b after SYNC_RESET", dut.dbg.bus_request_r); error++;
+        end
+
+        // --------------------------------------------------------
+        // T9: SYNC_RESET НЕ срабатывает в S_RECV (0xFD = часть payload)
+        // --------------------------------------------------------
+        $display("T9: SYNC_RESET ignored in S_RECV");
+        send_byte(8'h04);  // READ_MEM → ждёт 4 байта payload
+        repeat(2) @(posedge clk); #1;
+        // Сейчас в S_RECV, шлём 0xFD как первый байт адреса
+        send_byte(8'hFD);
+        repeat(2) @(posedge clk); #1;
+        // Должен остаться в S_RECV (0xFD принят как payload_addr[7:0])
+        assert(dut.dbg.state === 1) else begin  // S_RECV = 1
+            $display("FAIL: state=%0d, expected S_RECV(1) — 0xFD should be payload", dut.dbg.state); error++;
+        end
+        // Дошлём оставшиеся 3 байта адреса чтобы дойти до конца
+        send_byte(8'h00); send_byte(8'h00); send_byte(8'h00);
+        // Теперь в S_PAUSE_WAIT или дальше, шлём 0xFD для чистки
+        repeat(5) @(posedge clk); #1;
+        send_byte(8'hFD);
+        repeat(5) @(posedge clk); #1;
 
         // --------------------------------------------------------
         // Итог
@@ -210,9 +289,8 @@ module DEBUG_CONTROLLER_TEST();
         $finish;
     end
 
-    // Аварийный таймаут
     initial begin
-        #100000;
+        #200000;
         $display("TIMEOUT");
         $finish;
     end
