@@ -28,3 +28,22 @@ run_xsim.bat
 run_prog_test.tcl
 vivado.log
 vivado.jou
+
+# Temp scripts/hex
+tmp_*.hex
+simple_test.hex
+run_hello.tcl
+run_simple.tcl
+xsim_args.txt
+test_memory.py
+test_mem_rw.py
+
+# Vivado reports (regenerated)
+vivado/project_1/impl_*.txt
+vivado/project_1/synth_*.txt
+vivado/project_1/timing_report.txt
+vivado/project_1/utilization_report.txt
+vivado/project_1/program.hex
+
+# Claude Code
+.claude/
