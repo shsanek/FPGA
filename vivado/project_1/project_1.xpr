@@ -457,6 +457,13 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
+      <File Path="$PPRDIR/../../riscv/CPU/OLED_IO_DEVICE.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
       <File Path="$PPRDIR/../../riscv/CPU/PERIPHERAL_BUS.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
@@ -479,6 +486,13 @@
         </FileInfo>
       </File>
       <File Path="$PPRDIR/../../riscv/SIMPLE_UART_RX.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../../riscv/CPU/SPI_MASTER.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>

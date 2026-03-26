@@ -38,7 +38,17 @@ module FPGA_TOP (
     output wire [0:0]  ddr3_cke,
     output wire [0:0]  ddr3_cs_n,
     output wire [1:0]  ddr3_dm,
-    output wire [0:0]  ddr3_odt
+    output wire [0:0]  ddr3_odt,
+
+    // PMOD JA — PmodOLEDrgb
+    output wire        ja_oled_cs_n,    // JA[0] pin 1
+    output wire        ja_oled_mosi,    // JA[1] pin 2
+    // JA[2] pin 3 = NC
+    output wire        ja_oled_sck,     // JA[3] pin 4
+    output wire        ja_oled_dc,      // JA[4] pin 7
+    output wire        ja_oled_res_n,   // JA[5] pin 8
+    output wire        ja_oled_vccen,   // JA[6] pin 9
+    output wire        ja_oled_pmoden   // JA[7] pin 10
 );
 
     // ---------------------------------------------------------------
@@ -176,7 +186,16 @@ module FPGA_TOP (
         .mig_app_wdf_rdy        (app_wdf_rdy),
         .mig_app_rd_data        (app_rd_data),
         .mig_app_rd_data_valid  (app_rd_data_valid),
-        .mig_app_rd_data_end    (app_rd_data_end)
+        .mig_app_rd_data_end    (app_rd_data_end),
+
+        // OLED
+        .oled_cs_n              (ja_oled_cs_n),
+        .oled_mosi              (ja_oled_mosi),
+        .oled_sck               (ja_oled_sck),
+        .oled_dc                (ja_oled_dc),
+        .oled_res_n             (ja_oled_res_n),
+        .oled_vccen             (ja_oled_vccen),
+        .oled_pmoden            (ja_oled_pmoden)
     );
 
     // ---------------------------------------------------------------

@@ -14,10 +14,15 @@
 //
 // Адресная карта (28-битный адрес из CPU_DATA_ADAPTER):
 //   0x000_0000 – 0x7FF_FFFF  →  MEMORY_CONTROLLER (ОЗУ)
-//   0x800_0000 – 0xFFF_FFFF  →  I/O (UART_IO_DEVICE)
+//   0x800_0000 – 0x800_FFFF  →  UART_IO_DEVICE
 //     0x800_0000 : TX_DATA   (W/R)
 //     0x800_0004 : RX_DATA   (R)
 //     0x800_0008 : STATUS    (R) {…, tx_ready, rx_avail}
+//   0x801_0000 – 0x801_FFFF  →  OLED_IO_DEVICE (PmodOLEDrgb SSD1331)
+//     0x801_0000 : DATA      (W)   — SPI byte
+//     0x801_0004 : CONTROL   (W/R) — {PMODEN, VCCEN, RES, DC, CS}
+//     0x801_0008 : STATUS    (R)   — {…, spi_busy, 0}
+//     0x801_000C : DIVIDER   (W/R) — SPI clock divider
 //
 // Синтез: mig_* порты подключаются к Xilinx MIG7 IP core.
 // Симуляция: подключить MIG_MODEL к mig_* портам в тестбенче.
@@ -50,7 +55,16 @@ module TOP #(
     input  wire                      mig_app_wdf_rdy,
     input  wire [CHUNK_PART-1:0]     mig_app_rd_data,
     input  wire                      mig_app_rd_data_valid,
-    input  wire                      mig_app_rd_data_end
+    input  wire                      mig_app_rd_data_end,
+
+    // OLED (PmodOLEDrgb, SSD1331)
+    output wire        oled_cs_n,
+    output wire        oled_mosi,
+    output wire        oled_sck,
+    output wire        oled_dc,
+    output wire        oled_res_n,
+    output wire        oled_vccen,
+    output wire        oled_pmoden
 );
     localparam MASK_SIZE  = DATA_SIZE / 8;
     localparam BIT_PERIOD = CLOCK_FREQ / BAUD_RATE;
@@ -101,6 +115,15 @@ module TOP #(
     wire [31:0] io_wr_data, io_rd_data;
     wire [3:0]  io_mask;
     wire        io_ready;
+
+    // ---------------------------------------------------------------
+    // PERIPHERAL_BUS ↔ OLED_IO_DEVICE
+    // ---------------------------------------------------------------
+    wire [27:0] oled_addr;
+    wire        oled_rd, oled_wr;
+    wire [31:0] oled_wr_data, oled_rd_data;
+    wire [3:0]  oled_mask;
+    wire        oled_ready;
 
     // ---------------------------------------------------------------
     // MEMORY_CONTROLLER ↔ RAM_CONTROLLER
@@ -392,7 +415,15 @@ module TOP #(
         .io_write_value    (io_wr_data),
         .io_mask           (io_mask),
         .io_read_value     (io_rd_data),
-        .io_controller_ready(io_ready)
+        .io_controller_ready(io_ready),
+
+        .oled_address        (oled_addr),
+        .oled_read_trigger   (oled_rd),
+        .oled_write_trigger  (oled_wr),
+        .oled_write_value    (oled_wr_data),
+        .oled_mask           (oled_mask),
+        .oled_read_value     (oled_rd_data),
+        .oled_controller_ready(oled_ready)
     );
 
     // --- UART_IO_DEVICE ---
@@ -411,6 +442,26 @@ module TOP #(
         .cpu_tx_ready      (cpu_tx_ready),
         .cpu_rx_byte       (cpu_rx_byte),
         .cpu_rx_valid      (cpu_rx_valid)
+    );
+
+    // --- OLED_IO_DEVICE ---
+    OLED_IO_DEVICE oled_io (
+        .clk               (clk),
+        .reset             (reset),
+        .address           (oled_addr),
+        .read_trigger      (oled_rd),
+        .write_trigger     (oled_wr),
+        .write_value       (oled_wr_data),
+        .mask              (oled_mask),
+        .read_value        (oled_rd_data),
+        .controller_ready  (oled_ready),
+        .oled_sck          (oled_sck),
+        .oled_mosi         (oled_mosi),
+        .oled_cs_n         (oled_cs_n),
+        .oled_dc           (oled_dc),
+        .oled_res_n        (oled_res_n),
+        .oled_vccen        (oled_vccen),
+        .oled_pmoden       (oled_pmoden)
     );
 
     // --- MEMORY_CONTROLLER ---
