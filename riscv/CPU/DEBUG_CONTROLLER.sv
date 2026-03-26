@@ -131,7 +131,8 @@ if (DEBUG_ENABLE) begin : dbg
     // CPU passthrough
     logic [7:0] cpu_rx_byte_r;
     logic       cpu_rx_valid_r;
-    logic [7:0] cpu_tx_saved;    // сохранённый CPU TX байт (для S_CPU_TX)
+    logic [7:0] cpu_tx_saved;
+    state_t     cpu_tx_return;   // куда вернуться после S_CPU_TX
 
     // Assigns
     assign dbg_halt        = halt_r;
@@ -150,7 +151,11 @@ if (DEBUG_ENABLE) begin : dbg
 
     assign cpu_rx_byte  = cpu_rx_byte_r;
     assign cpu_rx_valid = cpu_rx_valid_r;
-    assign cpu_tx_ready = (state == S_IDLE) && tx_ready && !tx_valid_r;
+    // CPU TX блокируется только при отправке debug-ответа или FIFO full
+    wire sending_response = (state == S_SEND_HDR) || (state == S_SEND_ACK1) ||
+                            (state == S_SEND_ACK2) || (state == S_SEND_DATA) ||
+                            (state == S_CPU_TX);
+    assign cpu_tx_ready = !sending_response && tx_ready && !tx_valid_r;
     assign rx_ready     = (state == S_IDLE) || (state == S_RECV);
 
     // Сколько байт payload для команды
@@ -208,6 +213,14 @@ if (DEBUG_ENABLE) begin : dbg
                 mc_write_r    <= 0;
                 resp_len      <= 0;
                 resp_idx      <= 0;
+            // CPU TX: принимается из любого состояния кроме отправки debug-ответа
+            end else if (cpu_tx_valid && cpu_tx_ready) begin
+                cpu_tx_saved   <= cpu_tx_byte;
+                tx_byte_r      <= HDR_CPU_UART;
+                tx_valid_r     <= 1;
+                cpu_tx_return  <= state;
+                state          <= S_CPU_TX;
+
             end else case (state)
 
                 // ---------------------------------------------------------
@@ -218,25 +231,16 @@ if (DEBUG_ENABLE) begin : dbg
                         if (is_debug_cmd(rx_byte)) begin
                             cmd <= rx_byte;
                             if (payload_bytes(rx_byte) == 0) begin
-                                // Однобайтовая команда → сразу pause
                                 bus_request_r <= 1;
                                 state         <= S_PAUSE_WAIT;
                             end else begin
-                                // Составная → принимаем payload
                                 byte_idx <= 0;
                                 state    <= S_RECV;
                             end
                         end else begin
-                            // Passthrough в CPU
                             cpu_rx_byte_r  <= rx_byte;
                             cpu_rx_valid_r <= 1;
                         end
-                    end else if (cpu_tx_valid && tx_ready && !tx_valid_r) begin
-                        // CPU хочет отправить → сначала заголовок 0xBB
-                        cpu_tx_saved <= cpu_tx_byte;
-                        tx_byte_r    <= HDR_CPU_UART;
-                        tx_valid_r   <= 1;
-                        state        <= S_CPU_TX;
                     end
                 end
 
@@ -431,7 +435,7 @@ if (DEBUG_ENABLE) begin : dbg
                     if (tx_ready && !tx_valid_r) begin
                         tx_byte_r  <= cpu_tx_saved;
                         tx_valid_r <= 1;
-                        state      <= S_IDLE;
+                        state      <= cpu_tx_return;
                     end
                 end
 
