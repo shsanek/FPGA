@@ -152,6 +152,9 @@ module TOP #(
     // ---------------------------------------------------------------
 
     // --- UART RX: физический сигнал → байт ---
+    wire [7:0] raw_rx_byte;
+    wire       raw_rx_valid;
+
     SIMPLE_UART_RX #(
         .CLOCK_FREQ(CLOCK_FREQ),
         .BAUD_RATE (BAUD_RATE)
@@ -159,11 +162,58 @@ module TOP #(
         .clk       (clk),
         .reset     (reset),
         .rx        (uart_rx),
-        .rx_data   (uart_rx_byte),
-        .rx_valid  (uart_rx_valid)
+        .rx_data   (raw_rx_byte),
+        .rx_valid  (raw_rx_valid)
     );
 
+    // --- RX FIFO (4 байта): UART RX → DEBUG_CONTROLLER ---
+    // При переполнении байт пропускается (wr_en && !full)
+    wire [7:0] rx_fifo_data;
+    wire       rx_fifo_empty;
+    wire       rx_fifo_full;
+    reg        rx_fifo_rd_en;
+
+    UART_FIFO #(.DEPTH(4)) rx_fifo (
+        .clk     (clk),
+        .reset   (reset),
+        .wr_data (raw_rx_byte),
+        .wr_en   (raw_rx_valid),    // если full — байт пропускается
+        .full    (rx_fifo_full),
+        .rd_data (rx_fifo_data),
+        .rd_en   (rx_fifo_rd_en),
+        .empty   (rx_fifo_empty)
+    );
+
+    // Выдача из RX FIFO — 1-тактовый импульс когда есть данные
+    // rd_en на 1 такт → захватываем данные в регистр → valid на след. такт
+    reg        rx_fifo_valid_r;
+    reg  [7:0] rx_fifo_captured;
+    always @(posedge clk) begin
+        if (reset) begin
+            rx_fifo_rd_en    <= 0;
+            rx_fifo_valid_r  <= 0;
+            rx_fifo_captured <= 0;
+        end else begin
+            rx_fifo_valid_r <= 0;
+            rx_fifo_rd_en   <= 0;
+            if (!rx_fifo_empty && !rx_fifo_rd_en && !rx_fifo_valid_r) begin
+                rx_fifo_rd_en <= 1;
+            end
+            if (rx_fifo_rd_en) begin
+                rx_fifo_captured <= rx_fifo_data;  // данные валидны ДО NBA-обновления rd_ptr
+                rx_fifo_valid_r  <= 1;
+            end
+        end
+    end
+
+    assign uart_rx_byte  = rx_fifo_captured;
+    assign uart_rx_valid = rx_fifo_valid_r;
+
     // --- UART TX: байт → физический сигнал ---
+    wire        raw_tx_ready;
+    wire [7:0]  raw_tx_byte;
+    wire        raw_tx_valid;
+
     I_O_OUTPUT_CONTROLLER #(
         .CLOCK_FREQ(CLOCK_FREQ),
         .BAUD_RATE (BAUD_RATE),
@@ -171,11 +221,55 @@ module TOP #(
     ) uart_out (
         .clk                    (clk),
         .reset                  (reset),
-        .io_output_value        (uart_tx_byte),
-        .io_output_trigger      (uart_tx_valid),
-        .io_output_ready_trigger(uart_tx_ready),
+        .io_output_value        (raw_tx_byte),
+        .io_output_trigger      (raw_tx_valid),
+        .io_output_ready_trigger(raw_tx_ready),
         .RXD                    (uart_tx)
     );
+
+    // --- TX FIFO (4 байта): DEBUG_CONTROLLER → UART TX ---
+    wire [7:0] tx_fifo_data;
+    wire       tx_fifo_empty;
+    wire       tx_fifo_full;
+    reg        tx_fifo_rd_en;
+
+    UART_FIFO #(.DEPTH(4)) tx_fifo (
+        .clk     (clk),
+        .reset   (reset),
+        .wr_data (uart_tx_byte),
+        .wr_en   (uart_tx_valid),   // если full — байт пропускается
+        .full    (tx_fifo_full),
+        .rd_data (tx_fifo_data),
+        .rd_en   (tx_fifo_rd_en),
+        .empty   (tx_fifo_empty)
+    );
+
+    // Выдача из TX FIFO → UART TX
+    reg        tx_fifo_sending;
+    reg  [7:0] tx_fifo_captured;
+    always @(posedge clk) begin
+        if (reset) begin
+            tx_fifo_rd_en    <= 0;
+            tx_fifo_sending  <= 0;
+            tx_fifo_captured <= 0;
+        end else begin
+            tx_fifo_rd_en   <= 0;
+            tx_fifo_sending <= 0;
+            if (!tx_fifo_empty && raw_tx_ready && !tx_fifo_rd_en && !tx_fifo_sending) begin
+                tx_fifo_rd_en <= 1;
+            end
+            if (tx_fifo_rd_en) begin
+                tx_fifo_captured <= tx_fifo_data;  // захват до NBA
+                tx_fifo_sending  <= 1;
+            end
+        end
+    end
+
+    assign raw_tx_byte  = tx_fifo_captured;
+    assign raw_tx_valid = tx_fifo_sending;
+
+    // DEBUG_CONTROLLER видит TX ready когда FIFO не полон
+    assign uart_tx_ready = !tx_fifo_full;
 
     // --- DEBUG_CONTROLLER ---
     DEBUG_CONTROLLER #(.DEBUG_ENABLE(DEBUG_ENABLE)) dbg_ctrl (
