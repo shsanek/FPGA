@@ -316,7 +316,7 @@ module PROGRAM_TEST ();
             @(posedge clk); #1;
             while (dut.pipeline.state != 2) begin  // 2 = S_EXECUTE
                 @(posedge clk); #1;
-                if ($time > 500000) begin fi = 3; break; end
+                if ($time > 500000) begin fi = 3; end
             end
             $display("DEBUG exec[%0d]: PC=0x%08X instr=0x%08X ebreak=%b halted=%b stall=%b",
                      fi, dut.cpu.pc, dut.pipeline.instr_reg,

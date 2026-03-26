@@ -27,7 +27,7 @@ module DEBUG_CONTROLLER_TEST();
     wire  [31:0] dbg_new_pc_w;
 
     // MC stub
-    logic        mc_ready = 0;
+    logic        mc_ready = 1;
     logic [31:0] mc_rdata = 32'hCAFE_BABE;
     wire  [27:0] mc_addr_w;
     wire         mc_rd_w, mc_wr_w;
@@ -64,7 +64,6 @@ module DEBUG_CONTROLLER_TEST();
         .tx_valid         (tx_valid),
         .tx_ready         (tx_ready),
         .dbg_halt         (dbg_halt_w),
-        .dbg_step         (dbg_step_w),
         .dbg_set_pc       (dbg_set_pc_w),
         .dbg_new_pc       (dbg_new_pc_w),
         .dbg_is_halted    (cpu_halted),
@@ -90,7 +89,8 @@ module DEBUG_CONTROLLER_TEST();
     always_ff @(posedge clk)
         cpu_halted <= dbg_halt_w;
 
-    // MC stub: ready через 3 такта после фронта trigger
+    // MC stub: ready=1 when idle (matches real MEMORY_CONTROLLER behaviour).
+    // On trigger rising edge: ready drops to 0 for 3 cycles, then returns to 1.
     logic [1:0] mc_cnt;
     logic       mc_rd_prev, mc_wr_prev;
     always_ff @(posedge clk) begin
@@ -98,13 +98,13 @@ module DEBUG_CONTROLLER_TEST();
             mc_cnt     <= 0;
             mc_rd_prev <= 0;
             mc_wr_prev <= 0;
-            mc_ready   <= 0;
+            mc_ready   <= 1;
         end else begin
-            mc_ready   <= 0;
             mc_rd_prev <= mc_rd_w;
             mc_wr_prev <= mc_wr_w;
             if ((mc_rd_w && !mc_rd_prev) || (mc_wr_w && !mc_wr_prev)) begin
-                mc_cnt <= 3;
+                mc_cnt   <= 3;
+                mc_ready <= 0;
             end else if (mc_cnt > 0) begin
                 mc_cnt <= mc_cnt - 1;
                 if (mc_cnt == 1) mc_ready <= 1;

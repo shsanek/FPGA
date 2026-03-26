@@ -118,6 +118,7 @@ if (DEBUG_ENABLE) begin : dbg
     logic [DATA_SIZE-1:0]    mc_data_r;
     logic mc_read_r;
     logic mc_write_r;
+    logic mem_triggered;  // S_MEM_WAIT phase: 0=trigger sent, 1=wait completion
 
     // TX
     logic [7:0] tx_byte_r;
@@ -187,6 +188,7 @@ if (DEBUG_ENABLE) begin : dbg
             mc_data_r      <= 0;
             mc_read_r      <= 0;
             mc_write_r     <= 0;
+            mem_triggered  <= 0;
             tx_byte_r      <= 0;
             tx_valid_r     <= 0;
             cpu_rx_byte_r  <= 0;
@@ -211,6 +213,7 @@ if (DEBUG_ENABLE) begin : dbg
                 halt_r        <= 0;
                 mc_read_r     <= 0;
                 mc_write_r    <= 0;
+                mem_triggered <= 0;
                 resp_len      <= 0;
                 resp_idx      <= 0;
             // CPU TX: принимается из любого состояния кроме отправки debug-ответа
@@ -324,22 +327,40 @@ if (DEBUG_ENABLE) begin : dbg
                 end
 
                 // ---------------------------------------------------------
-                // Ждём завершения операции с памятью
+                // Ждём завершения операции с памятью (двухфазный протокол).
+                //
+                // Фаза 1 (mem_triggered=0): trigger выставлен, ждём mc_dbg_ready=1
+                //   → MC принимает запрос. Снимаем trigger. → Фаза 2.
+                //
+                // Фаза 2 (mem_triggered=1): trigger снят, ждём mc_dbg_ready=1
+                //   → MC завершил операцию (или cache hit — ready не падал).
+                //   Захватываем данные.
+                //
+                // Без этого при cache miss MC_ready=1 в первом такте
+                // (ещё NORMAL), но read_value=0 (промах).
                 // ---------------------------------------------------------
                 S_MEM_WAIT: begin
-                    if (mc_dbg_ready) begin
-                        mc_read_r  <= 0;
-                        mc_write_r <= 0;
-                        // READ_MEM → 4 байта данных, WRITE_MEM → 0
-                        if (cmd == CMD_READ_MEM) begin
-                            resp[0]  <= mc_dbg_read_data[7:0];
-                            resp[1]  <= mc_dbg_read_data[15:8];
-                            resp[2]  <= mc_dbg_read_data[23:16];
-                            resp[3]  <= mc_dbg_read_data[31:24];
-                            resp_len <= 4;
+                    if (!mem_triggered) begin
+                        // Фаза 1: ждём принятия запроса
+                        if (mc_dbg_ready) begin
+                            mem_triggered <= 1;
+                            mc_read_r     <= 0;
+                            mc_write_r    <= 0;
                         end
-                        resp_idx <= 0;
-                        state    <= S_SEND_HDR;
+                    end else begin
+                        // Фаза 2: ждём завершения (ready=1 после обработки)
+                        if (mc_dbg_ready) begin
+                            mem_triggered <= 0;
+                            if (cmd == CMD_READ_MEM) begin
+                                resp[0]  <= mc_dbg_read_data[7:0];
+                                resp[1]  <= mc_dbg_read_data[15:8];
+                                resp[2]  <= mc_dbg_read_data[23:16];
+                                resp[3]  <= mc_dbg_read_data[31:24];
+                                resp_len <= 4;
+                            end
+                            resp_idx <= 0;
+                            state    <= S_SEND_HDR;
+                        end
                     end
                 end
 
