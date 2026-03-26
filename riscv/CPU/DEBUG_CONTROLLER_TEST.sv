@@ -33,6 +33,27 @@ module DEBUG_CONTROLLER_TEST();
     wire         mc_rd_w, mc_wr_w;
     wire  [31:0] mc_wdata_w;
 
+    // Pipeline stub: granted=1 в покое, падает на step и поднимается через 5 тактов
+    wire dbg_bus_req_w;
+    wire dbg_step_pipe_w;
+    logic pipeline_granted = 1;
+    logic [2:0] step_cnt = 0;
+
+    always_ff @(posedge clk) begin
+        if (dbg_step_pipe_w && pipeline_granted) begin
+            pipeline_granted <= 0;
+            step_cnt <= 5;
+        end else if (step_cnt > 0) begin
+            step_cnt <= step_cnt - 1;
+            if (step_cnt == 1)
+                pipeline_granted <= 1;
+        end else if (!dbg_bus_req_w) begin
+            pipeline_granted <= 0;
+        end else begin
+            pipeline_granted <= 1;
+        end
+    end
+
     // DUT
     DEBUG_CONTROLLER #(.DEBUG_ENABLE(1)) dut (
         .clk              (clk),
@@ -49,8 +70,9 @@ module DEBUG_CONTROLLER_TEST();
         .dbg_is_halted    (cpu_halted),
         .dbg_current_pc   (cpu_pc),
         .dbg_current_instr(cpu_instr),
-        .dbg_bus_request  (),
-        .dbg_bus_granted  (1'b1),     // pipeline bypass для теста
+        .dbg_bus_request  (dbg_bus_req_w),
+        .dbg_step_pipeline(dbg_step_pipe_w),
+        .dbg_bus_granted  (pipeline_granted),
         .mc_dbg_address   (mc_addr_w),
         .mc_dbg_read_trigger (mc_rd_w),
         .mc_dbg_write_trigger(mc_wr_w),

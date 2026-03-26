@@ -117,12 +117,23 @@ _RESP_DATA_LEN = {
 # ---------------------------------------------------------------------------
 # Драйвер DEBUG_CONTROLLER
 # ---------------------------------------------------------------------------
+import queue
+import threading
+
+
 class RiscVDebug:
-    """Синхронный интерфейс к DEBUG_CONTROLLER через COM-порт."""
+    """Интерфейс к DEBUG_CONTROLLER через COM-порт.
+
+    Фоновый поток читает UART и раскладывает по очередям:
+      _dbg_queue  — debug-ответы (0xAA CMD CMD [DATA...])
+      _cpu_queue  — CPU output байты (0xBB BYTE)
+    """
 
     def __init__(self, port: str, baud: int = 115200, timeout: float = 1.0):
         self.timeout = timeout
-        self.cpu_output_buf = bytearray()
+        self._dbg_queue = queue.Queue()
+        self._cpu_queue = queue.Queue()
+        self._stop_event = threading.Event()
 
         self._ser = serial.Serial(
             port=port,
@@ -130,7 +141,7 @@ class RiscVDebug:
             bytesize=serial.EIGHTBITS,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
-            timeout=0.05,  # короткий таймаут для неблокирующего чтения
+            timeout=0.1,
             dsrdtr=False,
             rtscts=False,
             xonxoff=False,
@@ -143,13 +154,64 @@ class RiscVDebug:
         time.sleep(0.1)
         self._ser.reset_input_buffer()
 
+        # Запуск фонового потока чтения
+        self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self._reader_thread.start()
+
         # Синхронизация при подключении
         self.sync_reset()
         time.sleep(0.05)
-        self._ser.reset_input_buffer()
+        # Очистить очереди от мусора после sync_reset
+        self._drain_queues()
 
     def close(self):
+        self._stop_event.set()
+        self._reader_thread.join(timeout=1.0)
         self._ser.close()
+
+    def _drain_queues(self):
+        """Очистить обе очереди."""
+        while not self._dbg_queue.empty():
+            try: self._dbg_queue.get_nowait()
+            except queue.Empty: break
+        while not self._cpu_queue.empty():
+            try: self._cpu_queue.get_nowait()
+            except queue.Empty: break
+
+    # -------------------------------------------------------------------
+    # Фоновый поток чтения
+    # -------------------------------------------------------------------
+    def _reader_loop(self):
+        """Читает UART, диспатчит по заголовку в очереди."""
+        while not self._stop_event.is_set():
+            try:
+                b = self._ser.read(1)
+                if not b:
+                    continue
+
+                if b[0] == HDR_CPU_UART:
+                    data = self._ser.read(1)
+                    if data:
+                        self._cpu_queue.put(data[0])
+
+                elif b[0] == HDR_DEBUG:
+                    # Читаем ACK (2 байта) + возможные данные
+                    ack = self._ser.read(2)
+                    if len(ack) < 2:
+                        continue
+                    cmd = ack[0]
+                    data_len = _RESP_DATA_LEN.get(cmd, 0)
+                    data = b""
+                    if data_len > 0:
+                        data = self._ser.read(data_len)
+                    self._dbg_queue.put((cmd, data))
+
+                # Иначе — мусор, пропускаем
+
+            except serial.SerialException:
+                break
+            except Exception:
+                continue
 
     # -------------------------------------------------------------------
     # Транспортный уровень
@@ -158,59 +220,19 @@ class RiscVDebug:
         self._ser.write(data)
         self._ser.flush()
 
-    def _read_byte(self, deadline: float) -> int:
-        """Читает 1 байт с таймаутом. Кидает TimeoutError."""
-        while True:
-            if time.monotonic() > deadline:
-                raise TimeoutError("Таймаут чтения UART")
-            b = self._ser.read(1)
-            if b:
-                return b[0]
-
-    def _read_exact(self, n: int, deadline: float) -> bytes:
-        """Читает ровно n байт с таймаутом."""
-        buf = bytearray()
-        while len(buf) < n:
-            if time.monotonic() > deadline:
-                raise TimeoutError(
-                    f"Таймаут: ожидалось {n} байт, получено {len(buf)}")
-            chunk = self._ser.read(n - len(buf))
-            if chunk:
-                buf.extend(chunk)
-        return bytes(buf)
-
     def _wait_debug_response(self, expected_cmd: int) -> bytes:
-        """
-        Ждёт debug-ответ (0xAA CMD CMD [DATA...]).
-        Во время ожидания принимает CPU UART (0xBB BYTE) в буфер.
-        Возвращает DATA (может быть пустым).
-        """
-        deadline = time.monotonic() + self.timeout
-        data_len = _RESP_DATA_LEN.get(expected_cmd, 0)
+        """Ждёт debug-ответ из очереди. Возвращает DATA."""
+        try:
+            cmd, data = self._dbg_queue.get(timeout=self.timeout)
+        except queue.Empty:
+            raise TimeoutError(
+                f"Таймаут: нет ответа на 0x{expected_cmd:02X}")
 
-        while True:
-            hdr = self._read_byte(deadline)
-
-            if hdr == HDR_CPU_UART:
-                # CPU output: читаем 1 байт данных
-                b = self._read_byte(deadline)
-                self.cpu_output_buf.append(b)
-                continue
-
-            if hdr == HDR_DEBUG:
-                # Debug response: CMD CMD [DATA...]
-                ack = self._read_exact(2, deadline)
-                if ack[0] != expected_cmd or ack[1] != expected_cmd:
-                    raise RuntimeError(
-                        f"ACK mismatch: ожидался 0x{expected_cmd:02X} 0x{expected_cmd:02X}, "
-                        f"получен 0x{ack[0]:02X} 0x{ack[1]:02X}")
-                if data_len > 0:
-                    data = self._read_exact(data_len, deadline)
-                    return data
-                return b""
-
-            # Неизвестный заголовок — пропускаем
-            # (может быть мусор после sync_reset)
+        if cmd != expected_cmd:
+            raise RuntimeError(
+                f"ACK mismatch: ожидался 0x{expected_cmd:02X}, "
+                f"получен 0x{cmd:02X}")
+        return data
 
     # -------------------------------------------------------------------
     # Команды протокола
@@ -262,17 +284,22 @@ class RiscVDebug:
     # CPU output
     # -------------------------------------------------------------------
     def flush_cpu_output(self) -> bytes:
-        """Забрать накопленный CPU output и очистить буфер."""
-        data = bytes(self.cpu_output_buf)
-        self.cpu_output_buf.clear()
-        return data
+        """Забрать все байты CPU output из очереди."""
+        buf = bytearray()
+        while not self._cpu_queue.empty():
+            try:
+                buf.append(self._cpu_queue.get_nowait())
+            except queue.Empty:
+                break
+        return bytes(buf)
 
-    def capture_output(self, idle_timeout: float = 2.0,
+    def capture_output(self, idle_timeout: float = 5.0,
                        total_timeout: float = 30.0) -> bytes:
         """
-        Активно читает CPU output (0xBB пары) до idle timeout.
-        Возвращает все накопленные байты.
+        Читает CPU output из очереди до idle timeout.
+        Фоновый поток уже складывает байты — мы только забираем.
         """
+        buf = bytearray()
         deadline  = time.monotonic() + total_timeout
         last_byte = time.monotonic()
 
@@ -283,23 +310,14 @@ class RiscVDebug:
             if now - last_byte > idle_timeout:
                 break
 
-            b = self._ser.read(1)
-            if not b:
+            try:
+                b = self._cpu_queue.get(timeout=0.1)
+                buf.append(b)
+                last_byte = time.monotonic()
+            except queue.Empty:
                 continue
 
-            if b[0] == HDR_CPU_UART:
-                # Читаем байт данных
-                data_byte = self._ser.read(1)
-                if data_byte:
-                    self.cpu_output_buf.append(data_byte[0])
-                    last_byte = time.monotonic()
-            elif b[0] == HDR_DEBUG:
-                # Неожиданный debug-ответ во время capture — пропускаем
-                # (читаем ACK CMD CMD чтобы не сбить поток)
-                self._ser.read(2)
-            # Иначе — мусор, пропускаем
-
-        return self.flush_cpu_output()
+        return bytes(buf)
 
     # -------------------------------------------------------------------
     # Высокоуровневые операции
@@ -381,7 +399,7 @@ def _parse_memdump_spec(spec: str) -> Tuple[int, int]:
 def display_registers(regs: List[int], pc: Optional[int] = None):
     print(f"\n{C.BOLD}  Регистры RISC-V{C.RESET}"
           + (f"  (PC = {C.CYAN}0x{pc:08X}{C.RESET})" if pc is not None else ""))
-    print("  " + "─" * 70)
+    print("  " + "-" * 70)
     for i in range(0, 32, 2):
         def fmt(n):
             v  = regs[n]
@@ -400,7 +418,7 @@ def display_hexdump(base_addr: int, words: List[int]):
     print(f"\n{C.BOLD}  Дамп памяти  0x{base_addr:08X} – "
           f"0x{base_addr + len(words)*4 - 1:08X}"
           f"  ({len(words)} слов = {len(words)*4} байт){C.RESET}")
-    print("  " + "─" * 74)
+    print("  " + "-" * 74)
     WORDS_PER_ROW = 4
     for row in range(0, len(words), WORDS_PER_ROW):
         chunk = words[row: row + WORDS_PER_ROW]
@@ -533,7 +551,7 @@ def run_test(dbg: RiscVDebug, test_dir: Path,
         try:
             dbg.sync_reset()
             time.sleep(0.05)
-            dbg.cpu_output_buf.clear()
+            dbg.flush_cpu_output()
             dbg.halt()
             dbg.upload_hex(str(hex_file), progress=False)
             dbg.reset_pc(0)
@@ -725,10 +743,10 @@ def _cmd_capture(dbg: RiscVDebug, idle: float, total: float):
     raw  = dbg.capture_output(idle, total)
     text = raw.decode("utf-8", errors="replace")
     print(f"  Получено {len(raw)} байт:")
-    print("  " + "─" * 60)
+    print("  " + "-" * 60)
     for line in text.splitlines():
         print(f"  {line}")
-    print("  " + "─" * 60)
+    print("  " + "-" * 60)
 
 
 def _cmd_upload(dbg: RiscVDebug, hex_path: str, idle: float, total: float):
@@ -751,10 +769,10 @@ def _cmd_upload(dbg: RiscVDebug, hex_path: str, idle: float, total: float):
     raw  = dbg.capture_output(idle, total)
     text = raw.decode("utf-8", errors="replace")
     print(f"  Вывод ({len(raw)} байт):")
-    print("  " + "─" * 60)
+    print("  " + "-" * 60)
     for line in text.splitlines():
         print(f"  {line}")
-    print("  " + "─" * 60)
+    print("  " + "-" * 60)
 
 
 def _cmd_tests(dbg: RiscVDebug, args):

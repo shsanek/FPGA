@@ -40,7 +40,10 @@ module CPU_PIPELINE_ADAPTER (
 
     // Debug pause: debug запрашивает bus
     input  wire         pause,
-    output wire         paused
+    output wire         paused,
+
+    // Debug step: выполнить 1 инструкцию из S_PAUSED и вернуться
+    input  wire         step
 );
     typedef enum logic [2:0] {
         S_FETCH_TRIG,
@@ -56,6 +59,9 @@ module CPU_PIPELINE_ADAPTER (
     logic [31:0] instr_reg;
     logic [31:0] data_reg;
     logic [27:0] addr_reg;    // latched address for WAIT states
+
+    // Stepping: выполняем 1 инструкцию, игнорируем pause
+    logic stepping;
 
     // Защёлкнутые CPU data-выходы (разрыв критического пути ALU → cache)
     logic [27:0] data_addr_reg;
@@ -128,10 +134,11 @@ module CPU_PIPELINE_ADAPTER (
             data_mask_reg    <= 4'b0;
             data_rd_en_reg   <= 1'b0;
             data_wr_en_reg   <= 1'b0;
+            stepping         <= 1'b0;
         end else begin
             case (state)
                 S_FETCH_TRIG: begin
-                    if (pause)
+                    if (pause && !stepping)
                         state <= S_PAUSED;
                     else if (mc_controller_ready) begin
                         addr_reg <= instr_addr[27:0];
@@ -142,7 +149,7 @@ module CPU_PIPELINE_ADAPTER (
                 S_FETCH_WAIT: begin
                     if (mc_controller_ready) begin
                         instr_reg <= mc_read_value;
-                        if (pause)
+                        if (pause && !stepping)
                             state <= S_PAUSED;
                         else
                             state <= S_EXECUTE;
@@ -151,17 +158,18 @@ module CPU_PIPELINE_ADAPTER (
 
                 S_EXECUTE: begin
                     if (mem_read_en || mem_write_en) begin
-                        // Защёлкиваем CPU data-выходы → разрыв комбинационного пути
                         data_addr_reg    <= mem_addr[27:0];
                         data_wr_data_reg <= mem_write_data;
                         data_mask_reg    <= mem_byte_mask;
                         data_rd_en_reg   <= mem_read_en;
                         data_wr_en_reg   <= mem_write_en;
                         state <= S_DATA_TRIG;
-                    end else if (pause) begin
-                        state <= S_PAUSED;
                     end else begin
-                        state <= S_FETCH_TRIG;
+                        stepping <= 0;
+                        if (pause)
+                            state <= S_PAUSED;
+                        else
+                            state <= S_FETCH_TRIG;
                     end
                 end
 
@@ -180,6 +188,7 @@ module CPU_PIPELINE_ADAPTER (
                 end
 
                 S_DATA_DONE: begin
+                    stepping <= 0;
                     if (pause)
                         state <= S_PAUSED;
                     else
@@ -187,7 +196,10 @@ module CPU_PIPELINE_ADAPTER (
                 end
 
                 S_PAUSED: begin
-                    if (!pause)
+                    if (step) begin
+                        stepping <= 1;
+                        state    <= S_FETCH_TRIG;
+                    end else if (!pause)
                         state <= S_FETCH_TRIG;
                 end
             endcase

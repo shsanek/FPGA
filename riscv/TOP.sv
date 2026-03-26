@@ -122,6 +122,7 @@ module TOP #(
     wire [31:0] dbg_new_pc;
     wire        dbg_is_halted;
     wire        dbg_bus_request;
+    wire        dbg_step_pipeline;
     wire        pipeline_paused;
     wire [31:0] dbg_current_pc, dbg_current_instr;
 
@@ -292,6 +293,7 @@ module TOP #(
         .dbg_current_pc    (dbg_current_pc),
         .dbg_current_instr (dbg_current_instr),
         .dbg_bus_request   (dbg_bus_request),
+        .dbg_step_pipeline (dbg_step_pipeline),
         .dbg_bus_granted   (pipeline_paused),
         .mc_dbg_address    (mc_dbg_addr),
         .mc_dbg_read_trigger (mc_dbg_rd),
@@ -353,7 +355,8 @@ module TOP #(
         .mc_controller_ready(bus_ready),
         .flush             (dbg_set_pc),
         .pause             (dbg_bus_request),
-        .paused            (pipeline_paused)
+        .paused            (pipeline_paused),
+        .step              (dbg_step_pipeline)
     );
 
     // --- DEBUG/CPU BUS MUX ---

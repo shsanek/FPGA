@@ -42,6 +42,9 @@ module DEBUG_CONTROLLER #(
     input  wire [31:0] dbg_current_pc,
     input  wire [31:0] dbg_current_instr,
 
+    // Pipeline step (1-тактовый импульс → pipeline выполнит 1 инструкцию)
+    output wire                    dbg_step_pipeline,
+
     // Bus debug-порты
     output wire                    dbg_bus_request,
     input  wire                    dbg_bus_granted,
@@ -89,7 +92,9 @@ module DEBUG_CONTROLLER #(
         S_SEND_ACK1,     // отправляем 1-й байт ACK
         S_SEND_ACK2,     // отправляем 2-й байт ACK
         S_SEND_DATA,     // отправляем данные ответа побайтно
-        S_CPU_TX         // отправляем байт от CPU (после заголовка 0xBB)
+        S_CPU_TX,        // отправляем байт от CPU (после заголовка 0xBB)
+        S_STEP_RUN,      // ждём pipeline выйдет из PAUSED (granted=0)
+        S_STEP_DONE      // ждём pipeline вернётся в PAUSED (granted=1)
     } state_t;
 
 generate
@@ -110,6 +115,7 @@ if (DEBUG_ENABLE) begin : dbg
 
     // Bus control
     logic bus_request_r;
+    logic step_pipeline_r;
     logic [ADDRESS_SIZE-1:0] mc_addr_r;
     logic [DATA_SIZE-1:0]    mc_data_r;
     logic mc_read_r;
@@ -134,7 +140,8 @@ if (DEBUG_ENABLE) begin : dbg
     assign dbg_step        = step_r;
     assign dbg_set_pc      = set_pc_r;
     assign dbg_new_pc      = new_pc_r;
-    assign dbg_bus_request = bus_request_r;
+    assign dbg_bus_request    = bus_request_r;
+    assign dbg_step_pipeline  = step_pipeline_r;
 
     assign mc_dbg_address       = mc_addr_r;
     assign mc_dbg_write_data    = mc_data_r;
@@ -174,6 +181,7 @@ if (DEBUG_ENABLE) begin : dbg
             set_pc_r       <= 0;
             new_pc_r       <= 0;
             bus_request_r  <= 0;
+            step_pipeline_r <= 0;
             mc_addr_r      <= 0;
             mc_data_r      <= 0;
             mc_read_r      <= 0;
@@ -189,10 +197,11 @@ if (DEBUG_ENABLE) begin : dbg
             resp_idx       <= 0;
         end else begin
             // Auto-clear импульсы
-            tx_valid_r     <= 0;
-            step_r         <= 0;
-            set_pc_r       <= 0;
-            cpu_rx_valid_r <= 0;
+            tx_valid_r      <= 0;
+            step_r          <= 0;
+            set_pc_r        <= 0;
+            cpu_rx_valid_r  <= 0;
+            step_pipeline_r <= 0;
 
             // Псевдо-команда 0xFD: сброс FSM из любого состояния кроме S_RECV
             // (в S_RECV ждём payload — 0xFD может быть частью данных)
@@ -280,17 +289,8 @@ if (DEBUG_ENABLE) begin : dbg
                         end
 
                         CMD_STEP: begin
-                            step_r <= 1;
-                            // Данные: PC[31:0] + INSTR[31:0] = 8 байт
-                            resp[0] <= dbg_current_pc[7:0];
-                            resp[1] <= dbg_current_pc[15:8];
-                            resp[2] <= dbg_current_pc[23:16];
-                            resp[3] <= dbg_current_pc[31:24];
-                            resp[4] <= dbg_current_instr[7:0];
-                            resp[5] <= dbg_current_instr[15:8];
-                            resp[6] <= dbg_current_instr[23:16];
-                            resp[7] <= dbg_current_instr[31:24];
-                            resp_len <= 8;
+                            step_pipeline_r <= 1;  // импульс → pipeline
+                            state <= S_STEP_RUN;
                         end
 
                         CMD_READ_MEM: begin
@@ -320,7 +320,7 @@ if (DEBUG_ENABLE) begin : dbg
                         default: ;
                     endcase
 
-                    if (cmd != CMD_READ_MEM && cmd != CMD_WRITE_MEM)
+                    if (cmd != CMD_READ_MEM && cmd != CMD_WRITE_MEM && cmd != CMD_STEP)
                         state <= S_SEND_HDR;
                 end
 
@@ -405,6 +405,33 @@ if (DEBUG_ENABLE) begin : dbg
                 end
 
                 // ---------------------------------------------------------
+                // STEP: ждём pipeline выполнит 1 инструкцию
+                // ---------------------------------------------------------
+                S_STEP_RUN: begin
+                    // Pipeline получил step, выходит из S_PAUSED → granted упадёт
+                    if (!dbg_bus_granted)
+                        state <= S_STEP_DONE;
+                end
+
+                S_STEP_DONE: begin
+                    // Pipeline вернулся в S_PAUSED → granted=1
+                    if (dbg_bus_granted) begin
+                        // Захватываем PC/INSTR после шага
+                        resp[0] <= dbg_current_pc[7:0];
+                        resp[1] <= dbg_current_pc[15:8];
+                        resp[2] <= dbg_current_pc[23:16];
+                        resp[3] <= dbg_current_pc[31:24];
+                        resp[4] <= dbg_current_instr[7:0];
+                        resp[5] <= dbg_current_instr[15:8];
+                        resp[6] <= dbg_current_instr[23:16];
+                        resp[7] <= dbg_current_instr[31:24];
+                        resp_len <= 8;
+                        resp_idx <= 0;
+                        state    <= S_SEND_HDR;
+                    end
+                end
+
+                // ---------------------------------------------------------
                 // Отправляем байт от CPU (после заголовка 0xBB)
                 // ---------------------------------------------------------
                 S_CPU_TX: begin
@@ -425,6 +452,7 @@ end else begin : no_dbg
     assign dbg_set_pc           = 0;
     assign dbg_new_pc           = 0;
     assign dbg_bus_request      = 0;
+    assign dbg_step_pipeline    = 0;
     assign mc_dbg_address       = 0;
     assign mc_dbg_read_trigger  = 0;
     assign mc_dbg_write_trigger = 0;
