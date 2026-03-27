@@ -257,7 +257,11 @@ module OLED_FB_DEVICE (
     // Busy / controller_ready
     // =========================================================
     assign rend_busy = (rstate != R_IDLE);
-    assign controller_ready = !rend_busy;
+
+    // Никакой аппаратной блокировки — controller_ready всегда 1.
+    // Dual-port BRAM: CPU пишет в Port A, рендерер читает Port B.
+    // Синхронизация — ответственность клиента через oled_sync().
+    assign controller_ready = 1'b1;
 
     // =========================================================
     // CPU read mux
@@ -287,7 +291,7 @@ module OLED_FB_DEVICE (
         bram_addr_a = fb_word_addr;
         bram_din_a  = write_value;
         bram_we_a   = 4'b0;
-        if (is_fb && write_trigger && !rend_busy)
+        if (is_fb && write_trigger)
             bram_we_a = mask;
     end
 
@@ -327,7 +331,7 @@ module OLED_FB_DEVICE (
             flush_trigger <= 1'b0;
 
             // --- Register writes (only when not busy) ---
-            if (write_trigger && !rend_busy && is_reg) begin
+            if (write_trigger && is_reg) begin
                 case (reg_sel)
                     2'd0: begin
                         if (write_value[0]) flush_trigger <= 1'b1;
@@ -339,7 +343,7 @@ module OLED_FB_DEVICE (
             end
 
             // --- Palette writes (only when not busy) ---
-            if (write_trigger && !rend_busy && is_palette)
+            if (write_trigger && is_palette)
                 palette[pal_idx] <= write_value[15:0];
 
             // --- Renderer FSM ---

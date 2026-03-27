@@ -65,8 +65,9 @@ static void fb_sync(void) {
 }
 
 static void fb_flush(void) {
-    fb_sync();  /* ждём предыдущий flush */
-    OLED_CONTROL = 1;  /* mode=RGB565, flush — неблокирующий */
+    /* CONTROL блокируется аппаратно если рендер ещё идёт — CPU stall.
+     * Возврат сразу после записи, CPU может рисовать дальше. */
+    OLED_CONTROL = 1;  /* mode=RGB565, flush */
 }
 
 static void fb_pixel(int x, int y, unsigned short color) {

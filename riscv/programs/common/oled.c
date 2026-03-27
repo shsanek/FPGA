@@ -67,11 +67,12 @@ void oled_set_palette(int idx, unsigned short color) {
 
 /* ---- Flush (неблокирующий — только выставляет флаг) ---- */
 void oled_flush(void) {
-    /* Если предыдущий flush ещё идёт — ждём (иначе потеряем новый запрос) */
-    while (OLED_STATUS & 1) ;
+    /* CONTROL доступен только когда !busy (controller_ready=0 для регистров).
+     * Если предыдущий рендер ещё идёт — CPU stall аппаратно на записи в CONTROL.
+     * Поэтому явный wait не нужен. */
     OLED_CONTROL = (cur_mode ? 2 : 0) | 1;  /* bit1=mode, bit0=flush */
-    /* Не ждём — CPU может работать дальше.
-     * Запись в FB во время рендера → CPU stall аппаратно (controller_ready=0) */
+    /* Возврат сразу. CPU может писать в FB или делать другое.
+     * Для ожидания — вызвать oled_sync(). */
 }
 
 /* ---- Sync (блокирующий — ждёт завершения рендера) ---- */
