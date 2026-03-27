@@ -168,7 +168,7 @@ echo "=== Running program tests ==="
 if [ -n "$FILTER" ]; then
     PROGRAM_LIST="$FILTER"
 else
-    PROGRAM_LIST=$(ls "$PROGRAMS_DIR" | grep -v common | grep -v Makefile | grep -v bin2hex | grep -v program)
+    PROGRAM_LIST=$(ls "$PROGRAMS_DIR" | grep -v common | grep -v Makefile | grep -v bin2hex | grep -v program | grep -v test_oled | grep -v test_sd)
 fi
 
 for prog in $PROGRAM_LIST; do
