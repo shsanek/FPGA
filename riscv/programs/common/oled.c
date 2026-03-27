@@ -2,6 +2,7 @@
 #include "oled.h"
 #include "font8x10.h"
 #include "font5x7.h"
+#include "font4x6.h"
 
 /* ---- Hardware registers ---- */
 #define OLED_DATA_REG    (*(volatile unsigned int *)0x08010000U)
@@ -185,6 +186,35 @@ void oled_print_sm(int x, int y, const char *s, unsigned short fg, unsigned shor
 
 void oled_text_sm(int row, int col, const char *s, unsigned short fg, unsigned short bg) {
     oled_print_sm(col * FONT5_CELL_W, row * FONT5_CELL_H, s, fg, bg);
+}
+
+/* ---- Micro font 4×6 (column-encoded) ---- */
+
+void oled_char_xs(int x, int y, char c, unsigned short fg, unsigned short bg) {
+    if (c < FONT4_FIRST || c > FONT4_LAST) c = ' ';
+    const unsigned char *glyph = &font4x6[(c - FONT4_FIRST) * FONT4_W];
+
+    for (int col = 0; col < FONT4_W; col++) {
+        unsigned char bits = glyph[col];
+        for (int row = 0; row < FONT4_H; row++) {
+            oled_pixel(x + col, y + row, (bits & 1) ? fg : bg);
+            bits >>= 1;
+        }
+    }
+    for (int row = 0; row < FONT4_H; row++)
+        oled_pixel(x + FONT4_W, y + row, bg);
+}
+
+void oled_print_xs(int x, int y, const char *s, unsigned short fg, unsigned short bg) {
+    while (*s) {
+        oled_char_xs(x, y, *s++, fg, bg);
+        x += FONT4_CELL_W;
+        if (x + FONT4_W > OLED_W) break;
+    }
+}
+
+void oled_text_xs(int row, int col, const char *s, unsigned short fg, unsigned short bg) {
+    oled_print_xs(col * FONT4_CELL_W, row * FONT4_CELL_H, s, fg, bg);
 }
 
 /* ---- Flush framebuffer to OLED ---- */

@@ -40,6 +40,11 @@ void oled_char_sm(int x, int y, char c, unsigned short fg, unsigned short bg);
 void oled_print_sm(int x, int y, const char *s, unsigned short fg, unsigned short bg);
 void oled_text_sm(int row, int col, const char *s, unsigned short fg, unsigned short bg);
 
+/* Микро шрифт 4×6 (19 колонок × 9 строк) */
+void oled_char_xs(int x, int y, char c, unsigned short fg, unsigned short bg);
+void oled_print_xs(int x, int y, const char *s, unsigned short fg, unsigned short bg);
+void oled_text_xs(int row, int col, const char *s, unsigned short fg, unsigned short bg);
+
 /* Отправить фреймбуфер на экран */
 void oled_flush(void);
 
