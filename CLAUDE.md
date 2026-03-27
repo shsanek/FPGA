@@ -24,34 +24,19 @@ FPGA hardware design project implementing two subsystems in SystemVerilog:
 
 ## Build & Test
 
-Each component has its own `make` or `script` file:
+RTL modules are in `riscv/rtl/`, tests in `riscv/test/`. Each test compiles with iverilog:
 
 ```bash
-# Brainfuck interpreter
-cd first/ && make
+# Example: compile and run a test
+cd riscv/
+iverilog -g2012 -o out rtl/peripheral/SPI_MASTER.sv test/peripheral/SPI_MASTER_TEST.sv
+vvp out
 
-# RISC-V Register file
-cd riscv/Register/ && make
+# C programs
+cd riscv/programs/ && make
 
-# RISC-V ALU
-cd riscv/ALU/OP_0110011/ && ./script
-
-# I/O controllers
-cd riscv/I_O/INPUT_CONTROLLER/ && ./script
-cd riscv/I_O/OUTPUT_CONTROLLER/ && ./script
-cd riscv/I_O/VALUE_STORAGE/ && ./script
-
-# Memory subsystem
-cd riscv/MEMORY/ && ./script                          # MEMORY_CONTROLLER
-cd riscv/MEMORY/CHUNK_STORAGE/ && ./script
-cd riscv/MEMORY/CHUNK_STORAGE_4_POOL/ && ./script
-cd riscv/MEMORY/RAM_CONTROLLER/ && ./script
-```
-
-**Build flow:**
-```bash
-iverilog -g2012 -o [output] [source.sv] [test.sv]
-vvp [output]
+# Boot loader
+cd riscv/boot/tools/ && make stage1
 ```
 
 ---
@@ -64,42 +49,70 @@ FPGA/
 │   ├── first.sv                        # Main implementation
 │   └── first_test.sv                   # Test bench
 │
-└── riscv/                              # RISC-V processor
-    ├── BASE_TYPE.sv                    # Shared type definitions
-    ├── TOP.sv                          # System top (CPU + peripherals + DDR)
-    ├── FPGA_TOP.sv                     # FPGA wrapper (clocking, MIG IP, pin assignments)
-    ├── ALU/OP_0110011/                 # R-type ALU (ADD, SUB, SLL, SLT, XOR, OR, AND, SR*)
-    ├── Register/                       # 32×32-bit register file
-    ├── CPU/
-    │   ├── CPU_SINGLE_CYCLE.sv         # Single-cycle RV32I core
-    │   ├── CPU_PIPELINE_ADAPTER.sv     # Instruction fetch / data access FSM
-    │   ├── CPU_ALU.sv                  # ALU wrapper
-    │   ├── DEBUG_CONTROLLER.sv         # UART debug protocol (HALT/STEP/MEM)
-    │   ├── PERIPHERAL_BUS.sv           # Address decoder (MC / UART / OLED / SD)
-    │   ├── UART_IO_DEVICE.sv           # Memory-mapped UART TX/RX
-    │   ├── SPI_MASTER.sv               # Full-duplex SPI (MOSI+MISO), configurable clock
-    │   ├── OLED_IO_DEVICE.sv           # PmodOLEDrgb (SSD1331) controller
-    │   └── SD_IO_DEVICE.sv             # PmodMicroSD (SPI mode) controller
-    ├── I_O/
-    │   ├── I_O_TIMER_GENERATOR.sv      # UART baud timer
-    │   ├── INPUT_CONTROLLER/           # UART receiver
-    │   ├── OUTPUT_CONTROLLER/          # UART transmitter
-    │   └── VALUE_STORAGE/              # Button/LED buffer
-    ├── MEMORY/
-    │   ├── MEMORY_CONTROLLER.sv        # Cache controller (4-pool, write-back)
-    │   ├── CHUNK_STORAGE/              # Single cache line storage
-    │   ├── CHUNK_STORAGE_4_POOL/       # 4-entry cache pool (LRU eviction)
-    │   └── RAM_CONTROLLER/             # MIG DDR controller + MIG_MODEL (sim)
-    ├── tools/
-    │   └── riscv_tester.py             # UART debug tester (upload/run/step/memdump)
-    └── tests/
-        ├── crt0.s, runtime.c, linker.ld, check.h  # Bare-metal runtime
-        └── programs/                   # Test programs (C → hex)
-            ├── hello/                  # UART hello world
-            ├── fib/, sum/              # Algorithms
-            ├── test_alu/branch/jump/mem/upper/  # CPU ISA tests
-            ├── test_oled/              # SSD1331 RGB stripe test
-            └── test_sd/               # SD card raw write/read test
+├── riscv/
+│   ├── rtl/                            # SystemVerilog modules
+│   │   ├── TOP.sv                      # System top (CPU + peripherals + DDR)
+│   │   ├── FPGA_TOP.sv                 # FPGA wrapper (clocking, MIG, pins)
+│   │   ├── BASE_TYPE.sv                # Shared type definitions
+│   │   ├── core/                       # CPU ядро
+│   │   │   ├── CPU_SINGLE_CYCLE.sv     # Single-cycle RV32I core
+│   │   │   ├── CPU_PIPELINE_ADAPTER.sv # Instruction fetch / data access FSM
+│   │   │   ├── CPU_ALU.sv              # ALU wrapper
+│   │   │   ├── OP_0110011.sv           # R-type ALU operations
+│   │   │   ├── OP_0010011.sv           # I-type ALU operations
+│   │   │   ├── REGISTER_32_BLOCK_32.sv # 32×32-bit register file
+│   │   │   ├── IMMEDIATE_GENERATOR.sv  # Immediate decoder
+│   │   │   ├── BRANCH_UNIT.sv          # Branch comparator
+│   │   │   ├── LOAD_UNIT.sv            # Load alignment + sign extension
+│   │   │   └── STORE_UNIT.sv           # Store byte mask
+│   │   ├── memory/                     # Cache + DDR
+│   │   │   ├── MEMORY_CONTROLLER.sv    # 4-pool write-back cache
+│   │   │   ├── CHUNK_STORAGE.sv        # Single cache line
+│   │   │   ├── CHUNK_STORAGE_4_POOL.sv # 4-entry cache pool (LRU)
+│   │   │   ├── RAM_CONTROLLER.sv       # MIG DDR controller
+│   │   │   └── MIG_MODEL.sv            # Simulation-only MIG mock
+│   │   ├── peripheral/                 # Периферия + шина
+│   │   │   ├── PERIPHERAL_BUS.sv       # Address decoder
+│   │   │   ├── UART_IO_DEVICE.sv       # Memory-mapped UART
+│   │   │   ├── OLED_IO_DEVICE.sv       # PmodOLEDrgb (SSD1331)
+│   │   │   ├── SD_IO_DEVICE.sv         # PmodMicroSD (SPI)
+│   │   │   ├── SPI_MASTER.sv           # Full-duplex SPI
+│   │   │   └── FLASH_LOADER.sv         # QSPI flash boot loader
+│   │   ├── uart/                       # Физический UART стек
+│   │   │   ├── SIMPLE_UART_RX.sv       # UART receiver
+│   │   │   ├── I_O_OUTPUT_CONTROLLER.sv# UART transmitter
+│   │   │   ├── I_O_TIMER_GENERATOR.sv  # Baud rate timer
+│   │   │   ├── UART_FIFO.sv            # Sync FIFO
+│   │   │   └── VALUE_STORAGE.sv        # Button/LED buffer
+│   │   └── debug/
+│   │       └── DEBUG_CONTROLLER.sv     # UART debug protocol
+│   │
+│   ├── test/                           # Все тестбенчи
+│   │   ├── core/                       # CPU, ALU, register tests
+│   │   ├── memory/                     # Cache, RAM controller tests
+│   │   ├── peripheral/                 # Bus, SPI, OLED, SD, flash tests
+│   │   ├── uart/                       # UART I/O tests
+│   │   ├── debug/                      # Debug controller tests
+│   │   └── integration/                # TOP_TEST, PROGRAM_TEST
+│   │
+│   ├── programs/                       # C тестовые программы
+│   │   ├── common/                     # crt0.s, runtime.c/h, linker.ld, check.h
+│   │   ├── hello/, fib/, sum/          # Базовые тесты
+│   │   └── test_alu/branch/jump/mem/upper/oled/sd/
+│   │
+│   ├── boot/                           # Загрузчик (QSPI flash → SD card)
+│   │   ├── software/                   # Stage 1: sd.c, fat32.c, stage1.c
+│   │   └── tools/                      # Makefile, linker, prepend_header.py
+│   │
+│   ├── tools/                          # UART тестер, скрипты
+│   │   └── riscv_tester.py
+│   │
+│   └── docs/                           # Документация
+│       ├── boot.md, debug.md, uart.md
+│       ├── mig_setup.md, ram_controller.md
+│       ├── tools.md, todo.md
+│
+└── vivado/                             # Vivado проект, TCL, XDC
 ```
 
 ---

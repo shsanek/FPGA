@@ -12,12 +12,12 @@ OBJCOPY   = $(CROSS)objcopy
 SIZE      = $(CROSS)size
 
 CFLAGS    = -march=rv32i -mabi=ilp32 -O2 -ffreestanding -nostdlib -nostartfiles -Wall
-TESTS_DIR = ../../tests
+COMMON   = ../../programs/common
 
-SW_DIR    = ../software
-SRC       = $(SW_DIR)/stage1.c $(SW_DIR)/sd.c $(SW_DIR)/fat32.c
-CRT0      = $(TESTS_DIR)/crt0.s
-RUNTIME   = $(TESTS_DIR)/runtime.c
+SW_DIR   = ../software
+SRC      = $(SW_DIR)/stage1.c $(SW_DIR)/sd.c $(SW_DIR)/fat32.c
+CRT0     = $(COMMON)/crt0.s
+RUNTIME  = $(COMMON)/runtime.c
 
 .PHONY: stage1 stage1_hdr boot clean
 
@@ -38,12 +38,12 @@ stage1_hdr: stage1.bin
 # ---- BOOT.BIN (for SD card, loads at 0x00000000 — standard linker.ld) ----
 # Usage: make boot BOOT_SRC=../../tests/programs/hello/hello.c
 
-BOOT_SRC ?= ../../tests/programs/hello/hello.c
+BOOT_SRC ?= ../../programs/hello/hello.c
 
 boot: BOOT.BIN
 
-boot.elf: $(CRT0) $(RUNTIME) $(BOOT_SRC) $(TESTS_DIR)/linker.ld
-	$(CC) $(CFLAGS) -T $(TESTS_DIR)/linker.ld $(CRT0) $(RUNTIME) $(BOOT_SRC) -lgcc -o $@
+boot.elf: $(CRT0) $(RUNTIME) $(BOOT_SRC) $(COMMON)/linker.ld
+	$(CC) $(CFLAGS) -T $(COMMON)/linker.ld $(CRT0) $(RUNTIME) $(BOOT_SRC) -lgcc -o $@
 
 BOOT.BIN: boot.elf
 	$(OBJCOPY) -O binary $< $@
