@@ -176,6 +176,7 @@ module PERIPHERAL_BUS_TEST();
         cpu_rx_valid = 1;
         @(posedge clk); #1;
         cpu_rx_valid = 0;
+        @(posedge clk); #1;  // дать FIFO такт на запись
 
         // Читаем STATUS: rx_avail=1, tx_ready=1 → 0x00000003
         bus_read(29'h10000008, read_result);
@@ -192,10 +193,10 @@ module PERIPHERAL_BUS_TEST();
             $display("FAIL T4: RX_DATA = 0x%02X, expected 0xBB", read_result[7:0]);
             error = error + 1;
         end
-        // После чтения rx_avail должен сброситься
+        // После чтения FIFO должен быть пуст (rx_empty=1)
         @(posedge clk); #1;  // дать время FF обработать
-        if (io_dev.rx_avail_r !== 0) begin
-            $display("FAIL T4: rx_avail_r не сброшен после чтения");
+        if (io_dev.rx_empty !== 1) begin
+            $display("FAIL T4: rx_empty не установлен после чтения");
             error = error + 1;
         end
 

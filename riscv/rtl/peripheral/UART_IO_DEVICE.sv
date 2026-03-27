@@ -3,13 +3,19 @@
 // Адресное пространство (биты [3:2] адреса):
 //   offset 0x00  TX_DATA  (W) — запись байта для отправки через UART
 //                         (R) — последний отправленный байт
-//   offset 0x04  RX_DATA  (R) — принятый байт (сбрасывается после чтения)
+//   offset 0x04  RX_DATA  (R) — головной байт из RX буфера (pop через 1 такт)
 //   offset 0x08  STATUS   (R) — {30'b0, tx_ready, rx_available}
+//
+// RX буферизирован кольцевым буфером на RX_DEPTH байт (по умолчанию 8).
+// Чтение RX_DATA возвращает голову буфера; извлечение (pop) происходит
+// через 1 такт, чтобы pipeline успел захватить данные в S_DATA_WAIT.
+// При переполнении новый байт отбрасывается.
 //
 // Запись в TX_DATA блокирует bus (controller_ready=0) до тех пор,
 // пока байт не будет принят DEBUG_CONTROLLER'ом и отправлен в TX FIFO.
-// CPU pipeline автоматически ждёт в S_DATA_WAIT.
-module UART_IO_DEVICE (
+module UART_IO_DEVICE #(
+    parameter RX_DEPTH = 8   // глубина RX буфера (степень двойки)
+)(
     input  wire        clk,
     input  wire        reset,
 
@@ -31,17 +37,14 @@ module UART_IO_DEVICE (
     input  wire        cpu_rx_valid
 );
     // ---------------------------------------------------------------
-    // Регистры
+    // Регистры TX
     // ---------------------------------------------------------------
     logic [7:0] tx_data_r;
-    logic [7:0] rx_data_r;
-    logic       rx_avail_r;
 
-    // TX handshake FSM
     typedef enum logic [1:0] {
         TX_IDLE,
-        TX_WAIT_ACCEPT,  // ждём cpu_tx_ready=1 (DEBUG заберёт байт)
-        TX_WAIT_DONE     // ждём пока DEBUG вернётся в IDLE (cpu_tx_ready=1 снова)
+        TX_WAIT_ACCEPT,
+        TX_WAIT_DONE
     } tx_state_t;
     tx_state_t tx_state;
 
@@ -52,26 +55,46 @@ module UART_IO_DEVICE (
     localparam REG_STATUS = 2'd2;
 
     // ---------------------------------------------------------------
+    // RX кольцевой буфер
+    // ---------------------------------------------------------------
+    localparam RX_ADDR_BITS = $clog2(RX_DEPTH);
+
+    logic [7:0] rx_buf [0:RX_DEPTH-1];
+    logic [RX_ADDR_BITS:0] rx_wr_ptr;
+    logic [RX_ADDR_BITS:0] rx_rd_ptr;
+
+    wire rx_empty = (rx_wr_ptr == rx_rd_ptr);
+    wire rx_full  = (rx_wr_ptr[RX_ADDR_BITS] != rx_rd_ptr[RX_ADDR_BITS]) &&
+                    (rx_wr_ptr[RX_ADDR_BITS-1:0] == rx_rd_ptr[RX_ADDR_BITS-1:0]);
+
+    wire [7:0] rx_head = rx_buf[rx_rd_ptr[RX_ADDR_BITS-1:0]];
+
+    // Pop отложен на 1 такт: read_trigger → rx_pop_pending → rx_rd_ptr++
+    // Это гарантирует что pipeline захватит данные в S_DATA_WAIT
+    // до того как указатель сдвинется.
+    logic rx_pop_pending;
+
+    // ---------------------------------------------------------------
     // Комбинационное чтение
     // ---------------------------------------------------------------
     reg [31:0] rdata;
     always_comb begin
         case (reg_sel)
             REG_TX:     rdata = {24'b0, tx_data_r};
-            REG_RX:     rdata = {24'b0, rx_data_r};
-            REG_STATUS: rdata = {30'b0, cpu_tx_ready, rx_avail_r};
+            REG_RX:     rdata = {24'b0, rx_head};
+            REG_STATUS: rdata = {30'b0, cpu_tx_ready, !rx_empty};
             default:    rdata = 32'b0;
         endcase
     end
     assign read_value = rdata;
 
     // ---------------------------------------------------------------
-    // controller_ready: bus свободен когда TX не в процессе отправки
+    // controller_ready
     // ---------------------------------------------------------------
     assign controller_ready = (tx_state == TX_IDLE);
 
     // ---------------------------------------------------------------
-    // TX: удерживаем cpu_tx_valid пока DEBUG не заберёт
+    // TX
     // ---------------------------------------------------------------
     assign cpu_tx_byte  = tx_data_r;
     assign cpu_tx_valid = (tx_state == TX_WAIT_ACCEPT);
@@ -81,10 +104,11 @@ module UART_IO_DEVICE (
     // ---------------------------------------------------------------
     always_ff @(posedge clk) begin
         if (reset) begin
-            tx_data_r  <= 8'h00;
-            rx_data_r  <= 8'h00;
-            rx_avail_r <= 1'b0;
-            tx_state   <= TX_IDLE;
+            tx_data_r      <= 8'h00;
+            tx_state       <= TX_IDLE;
+            rx_wr_ptr      <= '0;
+            rx_rd_ptr      <= '0;
+            rx_pop_pending <= 1'b0;
         end else begin
 
             // --- TX FSM ---
@@ -95,34 +119,26 @@ module UART_IO_DEVICE (
                         tx_state  <= TX_WAIT_ACCEPT;
                     end
                 end
-
                 TX_WAIT_ACCEPT: begin
-                    // cpu_tx_valid=1 удерживается (комбинационно)
-                    // Когда DEBUG в S_IDLE и tx_ready → cpu_tx_ready=1
-                    // DEBUG заберёт байт и уйдёт в S_CPU_TX
-                    if (cpu_tx_ready) begin
-                        // DEBUG принял — теперь он в S_CPU_TX (cpu_tx_ready упадёт)
+                    if (cpu_tx_ready)
                         tx_state <= TX_WAIT_DONE;
-                    end
                 end
-
                 TX_WAIT_DONE: begin
-                    // Ждём пока DEBUG вернётся в S_IDLE и TX FIFO не полон
-                    // (cpu_tx_ready снова станет 1)
-                    if (cpu_tx_ready) begin
+                    if (cpu_tx_ready)
                         tx_state <= TX_IDLE;
-                    end
                 end
             endcase
 
-            // --- RX ---
-            if (cpu_rx_valid) begin
-                rx_data_r  <= cpu_rx_byte;
-                rx_avail_r <= 1'b1;
+            // --- RX push ---
+            if (cpu_rx_valid && !rx_full) begin
+                rx_buf[rx_wr_ptr[RX_ADDR_BITS-1:0]] <= cpu_rx_byte;
+                rx_wr_ptr <= rx_wr_ptr + 1;
             end
 
-            if (read_trigger && reg_sel == REG_RX)
-                rx_avail_r <= 1'b0;
+            // --- RX pop (отложенный на 1 такт) ---
+            rx_pop_pending <= read_trigger && (reg_sel == REG_RX) && !rx_empty;
+            if (rx_pop_pending)
+                rx_rd_ptr <= rx_rd_ptr + 1;
         end
     end
 
