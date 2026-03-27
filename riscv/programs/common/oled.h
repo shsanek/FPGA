@@ -45,6 +45,13 @@ void oled_char_xs(int x, int y, char c, unsigned short fg, unsigned short bg);
 void oled_print_xs(int x, int y, const char *s, unsigned short fg, unsigned short bg);
 void oled_text_xs(int row, int col, const char *s, unsigned short fg, unsigned short bg);
 
+/* Консоль (средний шрифт 5×7, 16×8, автоскролл) */
+void oled_console_init(unsigned short fg, unsigned short bg);
+void oled_console_puts(const char *s);   /* строка + перевод на след. ряд */
+void oled_console_print(const char *s);  /* без перевода */
+void oled_console_clear(void);
+void oled_console_flush(void);           /* отправить на экран */
+
 /* Отправить фреймбуфер на экран */
 void oled_flush(void);
 

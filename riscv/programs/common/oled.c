@@ -217,6 +217,70 @@ void oled_text_xs(int row, int col, const char *s, unsigned short fg, unsigned s
     oled_print_xs(col * FONT4_CELL_W, row * FONT4_CELL_H, s, fg, bg);
 }
 
+/* ---- Console (средний шрифт 5×7, автоскролл) ---- */
+
+static int con_cx, con_cy;
+static unsigned short con_fg, con_bg;
+
+void oled_console_init(unsigned short fg, unsigned short bg) {
+    con_fg = fg;
+    con_bg = bg;
+    con_cx = 0;
+    con_cy = 0;
+    oled_clear(bg);
+}
+
+static void con_scroll(void) {
+    /* Сдвинуть framebuffer вверх на FONT5_CELL_H пикселей */
+    unsigned short *fb = oled_framebuffer();
+    int shift = FONT5_CELL_H;
+    for (int y = 0; y < OLED_H - shift; y++)
+        for (int x = 0; x < OLED_W; x++)
+            fb[y * OLED_W + x] = fb[(y + shift) * OLED_W + x];
+    /* Очистить нижнюю строку */
+    for (int y = OLED_H - shift; y < OLED_H; y++)
+        for (int x = 0; x < OLED_W; x++)
+            fb[y * OLED_W + x] = con_bg;
+    con_cy -= shift;
+}
+
+static void con_newline(void) {
+    con_cx = 0;
+    con_cy += FONT5_CELL_H;
+    if (con_cy + FONT5_H > OLED_H)
+        con_scroll();
+}
+
+static void con_putchar(char c) {
+    if (c == '\n') {
+        con_newline();
+        return;
+    }
+    if (con_cx + FONT5_W > OLED_W)
+        con_newline();
+    oled_char_sm(con_cx, con_cy, c, con_fg, con_bg);
+    con_cx += FONT5_CELL_W;
+}
+
+void oled_console_print(const char *s) {
+    while (*s) con_putchar(*s++);
+}
+
+void oled_console_puts(const char *s) {
+    oled_console_print(s);
+    con_newline();
+}
+
+void oled_console_clear(void) {
+    con_cx = 0;
+    con_cy = 0;
+    oled_clear(con_bg);
+}
+
+void oled_console_flush(void) {
+    oled_flush();
+}
+
 /* ---- Flush framebuffer to OLED ---- */
 
 void oled_flush(void) {
