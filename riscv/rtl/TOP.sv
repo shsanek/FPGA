@@ -82,7 +82,11 @@ module TOP #(
     output wire        flash_cs_n,
     output wire        flash_mosi,
     input  wire        flash_miso,
-    output wire        flash_sck
+    output wire        flash_sck,
+
+    // Boot status
+    output wire        boot_active,      // 1 = FLASH_LOADER ещё работает
+    output wire        boot_error        // 1 = bad magic / no payload
 );
     localparam MASK_SIZE  = DATA_SIZE / 8;
     localparam BIT_PERIOD = CLOCK_FREQ / BAUD_RATE;
@@ -562,7 +566,8 @@ module TOP #(
         .flash_sck        (flash_sck),
         .flash_mosi       (flash_mosi),
         .flash_miso       (flash_miso),
-        .active           (flash_active)
+        .active           (flash_active),
+        .error            (flash_error)
     );
 
     // --- MEMORY_CONTROLLER ---
@@ -623,5 +628,9 @@ module TOP #(
         .mig_ui_clk             (mig_ui_clk),
         .mig_init_calib_complete(mig_init_calib_complete)
     );
+
+    wire flash_error;
+    assign boot_active = flash_active;
+    assign boot_error  = flash_error;
 
 endmodule

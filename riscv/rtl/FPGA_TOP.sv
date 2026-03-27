@@ -66,7 +66,12 @@ module FPGA_TOP (
     input  wire        flash_miso,     // K18 (DQ1)
     output wire        flash_sck,      // L16
     output wire        flash_wp_n,     // L14 (DQ2, tie high)
-    output wire        flash_hold_n    // M14 (DQ3, tie high)
+    output wire        flash_hold_n,   // M14 (DQ3, tie high)
+
+    // RGB LED0 — boot status indicator
+    output wire        led0_r,
+    output wire        led0_g,
+    output wire        led0_b
 );
 
     // ---------------------------------------------------------------
@@ -230,8 +235,29 @@ module FPGA_TOP (
         .flash_cs_n             (flash_cs_n),
         .flash_mosi             (flash_mosi),
         .flash_miso             (flash_miso),
-        .flash_sck              (flash_sck)
+        .flash_sck              (flash_sck),
+
+        // Boot status
+        .boot_active            (boot_active_w),
+        .boot_error             (boot_error_w)
     );
+
+    // ---------------------------------------------------------------
+    // Boot status wire
+    // ---------------------------------------------------------------
+    wire boot_active_w;
+    wire boot_error_w;
+
+    // ---------------------------------------------------------------
+    // RGB LED0 — boot status
+    //   Yellow   = waiting for DDR (active, calib not done)
+    //   Blue     = loading from flash (active, DDR ready)
+    //   Green    = done, CPU running
+    //   Red      = error (bad magic / no payload)
+    // ---------------------------------------------------------------
+    assign led0_r = boot_error_w | (boot_active_w & ~init_calib_complete & ~boot_error_w);
+    assign led0_g = (~boot_error_w & ~boot_active_w) | (boot_active_w & ~init_calib_complete & ~boot_error_w);
+    assign led0_b = boot_active_w & init_calib_complete & ~boot_error_w;
 
     // ---------------------------------------------------------------
     // Debug LEDs

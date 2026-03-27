@@ -41,7 +41,8 @@ module FLASH_LOADER #(
     output wire flash_mosi,
     input  wire flash_miso,
 
-    output wire active
+    output wire active,
+    output wire error         // 1 = bad magic or zero size
 );
 
     localparam [31:0] MAGIC = 32'hB007C0DE;
@@ -118,6 +119,9 @@ module FLASH_LOADER #(
     assign new_pc          = saved_load_addr;
     assign active          = (state != S_DONE);
 
+    logic error_r;
+    assign error = error_r;
+
     // ---------------------------------------------------------------
     // CMD+ADDR sequence: 0x03, addr[23:16], addr[15:8], addr[7:0]
     // ---------------------------------------------------------------
@@ -155,6 +159,7 @@ module FLASH_LOADER #(
             bus_request_r   <= 1'b1;     // блокируем CPU и debug до завершения
             mc_wr_r         <= 1'b0;
             set_pc_r        <= 1'b0;
+            error_r         <= 1'b0;
         end else begin
             spi_trigger_r <= 1'b0;
             set_pc_r      <= 1'b0;
@@ -245,6 +250,7 @@ module FLASH_LOADER #(
                                 cs_r  <= 1'b0;
                                 state <= S_DONE;
                                 bus_request_r <= 1'b0;
+                                error_r <= 1'b1;
                             end else if (saved_size == 32'b0) begin
                                 // Zero size — nothing to load
                                 cs_r  <= 1'b0;
