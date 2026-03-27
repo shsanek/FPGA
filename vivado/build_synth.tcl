@@ -6,8 +6,8 @@ set src_dir  "C:/Users/ssane/Documents/FPGA/riscv"
 
 open_project ${proj_dir}/project_1.xpr
 
-# Add new OLED/SPI source files (catch if already added)
-foreach f {CPU/SPI_MASTER.sv CPU/OLED_IO_DEVICE.sv CPU/SD_IO_DEVICE.sv} {
+# Add peripheral/new source files (catch if already added)
+foreach f {rtl/peripheral/SPI_MASTER.sv rtl/peripheral/OLED_IO_DEVICE.sv rtl/peripheral/SD_IO_DEVICE.sv rtl/peripheral/FLASH_LOADER.sv} {
     set fpath "${src_dir}/${f}"
     catch {add_files -norecurse -fileset [get_filesets sources_1] $fpath}
     catch {set_property file_type SystemVerilog [get_files $fpath]}
@@ -15,7 +15,7 @@ foreach f {CPU/SPI_MASTER.sv CPU/OLED_IO_DEVICE.sv CPU/SD_IO_DEVICE.sv} {
 }
 
 # Ensure FPGA_TOP is top
-catch {add_files -norecurse -fileset [get_filesets sources_1] ${src_dir}/FPGA_TOP.sv}
+catch {add_files -norecurse -fileset [get_filesets sources_1] ${src_dir}/rtl/FPGA_TOP.sv}
 set_property top FPGA_TOP [current_fileset]
 update_compile_order -fileset sources_1
 

@@ -4,34 +4,47 @@ set src_dir  "C:/Users/ssane/Documents/FPGA/riscv"
 
 open_project ${proj_dir}/project_1.xpr
 
-# Add all synthesizable SV files
+# Remove old source files that no longer exist at old paths
+foreach f [get_files -of_objects [get_filesets sources_1] *.sv] {
+    if {![file exists $f]} {
+        puts "Removing stale file: $f"
+        remove_files -fileset [get_filesets sources_1] $f
+    }
+}
+
+# Add all synthesizable SV files (new rtl/ structure)
 set sv_files [list \
-    ${src_dir}/BASE_TYPE.sv \
-    ${src_dir}/FPGA_TOP.sv \
-    ${src_dir}/TOP.sv \
-    ${src_dir}/SIMPLE_UART_RX.sv \
-    ${src_dir}/UART_FIFO.sv \
-    ${src_dir}/Register/REGISTER_32_BLOCK_32.sv \
-    ${src_dir}/ALU/OP_0110011/OP_0110011.sv \
-    ${src_dir}/ALU/OP_0010011/OP_0010011.sv \
-    ${src_dir}/BRANCH_UNIT/BRANCH_UNIT.sv \
-    ${src_dir}/IMMEDIATE_GENERATOR/IMMEDIATE_GENERATOR.sv \
-    ${src_dir}/LOAD_UNIT/LOAD_UNIT.sv \
-    ${src_dir}/STORE_UNIT/STORE_UNIT.sv \
-    ${src_dir}/I_O/I_O_TIMER_GENERATOR.sv \
-    ${src_dir}/I_O/INPUT_CONTROLLER/I_O_INPUT_CONTROLLER.sv \
-    ${src_dir}/I_O/OUTPUT_CONTROLLER/I_O_OUTPUT_CONTROLLER.sv \
-    ${src_dir}/I_O/VALUE_STORAGE/VALUE_STORAGE.sv \
-    ${src_dir}/MEMORY/CHUNK_STORAGE/CHUNK_STORAGE.sv \
-    ${src_dir}/MEMORY/CHUNK_STORAGE_4_POOL/CHUNK_STORAGE_4_POOL.sv \
-    ${src_dir}/MEMORY/RAM_CONTROLLER/RAM_CONTROLLER.sv \
-    ${src_dir}/MEMORY/MEMORY_CONTROLLER.sv \
-    ${src_dir}/CPU/CPU_ALU.sv \
-    ${src_dir}/CPU/CPU_SINGLE_CYCLE.sv \
-    ${src_dir}/CPU/CPU_PIPELINE_ADAPTER.sv \
-    ${src_dir}/CPU/PERIPHERAL_BUS.sv \
-    ${src_dir}/CPU/UART_IO_DEVICE.sv \
-    ${src_dir}/CPU/DEBUG_CONTROLLER.sv \
+    ${src_dir}/rtl/BASE_TYPE.sv \
+    ${src_dir}/rtl/FPGA_TOP.sv \
+    ${src_dir}/rtl/TOP.sv \
+    ${src_dir}/rtl/core/REGISTER_32_BLOCK_32.sv \
+    ${src_dir}/rtl/core/OP_0110011.sv \
+    ${src_dir}/rtl/core/OP_0010011.sv \
+    ${src_dir}/rtl/core/BRANCH_UNIT.sv \
+    ${src_dir}/rtl/core/IMMEDIATE_GENERATOR.sv \
+    ${src_dir}/rtl/core/LOAD_UNIT.sv \
+    ${src_dir}/rtl/core/STORE_UNIT.sv \
+    ${src_dir}/rtl/core/CPU_ALU.sv \
+    ${src_dir}/rtl/core/CPU_DATA_ADAPTER.sv \
+    ${src_dir}/rtl/core/CPU_SINGLE_CYCLE.sv \
+    ${src_dir}/rtl/core/CPU_PIPELINE_ADAPTER.sv \
+    ${src_dir}/rtl/memory/CHUNK_STORAGE.sv \
+    ${src_dir}/rtl/memory/CHUNK_STORAGE_4_POOL.sv \
+    ${src_dir}/rtl/memory/RAM_CONTROLLER.sv \
+    ${src_dir}/rtl/memory/MEMORY_CONTROLLER.sv \
+    ${src_dir}/rtl/peripheral/PERIPHERAL_BUS.sv \
+    ${src_dir}/rtl/peripheral/UART_IO_DEVICE.sv \
+    ${src_dir}/rtl/peripheral/SPI_MASTER.sv \
+    ${src_dir}/rtl/peripheral/OLED_IO_DEVICE.sv \
+    ${src_dir}/rtl/peripheral/SD_IO_DEVICE.sv \
+    ${src_dir}/rtl/peripheral/FLASH_LOADER.sv \
+    ${src_dir}/rtl/uart/I_O_TIMER_GENERATOR.sv \
+    ${src_dir}/rtl/uart/I_O_INPUT_CONTROLLER.sv \
+    ${src_dir}/rtl/uart/I_O_OUTPUT_CONTROLLER.sv \
+    ${src_dir}/rtl/uart/VALUE_STORAGE.sv \
+    ${src_dir}/rtl/uart/SIMPLE_UART_RX.sv \
+    ${src_dir}/rtl/uart/UART_FIFO.sv \
+    ${src_dir}/rtl/debug/DEBUG_CONTROLLER.sv \
 ]
 
 foreach f $sv_files {
