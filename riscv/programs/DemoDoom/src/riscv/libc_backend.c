@@ -23,6 +23,9 @@ extern int  fat32_size(int handle);
 extern int  fat32_seek(int handle, unsigned int position);
 extern void fat32_close(int handle);
 
+/* Boot screen progress */
+extern void boot_oled_progress(int percent);
+
 
 /* HEAP handling (bump allocator) */
 
@@ -98,6 +101,9 @@ void doom_load_wad(const char *filename)
         total += rd;
         if (total >= next_report) {
             console_printf("  %dMB\n", next_report >> 20);
+            /* Update boot screen: WAD loading = 10%..80% */
+            int pct = 10 + (total * 70) / (int)wad_size;
+            boot_oled_progress(pct);
             next_report += 1 << 21;
         }
     }

@@ -1089,36 +1089,29 @@ void ST_drawWidgets(boolean refresh)
 
 void ST_doRefresh(void)
 {
-    printf("ST_doRefresh\n");
 
     st_firsttime = false;
 
     // draw status bar background to off-screen buff
     ST_refreshBackground();
-    printf("ST_refreshBackground\n");
 
     // and refresh all widgets
     ST_drawWidgets(true);
-    printf("ST_drawWidgets\n");
 }
 
 void ST_diffDraw(void)
 {
-    printf("ST_diffDraw\n");
     // update all widgets
     ST_drawWidgets(false);
-    printf("ST_drawWidgets\n");
 }
 
 void ST_Drawer (boolean fullscreen, boolean refresh)
 {
-    printf("ST_Drawer\n");
     st_statusbaron = (!fullscreen) || automapactive;
     st_firsttime = st_firsttime || refresh;
 
     // Do red-/gold-shifts from damage/items
     ST_doPaletteStuff();
-    printf("ST_doPaletteStuff\n");
 
     // If just after ST_Start(), refresh all
     if (st_firsttime) ST_doRefresh();

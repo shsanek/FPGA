@@ -870,41 +870,29 @@ void R_SetupFrame (player_t* player)
 void R_RenderPlayerView (player_t* player)
 {
     R_SetupFrame (player);
-    printf("R_SetupFrame\n");
 
     // Clear buffers.
     R_ClearClipSegs ();
-    printf("R_ClearClipSegs\n");
     R_ClearDrawSegs ();
-    printf("R_ClearDrawSegs\n");
     R_ClearPlanes ();
-    printf("R_ClearPlanes\n");
     R_ClearSprites ();
-    printf("R_ClearSprites\n");
 
     // check for new console commands.
     NetUpdate ();
-    printf("NetUpdate\n");
 
     // The head node is the last node output.
     R_RenderBSPNode (numnodes-1);
-    printf("R_RenderBSPNode\n");
 
     // Check for new console commands.
     NetUpdate ();
-    printf("NetUpdate\n");
 
     R_DrawPlanes ();
-    printf("R_DrawPlanes\n");
 
     // Check for new console commands.
     NetUpdate ();
-    printf("NetUpdate\n");
 
     R_DrawMasked ();
-    printf("R_DrawMasked\n");
 
     // Check for new console commands.
     NetUpdate ();
-    printf("NetUpdate\n");
 }

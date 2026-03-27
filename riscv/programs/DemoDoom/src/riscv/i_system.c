@@ -52,17 +52,14 @@ static void
 I_GetRemoteEvent(void)
 {
     event_t event;
+    int is_press;
 
-    int ch = console_getchar_nowait();
-    if (ch == -1)
+    int key = console_read_event(&is_press);
+    if (key <= 0)
         return;
 
-    event.type = ev_keydown;
-    event.data1 = ch;
-    D_PostEvent(&event);
-
-    event.type = ev_keyup;
-    event.data1 = ch;
+    event.type = is_press ? ev_keydown : ev_keyup;
+    event.data1 = key;
     D_PostEvent(&event);
 }
 
