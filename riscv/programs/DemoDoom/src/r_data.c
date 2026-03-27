@@ -495,11 +495,8 @@ void R_InitTextures (void)
     temp2 = W_GetNumForName ("S_END") - 1;
     temp3 = ((temp2-temp1+63)/64) + ((numtextures+63)/64);
 
-    printf("start load texture %d, %x\n", numtextures, (unsigned int)textures);
-
     for (i=0 ; i<numtextures ; i++, directory++)
     {
-        printf("-%X.",i);
 
 
 
