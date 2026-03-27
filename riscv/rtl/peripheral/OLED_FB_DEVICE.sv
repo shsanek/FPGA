@@ -107,7 +107,8 @@ module OLED_FB_DEVICE (
 
     wire [1:0]  reg_sel = local_addr[3:2];
     wire [7:0]  pal_idx = local_addr[8:1]; // 16-бит записи, 512 байт / 2
-    wire [BRAM_ADDR_W-1:0] fb_word_addr = local_addr[BRAM_ADDR_W+1:2]; // /4 для 32-бит слов
+    wire [15:0] fb_offset = local_addr - FB_ADDR_START[15:0];
+    wire [BRAM_ADDR_W-1:0] fb_word_addr = fb_offset[BRAM_ADDR_W+1:2]; // /4 для 32-бит слов
 
     // =========================================================
     // Renderer
@@ -170,7 +171,8 @@ module OLED_FB_DEVICE (
     logic [BRAM_ADDR_W+1:0] pixel_addr_r; // linear pixel/byte address
 
     // SSD1331 init commands (stored in ROM)
-    localparam INIT_CMD_COUNT = 36;
+    localparam INIT_CMD_COUNT = 42;   // 36 init + 6 window
+    localparam INIT_ONLY_COUNT = 36;  // до window commands
     logic [7:0] init_cmds [0:INIT_CMD_COUNT-1];
     logic [5:0] init_cmd_idx;
 
@@ -193,25 +195,31 @@ module OLED_FB_DEVICE (
         init_cmds[15] = 8'h31;
         init_cmds[16] = 8'hB3; // Clock divider
         init_cmds[17] = 8'hF0;
-        init_cmds[18] = 8'hBB; // Precharge
-        init_cmds[19] = 8'h3A;
-        init_cmds[20] = 8'hBE; // VCOMH
-        init_cmds[21] = 8'h3E;
-        init_cmds[22] = 8'h87; // Master current
-        init_cmds[23] = 8'h06;
-        init_cmds[24] = 8'h81; // Contrast A
-        init_cmds[25] = 8'h91;
-        init_cmds[26] = 8'h82; // Contrast B
-        init_cmds[27] = 8'h50;
-        init_cmds[28] = 8'h83; // Contrast C
-        init_cmds[29] = 8'h7D;
-        // Set window commands (will be sent before each frame)
-        init_cmds[30] = 8'h15; // Column addr
-        init_cmds[31] = 8'h00;
-        init_cmds[32] = 8'h5F; // 95
-        init_cmds[33] = 8'h75; // Row addr
-        init_cmds[34] = 8'h00;
-        init_cmds[35] = 8'h3F; // 63
+        init_cmds[18] = 8'h8A; // Precharge A
+        init_cmds[19] = 8'h64;
+        init_cmds[20] = 8'h8B; // Precharge B
+        init_cmds[21] = 8'h78;
+        init_cmds[22] = 8'h8C; // Precharge C
+        init_cmds[23] = 8'h64;
+        init_cmds[24] = 8'hBB; // Precharge voltage
+        init_cmds[25] = 8'h3A;
+        init_cmds[26] = 8'hBE; // VCOMH
+        init_cmds[27] = 8'h3E;
+        init_cmds[28] = 8'h87; // Master current
+        init_cmds[29] = 8'h06;
+        init_cmds[30] = 8'h81; // Contrast A
+        init_cmds[31] = 8'h91;
+        init_cmds[32] = 8'h82; // Contrast B
+        init_cmds[33] = 8'h50;
+        init_cmds[34] = 8'h83; // Contrast C
+        init_cmds[35] = 8'h7D;
+        // Set window commands (sent before each frame)
+        init_cmds[36] = 8'h15; // Column addr
+        init_cmds[37] = 8'h00;
+        init_cmds[38] = 8'h5F; // 95
+        init_cmds[39] = 8'h75; // Row addr
+        init_cmds[40] = 8'h00;
+        init_cmds[41] = 8'h3F; // 63
     end
 
     // SPI interface
@@ -356,7 +364,7 @@ module OLED_FB_DEVICE (
                             ctl_pmoden <= 1'b1;
                         end else begin
                             rstate <= R_SET_WINDOW;
-                            init_cmd_idx <= 30; // window commands start at idx 30
+                            init_cmd_idx <= INIT_ONLY_COUNT; // window commands start at idx 30
                         end
                     end
                 end
@@ -395,7 +403,7 @@ module OLED_FB_DEVICE (
 
                 R_INIT_CMD: begin
                     if (!spi_busy && !spi_trigger) begin
-                        if (init_cmd_idx < 30) begin
+                        if (init_cmd_idx < INIT_ONLY_COUNT) begin
                             spi_data <= init_cmds[init_cmd_idx];
                             spi_trigger <= 1'b1;
                             init_cmd_idx <= init_cmd_idx + 1;
@@ -424,7 +432,7 @@ module OLED_FB_DEVICE (
                     if (spi_done) begin
                         oled_initialized <= 1'b1;
                         // Now send window commands and start pixel stream
-                        init_cmd_idx <= 30;
+                        init_cmd_idx <= INIT_ONLY_COUNT;
                         rstate <= R_SET_WINDOW;
                     end
                 end
