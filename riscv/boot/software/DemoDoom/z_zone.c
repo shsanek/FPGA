@@ -188,14 +188,14 @@ Z_Malloc
   int           tag,
   void*         user )
 {
-    *((int*)(0x64000000)) = __LINE__;
+
     int         extra;
     memblock_t* start;
     memblock_t* rover;
     memblock_t* newblock;
     memblock_t* base;
 
-    *((int*)(0x64000000)) = __LINE__;
+
     size = (size + 3) & ~3;
 
     // scan through the block list,
@@ -210,14 +210,14 @@ Z_Malloc
     //  back up over them
     base = mainzone->rover;
 
-    *((int*)(0x64000000)) = __LINE__;
+
     if (!base->prev->user)
         base = base->prev;
 
     rover = base;
     start = base->prev;
 
-    *((int*)(0x64000000)) = __LINE__;
+
     do
     {
         if (rover == start)
@@ -225,7 +225,7 @@ Z_Malloc
             // scanned all the way around the list
             I_Error ("Z_Malloc: failed on allocation of %i bytes", size);
         }
-        *((int*)(0x64000000)) = __LINE__;
+
         if (rover->user)
         {
             if (rover->tag < PU_PURGELEVEL)
@@ -247,15 +247,15 @@ Z_Malloc
         }
         else
             rover = rover->next;
-        *((int*)(0x64000000)) = __LINE__;
+
     } while (base->user || base->size < size);
 
 
-    *((int*)(0x64000000)) = __LINE__;
+
     // found a block big enough
     extra = base->size - size;
 
-    *((int*)(0x64000000)) = __LINE__;
+
     if (extra >  MINFRAGMENT)
     {
         // there will be a free fragment after the allocated block
@@ -273,7 +273,7 @@ Z_Malloc
         base->size = size;
     }
 
-    *((int*)(0x64000000)) = __LINE__;
+
     if (user)
     {
         // mark as an in use block
@@ -290,13 +290,13 @@ Z_Malloc
     }
     base->tag = tag;
 
-    *((int*)(0x64000000)) = __LINE__;
+
     // next allocation will start looking here
     mainzone->rover = base->next;
 
     base->id = ZONEID;
 
-    *((int*)(0x64000000)) = __LINE__;
+
 
     return (void *) ((byte *)base + sizeof(memblock_t));
 }

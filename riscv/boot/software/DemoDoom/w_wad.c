@@ -193,9 +193,9 @@ void W_AddFile (char *filename)
         header.infotableofs = LONG(header.infotableofs);
         int* values = (int*)&header;
 
-        printf("Did load wad header %s, size: %d, lumps: %d, ofset: %d\n", header.identification, sizeof(header), header.numlumps, header.infotableofs);
+        printf("WAD header: lumps=%d ofs=%d\n", header.numlumps, header.infotableofs);
         length = header.numlumps*sizeof(filelump_t);
-        fileinfo = alloca (length);
+        fileinfo = malloc(length);
         lseek (handle, header.infotableofs, SEEK_SET);
         read (handle, fileinfo, length);
         numlumps += header.numlumps;
@@ -258,7 +258,7 @@ void W_Reload (void)
     lumpcount = LONG(header.numlumps);
     header.infotableofs = LONG(header.infotableofs);
     length = lumpcount*sizeof(filelump_t);
-    fileinfo = alloca (length);
+    fileinfo = malloc(length);
     lseek (handle, header.infotableofs, SEEK_SET);
     read (handle, fileinfo, length);
 
@@ -483,7 +483,7 @@ W_CacheLumpNum
   int           tag )
 {
     if ((unsigned)lump >= numlumps)
-        I_Error ("W_CacheLumpNum: %i >= numlumps",lump);
+        I_Error ("W_CacheLumpNum: lump=%d numlumps=%d",lump,numlumps);
 
     if (!lumpcache[lump])
     {

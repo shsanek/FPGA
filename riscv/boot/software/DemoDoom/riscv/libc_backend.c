@@ -16,14 +16,56 @@
 /* ---- Heap ---- */
 
 extern uint8_t _heap_start;
-static void *heap_end = &_heap_start;
+static void *heap_end = 0;
+
+static void heap_init(void) {
+    if (!heap_end) heap_end = &_heap_start;
+}
+static unsigned int alloc_cnt = 0;
 
 void *_sbrk(intptr_t increment) {
+    heap_init();
     increment = (increment + 3) & ~3;
     heap_end = (void*)((((uint32_t)heap_end) + 3) & ~3);
     void *rv = heap_end;
     heap_end += increment;
     return rv;
+}
+
+/* Bump allocator с отслеживанием размера (для realloc).
+ * Каждый блок: [size_t old_size][user data...] */
+void *malloc(size_t size) {
+    if (size == 0) return (void*)0;
+    size = (size + 7) & ~7;
+    size_t *hdr = (size_t *)_sbrk(size + sizeof(size_t));
+    *hdr = size;
+    void *p = hdr + 1;
+    if (alloc_cnt < 20 || size > 4096) {
+        console_printf("[malloc] #%u size=%u -> %08x\n", alloc_cnt, (unsigned)size, (unsigned)(uint32_t)p);
+    }
+    alloc_cnt++;
+    return p;
+}
+
+void *calloc(size_t nmemb, size_t size) {
+    size_t total = nmemb * size;
+    void *p = malloc(total);
+    if (p) memset(p, 0, total);
+    return p;
+}
+
+void *realloc(void *ptr, size_t new_size) {
+    void *p = malloc(new_size);
+    if (p && ptr) {
+        size_t old_size = *((size_t *)ptr - 1);
+        size_t copy = old_size < new_size ? old_size : new_size;
+        memcpy(p, ptr, copy);
+    }
+    return p;
+}
+
+void free(void *ptr) {
+    (void)ptr;
 }
 
 /* ---- SD SPI (0x08020000) ---- */
@@ -125,6 +167,8 @@ static int fat_find(const char *name, unsigned int *cl, unsigned int *sz) {
 
 /* ---- File descriptors ---- */
 
+static unsigned int read_log_cnt = 0;
+
 #define NUM_FDS 16
 static struct {
     enum {FD_NONE=0,FD_STDIO=1,FD_FAT=2} type;
@@ -138,16 +182,25 @@ int _open(const char *path, int flags) {
     if(fd==NUM_FDS){errno=ENOMEM;return -1;}
     fds[fd]=(typeof(fds[0])){.type=FD_FAT,.cstart=cl,.ccur=cl,.fsize=sz,.off=0};
     console_printf("Opened: %s fd=%d size=%u\n",path,fd,sz);
+    read_log_cnt = 0;  /* reset чтобы логировать reads после open */
     return fd;
 }
 
 ssize_t _read(int fd, void *buf, size_t n) {
     if(fd<0||fd>=NUM_FDS||fds[fd].type!=FD_FAT){errno=EINVAL;return -1;}
     if(fds[fd].off+n>fds[fd].fsize) n=fds[fd].fsize-fds[fd].off;
+    read_log_cnt++;
     unsigned int bpc=f_spc*512; size_t tot=0;
+    int sectors_read = 0;
     while(tot<n){
         unsigned int co=fds[fd].off%bpc;
-        if(sd_read_block(c2lba(fds[fd].ccur)+co/512,fbuf)) return -1;
+        unsigned int lba = c2lba(fds[fd].ccur)+co/512;
+        if(sd_read_block(lba, fbuf)) {
+            console_printf("[read] SD FAIL lba=%u sec#%d\n", lba, sectors_read);
+            return -1;
+        }
+        sectors_read++;
+        (void)sectors_read;
         unsigned int bi=co%512;
         while(bi<512&&tot<n){((unsigned char*)buf)[tot++]=fbuf[bi++];fds[fd].off++;}
         if(fds[fd].off%bpc==0&&tot<n) fds[fd].ccur=fnext(fds[fd].ccur);
@@ -169,11 +222,28 @@ off_t _lseek(int fd, off_t offset, int whence) {
     size_t noff;
     switch(whence){case SEEK_SET:noff=offset;break;case SEEK_CUR:noff=fds[fd].off+offset;break;case SEEK_END:noff=fds[fd].fsize+offset;break;default:errno=EINVAL;return -1;}
     if(noff>fds[fd].fsize){errno=EINVAL;return -1;}
-    /* Rewind cluster chain */
-    unsigned int bpc=f_spc*512, ci=noff/bpc;
-    fds[fd].ccur=fds[fd].cstart;
-    for(unsigned int i=0;i<ci;i++) fds[fd].ccur=fnext(fds[fd].ccur);
-    fds[fd].off=noff;
+    unsigned int bpc=f_spc*512;
+
+    if (noff == fds[fd].off) {
+        /* Seek to same position — no-op */
+        return noff;
+    }
+
+    unsigned int new_ci = noff / bpc;
+    unsigned int cur_ci = fds[fd].off / bpc;
+
+    if (noff >= fds[fd].off && new_ci >= cur_ci) {
+        /* Forward seek — продолжаем с текущего кластера */
+        for (unsigned int i = cur_ci; i < new_ci; i++)
+            fds[fd].ccur = fnext(fds[fd].ccur);
+    } else {
+        /* Backward seek — перемотка с начала */
+        fds[fd].ccur = fds[fd].cstart;
+        for (unsigned int i = 0; i < new_ci; i++)
+            fds[fd].ccur = fnext(fds[fd].ccur);
+    }
+
+    fds[fd].off = noff;
     return noff;
 }
 

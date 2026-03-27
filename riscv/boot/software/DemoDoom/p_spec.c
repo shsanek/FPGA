@@ -178,9 +178,12 @@ void P_InitPicAnims (void)
         lastanim->numpics = lastanim->picnum - lastanim->basepic + 1;
 
         if (lastanim->numpics < 2)
-            I_Error ("P_InitPicAnims: bad cycle from %s to %s",
+        {
+            printf("P_InitPicAnims: skip bad cycle %s to %s\n",
                      animdefs[i].startname,
                      animdefs[i].endname);
+            continue;
+        }
 
         lastanim->speed = animdefs[i].speed;
         lastanim++;

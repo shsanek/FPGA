@@ -30,3 +30,5 @@
  * i_video.c масштабирует для OLED 96×64 RGB565. */
 
 #define _memcpy(a, b, c) memcpy(a, b, c)
+
+/* printf/fprintf/vfprintf/fflush подменяются через -D в Makefile */

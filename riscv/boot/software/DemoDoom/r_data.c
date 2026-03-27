@@ -449,13 +449,15 @@ void R_InitTextures (void)
     names = W_CacheLumpName ("PNAMES", PU_STATIC);
     nummappatches = LONG ( *((int *)names) );
     name_p = names+4;
-    patchlookup = alloca (nummappatches*sizeof(*patchlookup));
+    printf("PNAMES: nummappatches=%d\n", nummappatches);
+    patchlookup = Z_Malloc (nummappatches*sizeof(*patchlookup), PU_STATIC, 0);
 
     for (i=0 ; i<nummappatches ; i++)
     {
         strncpy (name,name_p+i*8, 8);
         patchlookup[i] = W_CheckNumForName (name);
     }
+    printf("patchlookup done\n");
     Z_Free (names);
 
     // Load the map texture definitions from textures.lmp.
@@ -501,7 +503,7 @@ void R_InitTextures (void)
     {
         printf("-%X.",i);
 
-        *((int*)(0x64000000)) = __LINE__;
+
 
         if (i == numtextures1)
         {
@@ -538,7 +540,15 @@ void R_InitTextures (void)
         {
             patch->originx = SHORT(mpatch->originx);
             patch->originy = SHORT(mpatch->originy);
-            patch->patch = patchlookup[SHORT(mpatch->patch)];
+            {
+                int pidx = SHORT(mpatch->patch);
+                if (pidx < 0 || pidx >= nummappatches) {
+                    printf("BAD pidx=%d tex=%d j=%d nmp=%d\n", pidx, i, j, nummappatches);
+                    patch->patch = 0;
+                } else {
+                    patch->patch = patchlookup[pidx];
+                }
+            }
             if (patch->patch == -1)
             {
                 I_Error ("R_InitTextures: Missing patch in texture %s",
@@ -605,7 +615,20 @@ void R_InitSpriteLumps (void)
     int         i;
     patch_t     *patch;
 
+    {
+        extern lumpinfo_t *lumpinfo;
+        extern int numlumps;
+        char tmp[9];
+        tmp[8] = 0;
+        console_printf("numlumps=%d\n", numlumps);
+        memcpy(tmp, lumpinfo[1068].name, 8);
+        console_printf("lump1068=%s\n", tmp);
+        memcpy(tmp, lumpinfo[0].name, 8);
+        console_printf("lump0=%s\n", tmp);
+    }
+    printf("R_InitSpriteLumps: looking up S_START...\n");
     firstspritelump = W_GetNumForName ("S_START") + 1;
+    printf("R_InitSpriteLumps: S_START=%d, looking up S_END...\n", firstspritelump-1);
     lastspritelump = W_GetNumForName ("S_END") - 1;
 
     numspritelumps = lastspritelump - firstspritelump + 1;
@@ -653,10 +676,11 @@ void R_InitColormaps (void)
 //
 void R_InitData (void)
 {
+    extern int numlumps;
     R_InitTextures ();
-    printf ("\nInitTextures");
+    console_printf("\nInitTextures nl=%d", numlumps);
     R_InitFlats ();
-    printf ("\nInitFlats");
+    console_printf("\nInitFlats nl=%d", numlumps);
     R_InitSpriteLumps ();
     printf ("\nInitSprites");
     R_InitColormaps ();
@@ -723,8 +747,7 @@ int     R_TextureNumForName (char* name)
 
     if (i==-1)
     {
-        I_Error ("R_TextureNumForName: %s not found",
-                 name);
+        I_Error ("R_TextureNumForName: not found");
     }
     return i;
 }
