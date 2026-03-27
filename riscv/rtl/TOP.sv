@@ -91,7 +91,11 @@ module TOP #(
 
     // Boot status
     output wire        boot_active,      // 1 = FLASH_LOADER ещё работает
-    output wire        boot_error        // 1 = bad magic / no payload
+    output wire        boot_error,       // 1 = bad magic / no payload
+
+    // SD bus activity (для LED индикации)
+    output wire        sd_bus_read,      // 1 = CPU читает из SD_IO_DEVICE
+    output wire        sd_bus_write      // 1 = CPU пишет в SD_IO_DEVICE
 );
     localparam MASK_SIZE  = DATA_SIZE / 8;
     localparam BIT_PERIOD = CLOCK_FREQ / BAUD_RATE;
@@ -662,5 +666,7 @@ module TOP #(
     wire flash_error;
     assign boot_active = flash_active;
     assign boot_error  = flash_error;
+    assign sd_bus_read  = sd_rd;
+    assign sd_bus_write = sd_wr;
 
 endmodule

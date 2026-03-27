@@ -71,7 +71,12 @@ module FPGA_TOP (
     // RGB LED0 — boot status indicator
     output wire        led0_r,
     output wire        led0_g,
-    output wire        led0_b
+    output wire        led0_b,
+
+    // RGB LED1 — SD activity (R=write, G=read, B=idle)
+    output wire        led1_r,
+    output wire        led1_g,
+    output wire        led1_b
 );
 
     // ---------------------------------------------------------------
@@ -239,8 +244,14 @@ module FPGA_TOP (
 
         // Boot status
         .boot_active            (boot_active_w),
-        .boot_error             (boot_error_w)
+        .boot_error             (boot_error_w),
+
+        .sd_bus_read            (sd_bus_read_w),
+        .sd_bus_write           (sd_bus_write_w)
     );
+
+    wire sd_bus_read_w;
+    wire sd_bus_write_w;
 
     // ---------------------------------------------------------------
     // Boot status wire
@@ -274,9 +285,43 @@ module FPGA_TOP (
             heartbeat_cnt <= heartbeat_cnt + 1;
     end
 
-    assign led[0] = heartbeat_cnt[25];  // ~1.2 Hz blink at 81.25 MHz
+    assign led[0] = ~boot_active_w & ~boot_error_w;  // горит когда загрузка завершена
     assign led[1] = clk_wiz_locked;
     assign led[2] = init_calib_complete;
     assign led[3] = ~sys_reset;
+
+    // ---------------------------------------------------------------
+    // RGB LED1 — SD activity (вспышки 0.05с = ~4M тактов при 81.25 MHz)
+    //   Green  = SD read access
+    //   Red    = SD write access
+    //   Off    = idle
+    // ---------------------------------------------------------------
+    localparam FLASH_TICKS = 81_250_000 / 20;  // 0.05с = 4_062_500 тактов
+
+    reg [21:0] sd_rd_timer;  // 22 бит хватает для ~4M
+    reg [21:0] sd_wr_timer;
+
+    always @(posedge clk_cpu) begin
+        if (sys_reset) begin
+            sd_rd_timer <= 0;
+            sd_wr_timer <= 0;
+        end else begin
+            // SD read flash
+            if (sd_bus_read_w)
+                sd_rd_timer <= FLASH_TICKS[21:0];
+            else if (sd_rd_timer != 0)
+                sd_rd_timer <= sd_rd_timer - 1;
+
+            // SD write flash
+            if (sd_bus_write_w)
+                sd_wr_timer <= FLASH_TICKS[21:0];
+            else if (sd_wr_timer != 0)
+                sd_wr_timer <= sd_wr_timer - 1;
+        end
+    end
+
+    assign led1_g = (sd_rd_timer != 0);  // зелёный — чтение SD
+    assign led1_r = (sd_wr_timer != 0);  // красный — запись SD
+    assign led1_b = 1'b0;
 
 endmodule
