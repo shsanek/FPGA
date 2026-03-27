@@ -9,14 +9,16 @@
 #   ./run_tests.sh --sim-only hello # только симуляция (пропустить компиляцию)
 #
 # Требования:
-#   - riscv32-unknown-elf-gcc  (или riscv64-unknown-elf-gcc)
+#   - riscv64-elf-gcc (или riscv-none-elf-gcc)
 #   - iverilog + vvp
 #   - python3
 # -----------------------------------------------------------------------
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TESTS_DIR="$SCRIPT_DIR/tests"
+RISCV_DIR="$(dirname "$SCRIPT_DIR")"
+RTL_DIR="$RISCV_DIR/rtl"
+PROGRAMS_DIR="$RISCV_DIR/programs"
 WORK_DIR="/tmp/riscv_tests"
 SIM_BIN="$WORK_DIR/program_test"
 
@@ -41,37 +43,48 @@ mkdir -p "$WORK_DIR"
 compile_testbench() {
     echo "=== Compiling simulation testbench ==="
     iverilog -g2012 -o "$SIM_BIN" \
-        "$SCRIPT_DIR/PROGRAM_TEST.sv" \
-        "$SCRIPT_DIR/TOP.sv" \
-        "$SCRIPT_DIR/CPU/CPU_SINGLE_CYCLE.sv" \
-        "$SCRIPT_DIR/CPU/CPU_ALU.sv" \
-        "$SCRIPT_DIR/CPU/CPU_DATA_ADAPTER.sv" \
-        "$SCRIPT_DIR/CPU/PERIPHERAL_BUS.sv" \
-        "$SCRIPT_DIR/CPU/UART_IO_DEVICE.sv" \
-        "$SCRIPT_DIR/CPU/DEBUG_CONTROLLER.sv" \
-        "$SCRIPT_DIR/IMMEDIATE_GENERATOR/IMMEDIATE_GENERATOR.sv" \
-        "$SCRIPT_DIR/BRANCH_UNIT/BRANCH_UNIT.sv" \
-        "$SCRIPT_DIR/LOAD_UNIT/LOAD_UNIT.sv" \
-        "$SCRIPT_DIR/STORE_UNIT/STORE_UNIT.sv" \
-        "$SCRIPT_DIR/Register/REGISTER_32_BLOCK_32.sv" \
-        "$SCRIPT_DIR/MEMORY/MEMORY_CONTROLLER.sv" \
-        "$SCRIPT_DIR/MEMORY/CHUNK_STORAGE_4_POOL/CHUNK_STORAGE_4_POOL.sv" \
-        "$SCRIPT_DIR/MEMORY/CHUNK_STORAGE/CHUNK_STORAGE.sv" \
-        "$SCRIPT_DIR/MEMORY/RAM_CONTROLLER/RAM_CONTROLLER.sv" \
-        "$SCRIPT_DIR/MEMORY/RAM_CONTROLLER/MIG_MODEL.sv" \
-        "$SCRIPT_DIR/I_O/INPUT_CONTROLLER/I_O_INPUT_CONTROLLER.sv" \
-        "$SCRIPT_DIR/I_O/OUTPUT_CONTROLLER/I_O_OUTPUT_CONTROLLER.sv" \
-        "$SCRIPT_DIR/I_O/I_O_TIMER_GENERATOR.sv" \
+        "$SCRIPT_DIR/integration/PROGRAM_TEST.sv" \
+        "$RTL_DIR/TOP.sv" \
+        "$RTL_DIR/BASE_TYPE.sv" \
+        "$RTL_DIR/core/CPU_SINGLE_CYCLE.sv" \
+        "$RTL_DIR/core/CPU_ALU.sv" \
+        "$RTL_DIR/core/CPU_DATA_ADAPTER.sv" \
+        "$RTL_DIR/core/CPU_PIPELINE_ADAPTER.sv" \
+        "$RTL_DIR/core/OP_0110011.sv" \
+        "$RTL_DIR/core/OP_0010011.sv" \
+        "$RTL_DIR/core/REGISTER_32_BLOCK_32.sv" \
+        "$RTL_DIR/core/IMMEDIATE_GENERATOR.sv" \
+        "$RTL_DIR/core/BRANCH_UNIT.sv" \
+        "$RTL_DIR/core/LOAD_UNIT.sv" \
+        "$RTL_DIR/core/STORE_UNIT.sv" \
+        "$RTL_DIR/peripheral/PERIPHERAL_BUS.sv" \
+        "$RTL_DIR/peripheral/UART_IO_DEVICE.sv" \
+        "$RTL_DIR/peripheral/OLED_IO_DEVICE.sv" \
+        "$RTL_DIR/peripheral/SD_IO_DEVICE.sv" \
+        "$RTL_DIR/peripheral/SPI_MASTER.sv" \
+        "$RTL_DIR/peripheral/FLASH_LOADER.sv" \
+        "$RTL_DIR/debug/DEBUG_CONTROLLER.sv" \
+        "$RTL_DIR/memory/MEMORY_CONTROLLER.sv" \
+        "$RTL_DIR/memory/CHUNK_STORAGE_4_POOL.sv" \
+        "$RTL_DIR/memory/CHUNK_STORAGE.sv" \
+        "$RTL_DIR/memory/RAM_CONTROLLER.sv" \
+        "$RTL_DIR/memory/MIG_MODEL.sv" \
+        "$RTL_DIR/uart/I_O_INPUT_CONTROLLER.sv" \
+        "$RTL_DIR/uart/I_O_OUTPUT_CONTROLLER.sv" \
+        "$RTL_DIR/uart/I_O_TIMER_GENERATOR.sv" \
+        "$RTL_DIR/uart/SIMPLE_UART_RX.sv" \
+        "$RTL_DIR/uart/UART_FIFO.sv" \
+        "$RTL_DIR/uart/VALUE_STORAGE.sv" \
         2>&1 | grep -v "^.*sorry:" || true
     echo "Testbench compiled: $SIM_BIN"
 }
 
 # -----------------------------------------------------------------------
-# Шаг 2: Собрать все C-программы через tests/Makefile
+# Шаг 2: Собрать все C-программы через programs/Makefile
 # -----------------------------------------------------------------------
 build_programs() {
     echo "=== Building C programs ==="
-    make -C "$TESTS_DIR" all PYTHON=/usr/bin/python3
+    make -C "$PROGRAMS_DIR" all PYTHON=/usr/bin/python3
 }
 
 # -----------------------------------------------------------------------
@@ -80,8 +93,8 @@ build_programs() {
 # -----------------------------------------------------------------------
 run_program() {
     local name="$1"
-    local hex_file="$TESTS_DIR/programs/$name/program.hex"
-    local exp_file="$TESTS_DIR/programs/$name/expected.txt"
+    local hex_file="$PROGRAMS_DIR/$name/program.hex"
+    local exp_file="$PROGRAMS_DIR/$name/expected.txt"
     local out_file="$WORK_DIR/${name}.out"
 
     if [ ! -f "$hex_file" ]; then
@@ -154,7 +167,7 @@ echo "=== Running program tests ==="
 if [ -n "$FILTER" ]; then
     PROGRAM_LIST="$FILTER"
 else
-    PROGRAM_LIST=$(ls "$TESTS_DIR/programs/")
+    PROGRAM_LIST=$(ls "$PROGRAMS_DIR" | grep -v common | grep -v Makefile | grep -v bin2hex | grep -v program)
 fi
 
 for prog in $PROGRAM_LIST; do

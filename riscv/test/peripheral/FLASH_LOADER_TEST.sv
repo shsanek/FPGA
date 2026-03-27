@@ -162,12 +162,13 @@ module FLASH_LOADER_TEST();
         #10;
 
         // T1: bus_request should be 1 immediately
-        assert(bus_request == 1) else begin
-            $display("T1 FAIL: bus_request should be 1 after reset");
+        // T1: In WAIT_DDR — bus free, not active (debug can work)
+        assert(bus_request == 0) else begin
+            $display("T1 FAIL: bus_request should be 0 in WAIT_DDR");
             errors++;
         end
-        assert(active == 1) else begin
-            $display("T1 FAIL: active should be 1");
+        assert(active == 0) else begin
+            $display("T1 FAIL: active should be 0 in WAIT_DDR");
             errors++;
         end
 
@@ -178,15 +179,15 @@ module FLASH_LOADER_TEST();
             errors++;
         end
 
-        // T3: Signal DDR ready
+        // T3: Signal DDR ready — loader starts
         ddr_ready = 1;
 
-        // Wait for loading to complete (timeout)
+        // Wait for loader to become active then finish
         timeout = 0;
-        while (active && timeout < 50000) begin
-            #10;
-            timeout++;
-        end
+        // Wait for active=1
+        while (!active && timeout < 1000) begin #10; timeout++; end
+        // Wait for active=0 (done)
+        while (active && timeout < 50000) begin #10; timeout++; end
 
         if (timeout >= 50000) begin
             $display("TIMEOUT: loader did not finish");
