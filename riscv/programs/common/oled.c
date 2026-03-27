@@ -3,10 +3,10 @@
 #include "font8x10.h"
 
 /* ---- Hardware registers ---- */
-#define OLED_DATA_REG    (*(volatile unsigned int *)0x08010000U)
-#define OLED_CONTROL_REG (*(volatile unsigned int *)0x08010004U)
-#define OLED_STATUS_REG  (*(volatile unsigned int *)0x08010008U)
-#define OLED_DIVIDER_REG (*(volatile unsigned int *)0x0801000CU)
+#define OLED_DATA_REG    (*(volatile unsigned int *)0x10010000U)
+#define OLED_CONTROL_REG (*(volatile unsigned int *)0x10010004U)
+#define OLED_STATUS_REG  (*(volatile unsigned int *)0x10010008U)
+#define OLED_DIVIDER_REG (*(volatile unsigned int *)0x1001000CU)
 
 #define CTL_CS     (1 << 0)
 #define CTL_DC     (1 << 1)

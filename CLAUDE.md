@@ -169,32 +169,32 @@ MEMORY_CONTROLLER
 - Stores writes when `wdf_wren = 1`, returns reads with 1-cycle latency
 - `mig_app_rdy` and `mig_app_wdf_rdy` always `1` (no back-pressure)
 
-### Peripheral Bus — адресная карта (28-bit)
+### Peripheral Bus — адресная карта (29-bit, addr[28] = I/O select)
 
 ```
-0x000_0000 – 0x7FF_FFFF  →  MEMORY_CONTROLLER (DDR3 через кеш)
-0x800_0000 – 0x800_FFFF  →  UART_IO_DEVICE
-  0x800_0000 : TX_DATA   (W/R)
-  0x800_0004 : RX_DATA   (R)
-  0x800_0008 : STATUS    (R) {tx_ready, rx_avail}
-0x801_0000 – 0x801_FFFF  →  OLED_IO_DEVICE (PmodOLEDrgb SSD1331, JA)
-  0x801_0000 : DATA      (W)   — SPI byte
-  0x801_0004 : CONTROL   (W/R) — {PMODEN, VCCEN, RES, DC, CS}
-  0x801_0008 : STATUS    (R)   — {spi_busy}
-  0x801_000C : DIVIDER   (W/R) — SPI clock divider
-0x802_0000 – 0x802_FFFF  →  SD_IO_DEVICE (PmodMicroSD, JC)
-  0x802_0000 : DATA      (W/R) — SPI full-duplex TX/RX
-  0x802_0004 : CONTROL   (W/R) — {CS}
-  0x802_0008 : STATUS    (R)   — {card_detect, spi_busy}
-  0x802_000C : DIVIDER   (W/R) — SPI clock divider (init=101/~400kHz, fast=7/~5MHz)
-0x803_0000 – 0x803_FFFF  →  TIMER_DEVICE (счётчик тактов и времени)
-  0x803_0000 : CYCLE_LO  (R)   — нижние 32 бита 64-bit счётчика тактов
-  0x803_0004 : CYCLE_HI  (R)   — верхние 32 бита (snapshot при чтении CYCLE_LO)
-  0x803_0008 : TIME_MS   (R)   — миллисекунды с момента reset (32-бит, ~49 дней)
-  0x803_000C : TIME_US   (R)   — микросекунды с момента reset (32-бит, ~71 мин)
+0x0000_0000 – 0x0FFF_FFFF  →  MEMORY_CONTROLLER (DDR3 256 MB через кеш)
+0x1000_0000 – 0x1000_FFFF  →  UART_IO_DEVICE
+  0x1000_0000 : TX_DATA   (W/R)
+  0x1000_0004 : RX_DATA   (R)
+  0x1000_0008 : STATUS    (R) {tx_ready, rx_avail}
+0x1001_0000 – 0x1001_FFFF  →  OLED_IO_DEVICE (PmodOLEDrgb SSD1331, JA)
+  0x1001_0000 : DATA      (W)   — SPI byte
+  0x1001_0004 : CONTROL   (W/R) — {PMODEN, VCCEN, RES, DC, CS}
+  0x1001_0008 : STATUS    (R)   — {spi_busy}
+  0x1001_000C : DIVIDER   (W/R) — SPI clock divider
+0x1002_0000 – 0x1002_FFFF  →  SD_IO_DEVICE (PmodMicroSD, JC)
+  0x1002_0000 : DATA      (W/R) — SPI full-duplex TX/RX
+  0x1002_0004 : CONTROL   (W/R) — {CS}
+  0x1002_0008 : STATUS    (R)   — {card_detect, spi_busy}
+  0x1002_000C : DIVIDER   (W/R) — SPI clock divider (init=101/~400kHz, fast=3/~10MHz)
+0x1003_0000 – 0x1003_FFFF  →  TIMER_DEVICE (счётчик тактов и времени)
+  0x1003_0000 : CYCLE_LO  (R)   — нижние 32 бита 64-bit счётчика тактов
+  0x1003_0004 : CYCLE_HI  (R)   — верхние 32 бита (snapshot при чтении CYCLE_LO)
+  0x1003_0008 : TIME_MS   (R)   — миллисекунды с момента reset (32-бит, ~49 дней)
+  0x1003_000C : TIME_US   (R)   — микросекунды с момента reset (32-бит, ~71 мин)
 ```
 
-Декодирование: `addr[27]=1` → I/O, `addr[17:16]` → устройство (00=UART, 01=OLED, 10=SD, 11=free).
+Декодирование: `addr[28]=1` → I/O, `addr[17:16]` → устройство (00=UART, 01=OLED, 10=SD, 11=TIMER).
 
 ### `riscv/CPU/SPI_MASTER.sv`
 Full-duplex SPI Mode 0 (CPOL=0, CPHA=0), MSB first. Настраиваемый делитель тактовой.

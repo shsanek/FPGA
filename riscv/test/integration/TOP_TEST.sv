@@ -19,7 +19,7 @@
 //       Проверяем dut.dbg_is_halted = 0
 //
 //   T4: UART_IO_DEVICE — CPU читает STATUS и пишет TX
-//       Программа #2: записывает 0x41 ('A') по адресу 0x08000000
+//       Программа #2: записывает 0x41 ('A') по адресу 0x10000000
 //       Проверяем что cpu_tx_valid поднялся в uart_io_device
 //
 // Параметры симуляции:
@@ -188,19 +188,19 @@ module TOP_TEST();
     // Программа 2 (T4): записать 0x41 в UART TX-регистр + прочитать STATUS
     // ---------------------------------------------------------------
     task load_program_2();
-        // lui  x5, 0x08000  → x5 = 0x0800_0000  (I/O base addr)
+        // lui  x5, 0x10000  → x5 = 0x1000_0000  (I/O base addr)
         // addi x6, x0, 65   → x6 = 0x41 = 'A'
         // sw   x6, 0(x5)    → UART_IO_DEVICE TX_DATA ← 'A'
         // lw   x6, 8(x5)    → x6 = UART_IO_DEVICE STATUS
         // jal  x0, 0        (infinite loop)
         //
         // Encoding:
-        //   LUI  rd=x5 imm=0x08000: {20'h08000, 5'd5, 7'b0110111} = 0x080002B7
+        //   LUI  rd=x5 imm=0x10000: {20'h10000, 5'd5, 7'b0110111} = 0x100002B7
         //   ADDI rd=x6 rs1=x0 imm=65: {12'd65,5'd0,3'b000,5'd6,7'b0010011} = 0x04100313
         //   SW   rs2=x6 rs1=x5 imm=0: {7'b0,5'd6,5'd5,3'b010,5'b0,7'b0100011} = 0x0062A023
         //   LW   rd=x6 rs1=x5 imm=8:  {12'd8,5'd5,3'b010,5'd6,7'b0000011} = 0x0082A303
         //   JAL  rd=x0 imm=0: 0x0000006F
-        dut.rom[0] = 32'h080002B7;
+        dut.rom[0] = 32'h100002B7;
         dut.rom[1] = 32'h04100313;
         dut.rom[2] = 32'h0062A023;
         dut.rom[3] = 32'h0082A303;
@@ -288,7 +288,7 @@ module TOP_TEST();
         end
 
         // ============================================================
-        // T4: UART_IO_DEVICE — CPU пишет байт в TX_DATA (0x0800_0000)
+        // T4: UART_IO_DEVICE — CPU пишет байт в TX_DATA (0x1000_0000)
         // ============================================================
         reset = 1;
         @(posedge clk); #1;
@@ -296,7 +296,7 @@ module TOP_TEST();
         reset = 0;
 
         // CPU выполняет:
-        //   lui x5, 0x08000  → x5 = 0x0800_0000
+        //   lui x5, 0x10000  → x5 = 0x1000_0000
         //   addi x6, x0, 65  → x6 = 0x41
         //   sw x6, 0(x5)     → PERIPHERAL_BUS → UART_IO_DEVICE TX_DATA
         //   lw x6, 8(x5)     → читает STATUS

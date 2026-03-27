@@ -3,10 +3,10 @@
 #include "uart.h"
 
 /* ---- SD hardware registers ---- */
-#define SD_DATA    (*(volatile unsigned int *)0x08020000U)
-#define SD_CONTROL (*(volatile unsigned int *)0x08020004U)
-#define SD_STATUS  (*(volatile unsigned int *)0x08020008U)
-#define SD_DIVIDER (*(volatile unsigned int *)0x0802000CU)
+#define SD_DATA    (*(volatile unsigned int *)0x10020000U)
+#define SD_CONTROL (*(volatile unsigned int *)0x10020004U)
+#define SD_STATUS  (*(volatile unsigned int *)0x10020008U)
+#define SD_DIVIDER (*(volatile unsigned int *)0x1002000CU)
 
 static int is_sdhc;
 

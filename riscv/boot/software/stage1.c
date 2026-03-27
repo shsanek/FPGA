@@ -8,17 +8,17 @@
 #include "fat32.h"
 #include "../../programs/common/font8x10.h"
 
-#define UART_TX   (*(volatile unsigned int *)0x08000000U)
-#define SD_STATUS (*(volatile unsigned int *)0x08020008U)
+#define UART_TX   (*(volatile unsigned int *)0x10000000U)
+#define SD_STATUS (*(volatile unsigned int *)0x10020008U)
 
 /* OLED registers */
-#define OLED_DATA    (*(volatile unsigned int *)0x08010000U)
-#define OLED_CONTROL (*(volatile unsigned int *)0x08010004U)
-#define OLED_STATUS  (*(volatile unsigned int *)0x08010008U)
-#define OLED_DIVIDER (*(volatile unsigned int *)0x0801000CU)
+#define OLED_DATA    (*(volatile unsigned int *)0x10010000U)
+#define OLED_CONTROL (*(volatile unsigned int *)0x10010004U)
+#define OLED_STATUS  (*(volatile unsigned int *)0x10010008U)
+#define OLED_DIVIDER (*(volatile unsigned int *)0x1001000CU)
 
 /* Timer */
-#define TIMER_MS     (*(volatile unsigned int *)0x08030008U)
+#define TIMER_MS     (*(volatile unsigned int *)0x10030008U)
 
 #define CTL_CS     (1 << 0)
 #define CTL_DC     (1 << 1)

@@ -1,13 +1,13 @@
 /*
  * Minimal runtime for RV32I bare-metal.
- * UART output → UART_IO_DEVICE TX_DATA (0x08000000)
+ * UART output → UART_IO_DEVICE TX_DATA (0x10000000)
  */
 
 /* g_failed — используется check.h макросами для отслеживания ошибок */
 int g_failed = 0;
 
-#define UART_TX  ((volatile unsigned int *)0x08000000U)
-#define UART_STS ((volatile unsigned int *)0x08000008U)
+#define UART_TX  ((volatile unsigned int *)0x10000000U)
+#define UART_STS ((volatile unsigned int *)0x10000008U)
 
 int putchar(int c) {
     /* Optional: wait for tx_ready (bit1) before writing */

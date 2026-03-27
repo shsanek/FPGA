@@ -1,7 +1,7 @@
 /*
  * libc_backend.c — минимальный libc для DOOM.
- * Файлы читаются с SD карты через FAT32 (наша шина 0x08020000).
- * Консоль через UART (0x08000000).
+ * Файлы читаются с SD карты через FAT32 (наша шина 0x10020000).
+ * Консоль через UART (0x10000000).
  */
 #include <errno.h>
 #include <stdio.h>
@@ -68,12 +68,12 @@ void free(void *ptr) {
     (void)ptr;
 }
 
-/* ---- SD SPI (0x08020000) ---- */
+/* ---- SD SPI (0x10020000) ---- */
 
-#define SD_DATA    (*(volatile unsigned int *)0x08020000U)
-#define SD_CONTROL (*(volatile unsigned int *)0x08020004U)
-#define SD_STATUS  (*(volatile unsigned int *)0x08020008U)
-#define SD_DIVIDER (*(volatile unsigned int *)0x0802000CU)
+#define SD_DATA    (*(volatile unsigned int *)0x10020000U)
+#define SD_CONTROL (*(volatile unsigned int *)0x10020004U)
+#define SD_STATUS  (*(volatile unsigned int *)0x10020008U)
+#define SD_DIVIDER (*(volatile unsigned int *)0x1002000CU)
 
 static int sd_sdhc = 0;
 static int sd_ok   = 0;

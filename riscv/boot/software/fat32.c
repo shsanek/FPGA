@@ -2,7 +2,7 @@
 #include "fat32.h"
 #include "sd.h"
 
-#define UART_TX (*(volatile unsigned int *)0x08000000U)
+#define UART_TX (*(volatile unsigned int *)0x10000000U)
 
 static void boot_putc(int c) { UART_TX = (unsigned int)(unsigned char)c; }
 static void boot_puts(const char *s) {

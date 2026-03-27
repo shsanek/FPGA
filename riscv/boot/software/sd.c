@@ -1,12 +1,12 @@
 /* SD card SPI driver — extracted from test_sd.c (read-only). */
 #include "sd.h"
 
-#define SD_DATA    (*(volatile unsigned int *)0x08020000U)
-#define SD_CONTROL (*(volatile unsigned int *)0x08020004U)
-#define SD_STATUS  (*(volatile unsigned int *)0x08020008U)
-#define SD_DIVIDER (*(volatile unsigned int *)0x0802000CU)
+#define SD_DATA    (*(volatile unsigned int *)0x10020000U)
+#define SD_CONTROL (*(volatile unsigned int *)0x10020004U)
+#define SD_STATUS  (*(volatile unsigned int *)0x10020008U)
+#define SD_DIVIDER (*(volatile unsigned int *)0x1002000CU)
 
-#define UART_TX    (*(volatile unsigned int *)0x08000000U)
+#define UART_TX    (*(volatile unsigned int *)0x10000000U)
 
 static int is_sdhc;
 
@@ -89,7 +89,7 @@ int sd_init(void) {
         }
     }
 
-    SD_DIVIDER = 7;     /* ~5 MHz */
+    SD_DIVIDER = 3;     /* ~10 MHz (81.25 / 8) */
     return 0;
 }
 
