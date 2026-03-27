@@ -747,8 +747,7 @@ int     R_TextureNumForName (char* name)
 
     if (i==-1)
     {
-        I_Error ("R_TextureNumForName: %s not found",
-                 name);
+        I_Error ("R_TextureNumForName: not found");
     }
     return i;
 }
