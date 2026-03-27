@@ -75,7 +75,8 @@ module CPU_SINGLE_CYCLE #(
     // is_ebreak — комбинационный stall (срабатывает в тот же такт, не даёт PC обновиться)
     wire ebreak_stall = is_ebreak || ebreak_halted_r;
 
-    wire cpu_stall = mem_stall || instr_stall || ebreak_stall;
+    wire alu_stall;  // stall от MULDIV
+    wire cpu_stall = mem_stall || instr_stall || ebreak_stall || alu_stall;
 
     assign dbg_is_halted = ebreak_stall;
 
@@ -141,14 +142,25 @@ module CPU_SINGLE_CYCLE #(
     wire funct7_5 = (opcode == OP_R)                             ? instr[30] :
                     (opcode == OP_I_ALU && funct3 == 3'b101)     ? instr[30] : 1'b0;
 
+    // RV32M: funct7=0000001 → instr[25]=1 (только для R-type)
+    wire is_muldiv = (opcode == OP_R) && instr[25];
+
     wire [31:0] alu_result;
+    // cpu_stall без alu_stall — чтобы не было циклической зависимости
+    wire non_alu_stall = mem_stall || instr_stall || ebreak_stall;
+
     CPU_ALU alu (
+        .clk       (clk),
+        .reset     (reset),
         .funct3    (funct3),
         .funct7_5  (funct7_5),
+        .is_muldiv (is_muldiv),
         .a         (alu_a),
         .b         (alu_b),
         .force_add (force_add),
-        .result    (alu_result)
+        .cpu_stall (non_alu_stall),
+        .result    (alu_result),
+        .alu_stall (alu_stall)
     );
 
     // -------------------------------------------------------------------------

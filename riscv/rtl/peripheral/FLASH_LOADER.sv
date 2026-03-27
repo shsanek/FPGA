@@ -298,8 +298,11 @@ module FLASH_LOADER #(
 
                 // --------------------------------------------------
                 S_WRITE_DDR: begin
-                    mc_wr_r <= 1'b1;
-                    if (mc_ready) begin
+                    if (!mc_wr_r) begin
+                        // Такт 1: поднимаем write trigger
+                        mc_wr_r <= 1'b1;
+                    end else if (mc_ready) begin
+                        // Такт 2+: MEMORY_CONTROLLER принял запись
                         mc_wr_r  <= 1'b0;
                         ddr_addr <= ddr_addr + ADDRESS_SIZE'(4);
                         word_buf <= 32'b0;
