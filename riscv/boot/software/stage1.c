@@ -37,6 +37,9 @@
 #define COL_CYAN    0x07FF
 #define COL_YELLOW  0xFFE0
 #define COL_DARK    0x2104
+#define COL_DBLUE   0x1926
+#define COL_ACCENT  0x049F
+#define COL_LGRAY   0xDEFB
 
 /* ---- UART ---- */
 static void boot_putc(int c) { UART_TX = (unsigned int)(unsigned char)c; }
@@ -161,42 +164,105 @@ static void oled_text(int col, int row, const char *s,
     }
 }
 
-/* Строка + OK/FAIL справа */
-static void oled_status(int row, const char *label, int ok) {
-    oled_text(0, row, label, COL_WHITE, COL_BLACK);
-    if (ok)
-        oled_text(10, row, "OK", COL_GREEN, COL_BLACK);
-    else
-        oled_text(8, row, "FAIL", COL_RED, COL_BLACK);
-}
-
-/* ---- Прогресс-бар (строка 4, пиксельный) ---- */
-#define BAR_Y0  40
-#define BAR_Y1  43
-#define BAR_X1  95
+/* ---- Прогресс-бар (внизу экрана, поверх анимации) ---- */
+#define BAR_Y0  58
+#define BAR_Y1  61
+#define BAR_X0  8
+#define BAR_X1  87
+#define BAR_W   (BAR_X1 - BAR_X0 + 1)  /* 80px */
 static int last_bar_px = -1;
 
 static void draw_progress_bar(int px) {
-    if (px > 96) px = 96;
+    if (px > BAR_W) px = BAR_W;
     if (px == last_bar_px) return;
     if (px > 0)
-        oled_fill_rect(0, BAR_Y0, px - 1, BAR_Y1, COL_GREEN);
-    if (px < 96)
-        oled_fill_rect(px, BAR_Y0, BAR_X1, BAR_Y1, COL_DARK);
+        oled_fill_rect(BAR_X0, BAR_Y0, BAR_X0 + px - 1, BAR_Y1, COL_ACCENT);
+    if (px < BAR_W)
+        oled_fill_rect(BAR_X0 + px, BAR_Y0, BAR_X1, BAR_Y1, COL_LGRAY);
     last_bar_px = px;
 }
 
 /* fat32 progress callback */
 static void loading_progress(unsigned int loaded, unsigned int total) {
-    int px = (total > 0) ? (int)((loaded * 96ULL) / total) : 0;
+    int px = (total > 0) ? (int)((loaded * (unsigned long long)BAR_W) / total) : 0;
     draw_progress_bar(px);
 }
 
-/* ---- Halt ---- */
-static void halt_red(const char *msg, int row) {
+
+/* ---- Boot animation (PS1-style) ---- */
+
+static void oled_draw_char_2x(int px, int py, char c,
+                                unsigned int fg, unsigned int bg) {
+    if (c < FONT_FIRST || c > FONT_LAST) c = '?';
+    const unsigned char *glyph = &font8x10[(c - FONT_FIRST) * FONT_H];
+    unsigned char fghi = (fg >> 8), fglo = fg & 0xFF;
+    unsigned char bghi = (bg >> 8), bglo = bg & 0xFF;
+    int w2 = FONT_W * 2, h2 = FONT_H * 2;
+    if (px + w2 > 96 || py + h2 > 64) return;
+
+    oled_set_cmd_mode();
+    oled_cmd(0x15); oled_cmd(px); oled_cmd(px + w2 - 1);
+    oled_cmd(0x75); oled_cmd(py); oled_cmd(py + h2 - 1);
+    spi_wait();
+    oled_set_data_mode();
+    for (int r = 0; r < FONT_H; r++) {
+        unsigned char bits = glyph[r];
+        /* Каждая строка рисуется дважды (2x по Y) */
+        for (int rep = 0; rep < 2; rep++) {
+            for (int b = 7; b >= 0; b--) {
+                int on = (bits >> b) & 1;
+                unsigned char hi = on ? fghi : bghi;
+                unsigned char lo = on ? fglo : bglo;
+                /* 2x по X */
+                oled_data(hi); oled_data(lo);
+                oled_data(hi); oled_data(lo);
+            }
+        }
+    }
+    spi_wait();
+}
+
+static void boot_animation(void) {
+    /* Phase 1: чёрный экран, пауза */
+    oled_fill_rect(0, 0, 95, 63, COL_BLACK);
+    delay(DELAY_1MS * 400);
+
+    /* Phase 2: яркая точка в центре */
+    oled_fill_rect(45, 29, 50, 34, COL_WHITE);
+    delay(DELAY_1MS * 250);
+
+    /* Phase 3: горизонтальные линии расширяются от центра */
+    for (int d = 0; d <= 31; d++) {
+        oled_fill_rect(0, 31 - d, 95, 31 - d, COL_WHITE);
+        oled_fill_rect(0, 32 + d, 95, 32 + d, COL_WHITE);
+        delay(DELAY_1MS * 10);
+    }
+
+    /* Phase 4: лого "RV32" 2x по центру на белом фоне */
+    /* 4 символа * 16px = 64px, центр: (96-64)/2 = 16 */
+    oled_draw_char_2x(16, 12, 'R', COL_DBLUE, COL_WHITE);
+    oled_draw_char_2x(32, 12, 'V', COL_DBLUE, COL_WHITE);
+    oled_draw_char_2x(48, 12, '3', COL_DBLUE, COL_WHITE);
+    oled_draw_char_2x(64, 12, '2', COL_DBLUE, COL_WHITE);
+
+    /* Цветная полоска-акцент под лого */
+    oled_fill_rect(16, 34, 79, 35, COL_ACCENT);
+
+    /* "RISC-V" мелким шрифтом снизу */
+    oled_text(3, 5, "RISC-V", COL_DARK, COL_WHITE);
+
+    delay(DELAY_1MS * 1200);
+    /* Экран остаётся — загрузка поверх */
+}
+
+/* ---- Halt (на экране анимации, с информацией) ---- */
+static void halt_anim(const char *msg) {
     boot_puts(msg);
-    oled_text(0, row, msg, COL_RED, COL_BLACK);
-    oled_fill_rect(0, 54, 95, 63, COL_RED);
+    /* Красная полоска вместо прогресс-бара */
+    oled_fill_rect(BAR_X0, BAR_Y0, BAR_X1, BAR_Y1, COL_RED);
+    /* Затемняем нижнюю часть и пишем ошибку */
+    oled_fill_rect(0, 44, 95, 63, COL_WHITE);
+    oled_text(0, 5, msg, COL_RED, COL_WHITE);
     while (1) __asm__ volatile("");
 }
 
@@ -204,93 +270,59 @@ static void halt_red(const char *msg, int row) {
 int main(void) {
     boot_puts("=== Stage1 Bootloader ===");
 
-    /* OLED init */
+    /* OLED init + boot animation (экран остаётся белый с лого) */
     oled_init();
-    oled_fill_rect(0, 0, 95, 63, COL_BLACK);
-    oled_text(0, 0, "RV32 Boot v1", COL_CYAN, COL_BLACK);
+    boot_animation();
     boot_puts("[OLED] init OK");
 
-    /* SD card */
-    oled_text(0, 1, "SD:     ", COL_WHITE, COL_BLACK);
+    /* Рисуем пустой прогресс-бар */
+    draw_progress_bar(0);
+
+    /* SD card (статус только в UART) */
     if (!(SD_STATUS & 0x04))
-        halt_red("NO CARD", 1);
-
+        halt_anim("NO CARD");
     if (sd_init() != 0)
-        halt_red("SD FAIL", 1);
-
-    oled_status(1, "SD:", 1);
+        halt_anim("SD FAIL");
     boot_puts("[SD]   OK");
 
     /* FAT32 */
-    oled_text(0, 2, "FAT32:  ", COL_WHITE, COL_BLACK);
     if (fat32_init() != 0)
-        halt_red("FAT FAIL", 2);
-
-    oled_status(2, "FAT32:", 1);
-    boot_puts("[FAT]  OK");
+        halt_anim("FAT FAIL");
+    boot_puts("FAT32 OK");
 
     /* Load BOOT.BIN */
-    oled_text(0, 3, "Loading...", COL_YELLOW, COL_BLACK);
-    draw_progress_bar(0);
     fat32_set_progress(loading_progress);
-
     unsigned int t0 = TIMER_MS;
     int size = fat32_load("BOOT    BIN", (unsigned char *)LOAD_ADDR);
     unsigned int t1 = TIMER_MS;
 
     if (size <= 0)
-        halt_red("NOT FOUND", 3);
+        halt_anim("NOT FOUND");
 
-    draw_progress_bar(96);
-    oled_status(3, "Loaded:", 1);
+    draw_progress_bar(BAR_W);
+    boot_puts("[SD]   OK");
 
-    /* Показать размер на OLED строка 4 (под прогресс-баром) */
-    /* Простой вывод размера в KB */
-    {
-        unsigned int kb = (unsigned int)size / 1024;
-        char buf[12];
-        int pos = 0;
-        /* uint to string */
-        if (kb == 0) {
-            buf[pos++] = '0';
-        } else {
-            char tmp[10];
-            int n = 0;
-            unsigned int v = kb;
-            while (v) { tmp[n++] = '0' + (v % 10); v /= 10; }
-            while (n > 0) buf[pos++] = tmp[--n];
-        }
-        buf[pos++] = 'K'; buf[pos++] = 'B'; buf[pos] = 0;
-        oled_text(0, 5, buf, COL_WHITE, COL_BLACK);
-
-        /* Время загрузки */
-        unsigned int dt = t1 - t0;
-        pos = 0;
-        if (dt == 0) {
-            buf[pos++] = '0';
-        } else {
-            char tmp[10];
-            int n = 0;
-            unsigned int v = dt;
-            while (v) { tmp[n++] = '0' + (v % 10); v /= 10; }
-            while (n > 0) buf[pos++] = tmp[--n];
-        }
-        buf[pos++] = 'm'; buf[pos++] = 's'; buf[pos] = 0;
-        oled_text(6, 5, buf, COL_DARK, COL_BLACK);
-    }
-
-    /* UART */
+    /* UART log */
     boot_print("[LOAD] ");
     boot_hex((unsigned int)size);
     boot_print(" bytes, ");
     boot_hex(t1 - t0);
     boot_puts(" ms");
 
+    /* Короткая пауза с полным прогресс-баром */
+    delay(DELAY_1MS * 300);
+
+    /* Схлопывание экрана к центру → чёрный */
+    for (int d = 0; d <= 31; d++) {
+        oled_fill_rect(0, d, 95, d, COL_BLACK);
+        oled_fill_rect(0, 63 - d, 95, 63 - d, COL_BLACK);
+        delay(DELAY_1MS * 4);
+    }
+
     /* Jump */
     boot_print("[JUMP] 0x");
     boot_hex(LOAD_ADDR);
     boot_putc('\n');
-    boot_puts("=========================");
 
     ((void (*)(void))LOAD_ADDR)();
     return 0;

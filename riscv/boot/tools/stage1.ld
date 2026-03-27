@@ -6,7 +6,7 @@
 ENTRY(_start)
 
 MEMORY {
-    ROM (rx)  : ORIGIN = 0x07F00000, LENGTH = 16K
+    ROM (rx)  : ORIGIN = 0x07F00000, LENGTH = 256K
     RAM (rwx) : ORIGIN = 0x07F10000, LENGTH = 64K
 }
 
