@@ -80,7 +80,8 @@ module TOP_TEST();
         .CHUNK_PART  (CHUNK_PART),
         .ADDRESS_SIZE(ADDRESS_SIZE),
         .ROM_DEPTH   (ROM_DEPTH),
-        .DEBUG_ENABLE(1)
+        .DEBUG_ENABLE(1),
+        .OLED_BRAM_DEPTH(16)
     ) dut (
         .clk                    (clk),
         .reset                  (reset),

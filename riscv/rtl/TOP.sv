@@ -42,7 +42,8 @@ module TOP #(
     parameter CHUNK_PART   = 128,
     parameter ADDRESS_SIZE = 28,
     parameter DATA_SIZE    = 32,
-    parameter DEBUG_ENABLE = 1
+    parameter DEBUG_ENABLE = 1,
+    parameter OLED_BRAM_DEPTH = 12288  // 48 KB default; уменьшить для симуляции
 )(
     input  wire clk,
     input  wire reset,
@@ -529,8 +530,10 @@ module TOP #(
         .cpu_rx_valid      (cpu_rx_valid)
     );
 
-    // --- OLED_IO_DEVICE ---
-    OLED_IO_DEVICE oled_io (
+    // --- OLED_FB_DEVICE (framebuffer + аппаратный рендерер) ---
+    OLED_FB_DEVICE #(
+        .BRAM_DEPTH(OLED_BRAM_DEPTH)
+    ) oled_fb (
         .clk               (clk),
         .reset             (reset),
         .address           (oled_addr),
