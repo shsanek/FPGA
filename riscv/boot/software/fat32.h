@@ -18,4 +18,11 @@ int fat32_init(void);
  * Returns file size in bytes, or negative on error. */
 int fat32_load(const char *name83, unsigned char *dst);
 
+/* Callback для прогресса загрузки.
+ * loaded — байт загружено, total — общий размер файла. */
+typedef void (*fat32_progress_fn)(unsigned int loaded, unsigned int total);
+
+/* Установить callback прогресса (NULL = отключить). */
+void fat32_set_progress(fat32_progress_fn fn);
+
 #endif

@@ -181,6 +181,11 @@ MEMORY_CONTROLLER
   0x802_0004 : CONTROL   (W/R) — {CS}
   0x802_0008 : STATUS    (R)   — {card_detect, spi_busy}
   0x802_000C : DIVIDER   (W/R) — SPI clock divider (init=101/~400kHz, fast=7/~5MHz)
+0x803_0000 – 0x803_FFFF  →  TIMER_DEVICE (счётчик тактов и времени)
+  0x803_0000 : CYCLE_LO  (R)   — нижние 32 бита 64-bit счётчика тактов
+  0x803_0004 : CYCLE_HI  (R)   — верхние 32 бита (snapshot при чтении CYCLE_LO)
+  0x803_0008 : TIME_MS   (R)   — миллисекунды с момента reset (32-бит, ~49 дней)
+  0x803_000C : TIME_US   (R)   — микросекунды с момента reset (32-бит, ~71 мин)
 ```
 
 Декодирование: `addr[27]=1` → I/O, `addr[17:16]` → устройство (00=UART, 01=OLED, 10=SD, 11=free).

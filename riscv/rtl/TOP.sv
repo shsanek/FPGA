@@ -28,6 +28,11 @@
 //     0x802_0004 : CONTROL   (W/R) — {CS}
 //     0x802_0008 : STATUS    (R)   — {…, card_detect, spi_busy, 0}
 //     0x802_000C : DIVIDER   (W/R) — SPI clock divider
+//   0x803_0000 – 0x803_FFFF  →  TIMER_DEVICE (счётчик тактов и времени)
+//     0x803_0000 : CYCLE_LO  (R)   — нижние 32 бита счётчика тактов (64-бит)
+//     0x803_0004 : CYCLE_HI  (R)   — верхние 32 бита (snapshot при чтении LO)
+//     0x803_0008 : TIME_MS   (R)   — миллисекунды с момента reset (32-бит, ~49 дней)
+//     0x803_000C : TIME_US   (R)   — микросекунды с момента reset (32-бит, ~71 мин)
 //
 // Синтез: mig_* порты подключаются к Xilinx MIG7 IP core.
 // Симуляция: подключить MIG_MODEL к mig_* портам в тестбенче.
@@ -155,6 +160,14 @@ module TOP #(
     wire [31:0] sd_wr_data, sd_rd_data;
     wire [3:0]  sd_mask_w;
     wire        sd_ready;
+
+    // ---------------------------------------------------------------
+    // PERIPHERAL_BUS ↔ TIMER_DEVICE
+    // ---------------------------------------------------------------
+    wire [27:0] timer_addr;
+    wire        timer_rd;
+    wire [31:0] timer_rd_data;
+    wire        timer_ready;
 
     // ---------------------------------------------------------------
     // MEMORY_CONTROLLER ↔ RAM_CONTROLLER
@@ -486,7 +499,12 @@ module TOP #(
         .sd_write_value      (sd_wr_data),
         .sd_mask             (sd_mask_w),
         .sd_read_value       (sd_rd_data),
-        .sd_controller_ready (sd_ready)
+        .sd_controller_ready (sd_ready),
+
+        .timer_address          (timer_addr),
+        .timer_read_trigger     (timer_rd),
+        .timer_read_value       (timer_rd_data),
+        .timer_controller_ready (timer_ready)
     );
 
     // --- UART_IO_DEVICE ---
@@ -543,6 +561,18 @@ module TOP #(
         .sd_miso           (sd_miso),
         .sd_cs_n           (sd_cs_n),
         .sd_cd_n           (sd_cd_n)
+    );
+
+    // --- TIMER_DEVICE ---
+    TIMER_DEVICE #(
+        .CLOCK_FREQ(CLOCK_FREQ)
+    ) timer_dev (
+        .clk              (clk),
+        .reset            (reset),
+        .address          (timer_addr),
+        .read_trigger     (timer_rd),
+        .read_value       (timer_rd_data),
+        .controller_ready (timer_ready)
     );
 
     // --- FLASH_LOADER (boot from QSPI flash) ---

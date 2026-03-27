@@ -24,6 +24,13 @@ static unsigned int rd32(const unsigned char *p) {
     return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
 }
 
+/* ---- Progress callback ---- */
+static fat32_progress_fn progress_cb = 0;
+
+void fat32_set_progress(fat32_progress_fn fn) {
+    progress_cb = fn;
+}
+
 /* ---- FAT32 geometry (cached after init) ---- */
 static unsigned int part_lba;           /* partition start sector */
 static unsigned int sectors_per_cluster;
@@ -178,6 +185,9 @@ dir_end:
                 dst[bytes_loaded + i] = buf[i];
 
             bytes_loaded += chunk;
+
+            if (progress_cb)
+                progress_cb(bytes_loaded, file_size);
         }
         cluster = fat_next(cluster);
     }

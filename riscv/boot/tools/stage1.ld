@@ -37,4 +37,9 @@ SECTIONS {
     } > RAM
 
     _stack_top = ORIGIN(RAM) + LENGTH(RAM);
+
+    /DISCARD/ : {
+        *(.eh_frame*)
+        *(.comment)
+    }
 }

@@ -53,14 +53,21 @@ module PERIPHERAL_BUS (
     output wire [31:0] sd_write_value,
     output wire [3:0]  sd_mask,
     input  wire [31:0] sd_read_value,
-    input  wire        sd_controller_ready
+    input  wire        sd_controller_ready,
+
+    // TIMER_DEVICE (downstream)
+    output wire [27:0] timer_address,
+    output wire        timer_read_trigger,
+    input  wire [31:0] timer_read_value,
+    input  wire        timer_controller_ready
 );
     wire io_sel   = address[27];
     wire [1:0] io_dev = address[17:16];
 
-    wire uart_sel = io_sel & (io_dev == 2'b00);
-    wire oled_sel = io_sel & (io_dev == 2'b01);
-    wire sd_sel   = io_sel & (io_dev == 2'b10);
+    wire uart_sel  = io_sel & (io_dev == 2'b00);
+    wire oled_sel  = io_sel & (io_dev == 2'b01);
+    wire sd_sel    = io_sel & (io_dev == 2'b10);
+    wire timer_sel = io_sel & (io_dev == 2'b11);
 
     // --- MEMORY_CONTROLLER ---
     assign mc_address       = address;
@@ -90,15 +97,21 @@ module PERIPHERAL_BUS (
     assign sd_write_value   = write_value;
     assign sd_mask          = mask;
 
-    // --- Мультиплексирование ответа ---
-    assign read_value       = sd_sel   ? sd_read_value   :
-                              oled_sel ? oled_read_value :
-                              uart_sel ? io_read_value   :
-                                         mc_read_value;
+    // --- TIMER ---
+    assign timer_address      = address;
+    assign timer_read_trigger = timer_sel ? read_trigger : 1'b0;
 
-    assign controller_ready = sd_sel   ? sd_controller_ready   :
-                              oled_sel ? oled_controller_ready :
-                              uart_sel ? io_controller_ready   :
-                                         mc_controller_ready;
+    // --- Мультиплексирование ответа ---
+    assign read_value       = timer_sel ? timer_read_value :
+                              sd_sel    ? sd_read_value    :
+                              oled_sel  ? oled_read_value  :
+                              uart_sel  ? io_read_value    :
+                                          mc_read_value;
+
+    assign controller_ready = timer_sel ? timer_controller_ready :
+                              sd_sel    ? sd_controller_ready    :
+                              oled_sel  ? oled_controller_ready  :
+                              uart_sel  ? io_controller_ready    :
+                                          mc_controller_ready;
 
 endmodule
