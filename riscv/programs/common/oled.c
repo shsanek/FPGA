@@ -1,6 +1,7 @@
 /* OLED API — PmodOLEDrgb (SSD1331), framebuffer + flush. */
 #include "oled.h"
 #include "font8x10.h"
+#include "font5x7.h"
 
 /* ---- Hardware registers ---- */
 #define OLED_DATA_REG    (*(volatile unsigned int *)0x08010000U)
@@ -154,6 +155,36 @@ void oled_print(int x, int y, const char *s, unsigned short fg, unsigned short b
 
 void oled_text(int row, int col, const char *s, unsigned short fg, unsigned short bg) {
     oled_print(col * FONT_W, row * FONT_H, s, fg, bg);
+}
+
+/* ---- Small font 5×7 (column-encoded) ---- */
+
+void oled_char_sm(int x, int y, char c, unsigned short fg, unsigned short bg) {
+    if (c < FONT5_FIRST || c > FONT5_LAST) c = ' ';
+    const unsigned char *glyph = &font5x7[(c - FONT5_FIRST) * FONT5_W];
+
+    for (int col = 0; col < FONT5_W; col++) {
+        unsigned char bits = glyph[col];
+        for (int row = 0; row < FONT5_H; row++) {
+            oled_pixel(x + col, y + row, (bits & 1) ? fg : bg);
+            bits >>= 1;
+        }
+    }
+    /* 1px gap справа */
+    for (int row = 0; row < FONT5_H; row++)
+        oled_pixel(x + FONT5_W, y + row, bg);
+}
+
+void oled_print_sm(int x, int y, const char *s, unsigned short fg, unsigned short bg) {
+    while (*s) {
+        oled_char_sm(x, y, *s++, fg, bg);
+        x += FONT5_CELL_W;
+        if (x + FONT5_W > OLED_W) break;
+    }
+}
+
+void oled_text_sm(int row, int col, const char *s, unsigned short fg, unsigned short bg) {
+    oled_print_sm(col * FONT5_CELL_W, row * FONT5_CELL_H, s, fg, bg);
 }
 
 /* ---- Flush framebuffer to OLED ---- */

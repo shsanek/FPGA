@@ -35,6 +35,11 @@ void oled_print(int x, int y, const char *s, unsigned short fg, unsigned short b
 /* Текст по строкам (row=0..5, col=0..11) — удобная обёртка */
 void oled_text(int row, int col, const char *s, unsigned short fg, unsigned short bg);
 
+/* Маленький шрифт 5×7 (16 колонок × 8 строк) */
+void oled_char_sm(int x, int y, char c, unsigned short fg, unsigned short bg);
+void oled_print_sm(int x, int y, const char *s, unsigned short fg, unsigned short bg);
+void oled_text_sm(int row, int col, const char *s, unsigned short fg, unsigned short bg);
+
 /* Отправить фреймбуфер на экран */
 void oled_flush(void);
 
