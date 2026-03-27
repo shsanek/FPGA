@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "doomdef.h"
 #include "doomstat.h"
@@ -62,9 +63,12 @@ I_Init(void)
 byte *
 I_ZoneBase(int *size)
 {
-	/* Give 6M to DOOM */
+	/* Give 6M to DOOM — прямой sbrk, без newlib malloc */
 	*size = 6 * 1024 * 1024;
-	return (byte *) malloc (*size);
+	console_printf("[ZoneBase] sbrk(%d)...\n", *size);
+	byte *p = (byte *) sbrk(*size);
+	console_printf("[ZoneBase] got %08x\n", (unsigned int)p);
+	return p;
 }
 
 int
@@ -165,7 +169,7 @@ byte *
 I_AllocLow(int length)
 {
 	byte*	mem;
-	mem = (byte *)malloc (length);
+	mem = (byte *)sbrk(length);
 	//memset (mem,0,length);
 	return mem;
 }

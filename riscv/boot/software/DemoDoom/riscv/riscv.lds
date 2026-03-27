@@ -1,6 +1,6 @@
 MEMORY
 {
-    RAM (xrw) : ORIGIN = 0x0, LENGTH = 0x900000  /* 9 МБ, измените по необходимости */
+    RAM (xrw) : ORIGIN = 0x0, LENGTH = 0x2000000  /* 32 МБ */
 }
 ENTRY(_start)
 SECTIONS {

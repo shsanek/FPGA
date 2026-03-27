@@ -32,11 +32,35 @@ int console_getchar_nowait(void) {
 }
 
 int console_printf(const char *fmt, ...) {
-    static char _printf_buf[128];
+    static char _printf_buf[256];
     va_list va;
     va_start(va, fmt);
-    int l = mini_vsnprintf(_printf_buf, 128, fmt, va);
+    int l = mini_vsnprintf(_printf_buf, 256, fmt, va);
     va_end(va);
     console_puts(_printf_buf);
     return l;
+}
+
+/* Заглушки для подменённых stdio функций */
+int doom_fprintf(void *f, const char *fmt, ...) {
+    static char _printf_buf[256];
+    va_list va;
+    va_start(va, fmt);
+    int l = mini_vsnprintf(_printf_buf, 256, fmt, va);
+    va_end(va);
+    console_puts(_printf_buf);
+    return l;
+}
+
+int doom_vfprintf(void *f, const char *fmt, va_list ap) {
+    static char _vfp_buf[256];
+    (void)f;
+    int l = mini_vsnprintf(_vfp_buf, 256, fmt, ap);
+    console_puts(_vfp_buf);
+    return l;
+}
+
+int doom_fflush(void *f) {
+    (void)f;
+    return 0;
 }

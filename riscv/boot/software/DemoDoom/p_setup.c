@@ -242,7 +242,7 @@ void P_LoadSectors (int lump)
 
     numsectors = W_LumpLength (lump) / sizeof(mapsector_t);
     if (numsectors > 500) {
-        *((int*)(0x64000008)) = -1;
+
     }
 
     sectors = Z_Malloc (numsectors*sizeof(sector_t),PU_LEVEL,0);
