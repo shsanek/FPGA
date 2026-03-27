@@ -1,8 +1,8 @@
 /*
  * Stage 1 bootloader — загружает BOOT.BIN с SD карты (FAT32) в DDR.
  *
- * OLED: текстовые логи + прогресс-бар загрузки (font8x10, 12x6 символов)
- * UART: подробные логи каждого этапа
+ * OLED: boot анимация + прогресс-бар через OLED_FB_DEVICE (BRAM framebuffer).
+ * UART: подробные логи каждого этапа.
  */
 #include "sd.h"
 #include "fat32.h"
@@ -10,21 +10,14 @@
 
 #define UART_TX   (*(volatile unsigned int *)0x10000000U)
 #define SD_STATUS (*(volatile unsigned int *)0x10020008U)
+#define TIMER_MS  (*(volatile unsigned int *)0x10030008U)
 
-/* OLED registers */
-#define OLED_DATA    (*(volatile unsigned int *)0x10010000U)
-#define OLED_CONTROL (*(volatile unsigned int *)0x10010004U)
-#define OLED_STATUS  (*(volatile unsigned int *)0x10010008U)
-#define OLED_DIVIDER (*(volatile unsigned int *)0x1001000CU)
-
-/* Timer */
-#define TIMER_MS     (*(volatile unsigned int *)0x10030008U)
-
-#define CTL_CS     (1 << 0)
-#define CTL_DC     (1 << 1)
-#define CTL_RES    (1 << 2)
-#define CTL_VCCEN  (1 << 3)
-#define CTL_PMODEN (1 << 4)
+/* ---- OLED_FB_DEVICE registers ---- */
+#define OLED_CONTROL   (*(volatile unsigned int *)0x10010000U)
+#define OLED_STATUS    (*(volatile unsigned int *)0x10010004U)
+#define OLED_VP_WIDTH  (*(volatile unsigned int *)0x10010008U)
+#define OLED_VP_HEIGHT (*(volatile unsigned int *)0x1001000CU)
+#define OLED_FB        ((volatile unsigned int *)0x10014000U)
 
 #define LOAD_ADDR 0x00000000U
 
@@ -37,6 +30,14 @@
 #define COL_CYAN    0x07FF
 #define COL_YELLOW  0xFFE0
 #define COL_DARK    0x2104
+#define COL_DBLUE   0x1926
+#define COL_ACCENT  0x049F
+#define COL_LGRAY   0xDEFB
+
+/* Viewport 96×64, stride=128 (shift=7) */
+#define VP_W   96
+#define VP_H   64
+#define STRIDE_SHIFT 7
 
 /* ---- UART ---- */
 static void boot_putc(int c) { UART_TX = (unsigned int)(unsigned char)c; }
@@ -52,151 +53,173 @@ static void boot_hex(unsigned int n) {
     for (int s = 28; s >= 0; s -= 4) boot_putc(h[(n >> s) & 0xF]);
 }
 
-/* ---- OLED low-level ---- */
+/* ---- Delay ---- */
 static void delay(volatile unsigned int n) {
     while (n--) __asm__ volatile("");
 }
 #define DELAY_1MS   81250
-#define DELAY_20MS  (20 * DELAY_1MS)
-#define DELAY_100MS (100 * DELAY_1MS)
 
-static void spi_wait(void) { while (OLED_STATUS & 0x2); }
-static void oled_cmd(unsigned char c) { spi_wait(); OLED_DATA = c; }
-static void oled_data(unsigned char d) { spi_wait(); OLED_DATA = d; }
-
-static void oled_set_cmd_mode(void) {
-    unsigned int ctl = OLED_CONTROL;
-    OLED_CONTROL = (ctl & ~CTL_DC) | CTL_CS;
-}
-static void oled_set_data_mode(void) {
-    unsigned int ctl = OLED_CONTROL;
-    OLED_CONTROL = ctl | CTL_DC | CTL_CS;
+/* ---- OLED framebuffer helpers ---- */
+static void fb_sync(void) {
+    while (OLED_STATUS & 1) ;
 }
 
-static void oled_init(void) {
-    OLED_CONTROL = CTL_PMODEN;
-    delay(DELAY_20MS);
-    OLED_CONTROL = CTL_PMODEN | CTL_RES;
-    delay(DELAY_1MS);
-    OLED_CONTROL = CTL_PMODEN;
-    delay(DELAY_1MS);
-    OLED_CONTROL = CTL_PMODEN | CTL_CS;
-
-    oled_cmd(0xAE); oled_cmd(0xA0); oled_cmd(0x72);
-    oled_cmd(0xA1); oled_cmd(0x00); oled_cmd(0xA2); oled_cmd(0x00);
-    oled_cmd(0xA4); oled_cmd(0xA8); oled_cmd(0x3F);
-    oled_cmd(0xAD); oled_cmd(0x8E); oled_cmd(0xB0); oled_cmd(0x0B);
-    oled_cmd(0xB1); oled_cmd(0x31); oled_cmd(0xB3); oled_cmd(0xF0);
-    oled_cmd(0x8A); oled_cmd(0x64); oled_cmd(0x8B); oled_cmd(0x78);
-    oled_cmd(0x8C); oled_cmd(0x64); oled_cmd(0xBB); oled_cmd(0x3A);
-    oled_cmd(0xBE); oled_cmd(0x3E); oled_cmd(0x87); oled_cmd(0x06);
-    oled_cmd(0x81); oled_cmd(0x91); oled_cmd(0x82); oled_cmd(0x50);
-    oled_cmd(0x83); oled_cmd(0x7D);
-    spi_wait();
-    OLED_CONTROL = CTL_PMODEN | CTL_VCCEN | CTL_CS;
-    delay(DELAY_100MS);
-    oled_cmd(0xAF);
-    spi_wait();
+static void fb_flush(void) {
+    /* CONTROL блокируется аппаратно если рендер ещё идёт — CPU stall.
+     * Возврат сразу после записи, CPU может рисовать дальше. */
+    OLED_CONTROL = 1;  /* mode=RGB565, flush */
 }
 
-/* ---- OLED fill rect ---- */
-static void oled_fill_rect(unsigned char x0, unsigned char y0,
-                            unsigned char x1, unsigned char y1,
-                            unsigned int color) {
-    unsigned char hi = (color >> 8) & 0xFF;
-    unsigned char lo = color & 0xFF;
-    int count = (x1 - x0 + 1) * (y1 - y0 + 1);
+static void fb_pixel(int x, int y, unsigned short color) {
+    if ((unsigned)x >= VP_W || (unsigned)y >= VP_H) return;
+    int hw = (y << STRIDE_SHIFT) + x;
+    int wi = hw >> 1;
+    if (x & 1)
+        OLED_FB[wi] = (OLED_FB[wi] & 0x0000FFFF) | ((unsigned int)color << 16);
+    else
+        OLED_FB[wi] = (OLED_FB[wi] & 0xFFFF0000) | color;
+}
 
-    oled_set_cmd_mode();
-    oled_cmd(0x15); oled_cmd(x0); oled_cmd(x1);
-    oled_cmd(0x75); oled_cmd(y0); oled_cmd(y1);
-    spi_wait();
-    oled_set_data_mode();
-    for (int i = 0; i < count; i++) {
-        oled_data(hi);
-        oled_data(lo);
+static void fb_fill(unsigned short color) {
+    unsigned int dword = ((unsigned int)color << 16) | color;
+    for (int y = 0; y < VP_H; y++) {
+        int base = (y << STRIDE_SHIFT) >> 1;
+        for (int i = 0; i < VP_W / 2; i++)
+            OLED_FB[base + i] = dword;
     }
-    spi_wait();
 }
 
-/* ---- OLED text (font8x10) ---- */
-/* 96/8=12 символов в строке, 64/10=6 строк */
+static void fb_rect(int x0, int y0, int x1, int y1, unsigned short color) {
+    unsigned int dword = ((unsigned int)color << 16) | color;
+    for (int y = y0; y <= y1; y++) {
+        int base = (y << STRIDE_SHIFT) >> 1;
+        /* Заполняем парами пикселей */
+        int xa = (x0 + 1) & ~1; /* первый чётный >= x0 */
+        int xb = x1 & ~1;       /* последний чётный <= x1 */
+        /* Одиночные пиксели на краях */
+        if (x0 & 1) fb_pixel(x0, y, color);
+        /* Пары */
+        for (int x = xa; x < xb; x += 2)
+            OLED_FB[base + (x >> 1)] = dword;
+        /* Правый край */
+        if (!(x1 & 1)) fb_pixel(x1, y, color);
+        else if (xb <= x1) fb_pixel(x1, y, color);
+    }
+}
 
-static void oled_draw_char(int col, int row, char c,
-                            unsigned int fg, unsigned int bg) {
+static void fb_hline(int y, unsigned short color) {
+    fb_rect(0, y, VP_W - 1, y, color);
+}
+
+static void fb_char(int px, int py, char c, unsigned short fg, unsigned short bg) {
     if (c < FONT_FIRST || c > FONT_LAST) c = '?';
-    int x = col * FONT_W;
-    int y = row * FONT_H;
-    if (x + FONT_W > 96 || y + FONT_H > 64) return;
-
     const unsigned char *glyph = &font8x10[(c - FONT_FIRST) * FONT_H];
-    unsigned char fghi = (fg >> 8), fglo = fg & 0xFF;
-    unsigned char bghi = (bg >> 8), bglo = bg & 0xFF;
-
-    oled_set_cmd_mode();
-    oled_cmd(0x15); oled_cmd(x); oled_cmd(x + FONT_W - 1);
-    oled_cmd(0x75); oled_cmd(y); oled_cmd(y + FONT_H - 1);
-    spi_wait();
-    oled_set_data_mode();
     for (int r = 0; r < FONT_H; r++) {
         unsigned char bits = glyph[r];
         for (int b = 7; b >= 0; b--) {
-            if ((bits >> b) & 1) {
-                oled_data(fghi); oled_data(fglo);
-            } else {
-                oled_data(bghi); oled_data(bglo);
-            }
+            fb_pixel(px + (7 - b), py + r, (bits >> b) & 1 ? fg : bg);
         }
     }
-    spi_wait();
 }
 
-/* Вывести строку на OLED, начиная с позиции (col, row) */
-static void oled_text(int col, int row, const char *s,
-                       unsigned int fg, unsigned int bg) {
-    while (*s && col < 12) {
-        oled_draw_char(col, row, *s, fg, bg);
-        col++;
+static void fb_text(int col, int row, const char *s, unsigned short fg, unsigned short bg) {
+    int x = col * FONT_W;
+    while (*s && x + FONT_W <= VP_W) {
+        fb_char(x, row * FONT_H, *s, fg, bg);
+        x += FONT_W;
         s++;
     }
 }
 
-/* Строка + OK/FAIL справа */
-static void oled_status(int row, const char *label, int ok) {
-    oled_text(0, row, label, COL_WHITE, COL_BLACK);
-    if (ok)
-        oled_text(10, row, "OK", COL_GREEN, COL_BLACK);
-    else
-        oled_text(8, row, "FAIL", COL_RED, COL_BLACK);
+static void fb_char_2x(int px, int py, char c, unsigned short fg, unsigned short bg) {
+    if (c < FONT_FIRST || c > FONT_LAST) c = '?';
+    const unsigned char *glyph = &font8x10[(c - FONT_FIRST) * FONT_H];
+    for (int r = 0; r < FONT_H; r++) {
+        unsigned char bits = glyph[r];
+        for (int b = 7; b >= 0; b--) {
+            unsigned short col = (bits >> b) & 1 ? fg : bg;
+            int bx = px + (7 - b) * 2;
+            int by = py + r * 2;
+            fb_pixel(bx, by, col);
+            fb_pixel(bx + 1, by, col);
+            fb_pixel(bx, by + 1, col);
+            fb_pixel(bx + 1, by + 1, col);
+        }
+    }
 }
 
-/* ---- Прогресс-бар (строка 4, пиксельный) ---- */
-#define BAR_Y0  40
-#define BAR_Y1  43
-#define BAR_X1  95
+/* ---- Прогресс-бар (внизу экрана) ---- */
+#define BAR_Y0  58
+#define BAR_Y1  61
+#define BAR_X0  8
+#define BAR_X1  87
+#define BAR_W   (BAR_X1 - BAR_X0 + 1)
 static int last_bar_px = -1;
 
 static void draw_progress_bar(int px) {
-    if (px > 96) px = 96;
+    if (px > BAR_W) px = BAR_W;
     if (px == last_bar_px) return;
     if (px > 0)
-        oled_fill_rect(0, BAR_Y0, px - 1, BAR_Y1, COL_GREEN);
-    if (px < 96)
-        oled_fill_rect(px, BAR_Y0, BAR_X1, BAR_Y1, COL_DARK);
+        fb_rect(BAR_X0, BAR_Y0, BAR_X0 + px - 1, BAR_Y1, COL_ACCENT);
+    if (px < BAR_W)
+        fb_rect(BAR_X0 + px, BAR_Y0, BAR_X1, BAR_Y1, COL_LGRAY);
     last_bar_px = px;
+    fb_flush();
 }
 
 /* fat32 progress callback */
 static void loading_progress(unsigned int loaded, unsigned int total) {
-    int px = (total > 0) ? (int)((loaded * 96ULL) / total) : 0;
+    int px = (total > 0) ? (int)((loaded * (unsigned long long)BAR_W) / total) : 0;
     draw_progress_bar(px);
 }
 
+/* ---- Boot animation (PS1-style) ---- */
+static void boot_animation(void) {
+    /* Настройка viewport */
+    OLED_VP_WIDTH  = VP_W;
+    OLED_VP_HEIGHT = VP_H;
+
+    /* Phase 1: чёрный экран */
+    fb_fill(COL_BLACK);
+    fb_flush();
+    delay(DELAY_1MS * 400);
+
+    /* Phase 2: яркая точка в центре */
+    fb_rect(45, 29, 50, 34, COL_WHITE);
+    fb_flush();
+    delay(DELAY_1MS * 250);
+
+    /* Phase 3: горизонтальные линии расширяются от центра */
+    for (int d = 0; d <= 31; d++) {
+        fb_hline(31 - d, COL_WHITE);
+        fb_hline(32 + d, COL_WHITE);
+        fb_flush();
+        delay(DELAY_1MS * 10);
+    }
+
+    /* Phase 4: лого "RV32" 2x по центру */
+    fb_char_2x(16, 12, 'R', COL_DBLUE, COL_WHITE);
+    fb_char_2x(32, 12, 'V', COL_DBLUE, COL_WHITE);
+    fb_char_2x(48, 12, '3', COL_DBLUE, COL_WHITE);
+    fb_char_2x(64, 12, '2', COL_DBLUE, COL_WHITE);
+
+    /* Цветная полоска */
+    fb_rect(16, 34, 79, 35, COL_ACCENT);
+
+    /* "RISC-V" мелким шрифтом */
+    fb_text(3, 5, "RISC-V", COL_DARK, COL_WHITE);
+
+    fb_flush();
+    delay(DELAY_1MS * 1200);
+}
+
 /* ---- Halt ---- */
-static void halt_red(const char *msg, int row) {
+static void halt_anim(const char *msg) {
     boot_puts(msg);
-    oled_text(0, row, msg, COL_RED, COL_BLACK);
-    oled_fill_rect(0, 54, 95, 63, COL_RED);
+    fb_rect(BAR_X0, BAR_Y0, BAR_X1, BAR_Y1, COL_RED);
+    fb_rect(0, 44, 95, 63, COL_WHITE);
+    fb_text(0, 5, msg, COL_RED, COL_WHITE);
+    fb_flush();
     while (1) __asm__ volatile("");
 }
 
@@ -204,93 +227,56 @@ static void halt_red(const char *msg, int row) {
 int main(void) {
     boot_puts("=== Stage1 Bootloader ===");
 
-    /* OLED init */
-    oled_init();
-    oled_fill_rect(0, 0, 95, 63, COL_BLACK);
-    oled_text(0, 0, "RV32 Boot v1", COL_CYAN, COL_BLACK);
+    /* Boot animation (SSD1331 init аппаратно при первом flush) */
+    boot_animation();
     boot_puts("[OLED] init OK");
 
+    /* Прогресс-бар */
+    draw_progress_bar(0);
+
     /* SD card */
-    oled_text(0, 1, "SD:     ", COL_WHITE, COL_BLACK);
     if (!(SD_STATUS & 0x04))
-        halt_red("NO CARD", 1);
-
+        halt_anim("NO CARD");
     if (sd_init() != 0)
-        halt_red("SD FAIL", 1);
-
-    oled_status(1, "SD:", 1);
+        halt_anim("SD FAIL");
     boot_puts("[SD]   OK");
 
     /* FAT32 */
-    oled_text(0, 2, "FAT32:  ", COL_WHITE, COL_BLACK);
     if (fat32_init() != 0)
-        halt_red("FAT FAIL", 2);
-
-    oled_status(2, "FAT32:", 1);
-    boot_puts("[FAT]  OK");
+        halt_anim("FAT FAIL");
+    boot_puts("FAT32 OK");
 
     /* Load BOOT.BIN */
-    oled_text(0, 3, "Loading...", COL_YELLOW, COL_BLACK);
-    draw_progress_bar(0);
     fat32_set_progress(loading_progress);
-
     unsigned int t0 = TIMER_MS;
     int size = fat32_load("BOOT    BIN", (unsigned char *)LOAD_ADDR);
     unsigned int t1 = TIMER_MS;
 
     if (size <= 0)
-        halt_red("NOT FOUND", 3);
+        halt_anim("NOT FOUND");
 
-    draw_progress_bar(96);
-    oled_status(3, "Loaded:", 1);
+    draw_progress_bar(BAR_W);
 
-    /* Показать размер на OLED строка 4 (под прогресс-баром) */
-    /* Простой вывод размера в KB */
-    {
-        unsigned int kb = (unsigned int)size / 1024;
-        char buf[12];
-        int pos = 0;
-        /* uint to string */
-        if (kb == 0) {
-            buf[pos++] = '0';
-        } else {
-            char tmp[10];
-            int n = 0;
-            unsigned int v = kb;
-            while (v) { tmp[n++] = '0' + (v % 10); v /= 10; }
-            while (n > 0) buf[pos++] = tmp[--n];
-        }
-        buf[pos++] = 'K'; buf[pos++] = 'B'; buf[pos] = 0;
-        oled_text(0, 5, buf, COL_WHITE, COL_BLACK);
-
-        /* Время загрузки */
-        unsigned int dt = t1 - t0;
-        pos = 0;
-        if (dt == 0) {
-            buf[pos++] = '0';
-        } else {
-            char tmp[10];
-            int n = 0;
-            unsigned int v = dt;
-            while (v) { tmp[n++] = '0' + (v % 10); v /= 10; }
-            while (n > 0) buf[pos++] = tmp[--n];
-        }
-        buf[pos++] = 'm'; buf[pos++] = 's'; buf[pos] = 0;
-        oled_text(6, 5, buf, COL_DARK, COL_BLACK);
-    }
-
-    /* UART */
+    /* UART log */
     boot_print("[LOAD] ");
     boot_hex((unsigned int)size);
     boot_print(" bytes, ");
     boot_hex(t1 - t0);
     boot_puts(" ms");
 
+    /* Пауза + схлопывание */
+    delay(DELAY_1MS * 300);
+    for (int d = 0; d <= 31; d++) {
+        fb_hline(d, COL_BLACK);
+        fb_hline(63 - d, COL_BLACK);
+        fb_flush();
+        delay(DELAY_1MS * 4);
+    }
+
     /* Jump */
     boot_print("[JUMP] 0x");
     boot_hex(LOAD_ADDR);
     boot_putc('\n');
-    boot_puts("=========================");
 
     ((void (*)(void))LOAD_ADDR)();
     return 0;

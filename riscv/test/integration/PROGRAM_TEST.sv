@@ -59,7 +59,8 @@ module PROGRAM_TEST ();
         .BAUD_RATE   (BAUD_RATE),
         .CHUNK_PART  (CHUNK_PART),
         .ADDRESS_SIZE(ADDRESS_SIZE),
-        .DEBUG_ENABLE(1)
+        .DEBUG_ENABLE(1),
+        .OLED_BRAM_DEPTH(16)
     ) dut (
         .clk                    (clk),
         .reset                  (reset),

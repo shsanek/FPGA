@@ -165,6 +165,14 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
+      <File Path="$PPRDIR/../../riscv/rtl/peripheral/OLED_IO_DEVICE.sv">
+        <FileInfo>
+          <Attr Name="AutoDisabled" Val="1"/>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
       <File Path="$PPRDIR/../../riscv/rtl/core/BRANCH_UNIT.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
@@ -263,7 +271,7 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../riscv/rtl/peripheral/OLED_IO_DEVICE.sv">
+      <File Path="$PPRDIR/../../riscv/rtl/peripheral/OLED_FB_DEVICE.sv">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
