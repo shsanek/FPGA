@@ -19,7 +19,9 @@ SRC      = $(SW_DIR)/stage1.c $(SW_DIR)/sd.c $(SW_DIR)/fat32.c
 CRT0     = $(COMMON)/crt0.s
 RUNTIME  = $(COMMON)/runtime.c
 
-.PHONY: stage1 stage1_hdr boot clean
+AS        = $(CROSS)as
+
+.PHONY: stage1 stage1_hdr stub stub_hdr boot clean
 
 # ---- Stage 1 (for QSPI flash, loads at 0x07F00000) ----
 
@@ -34,6 +36,19 @@ stage1.bin: stage1.elf
 
 stage1_hdr: stage1.bin
 	python3 prepend_header.py stage1.bin stage1_with_header.bin
+
+# ---- Stub (заглушка — бесконечный цикл, для debug-only и тестов) ----
+
+stub: stub.bin
+
+stub.o: $(SW_DIR)/stub.s
+	$(AS) -march=rv32i -mabi=ilp32 -o $@ $<
+
+stub.bin: stub.o
+	$(OBJCOPY) -O binary $< $@
+
+stub_hdr: stub.bin
+	python3 prepend_header.py stub.bin stub_with_header.bin 0x00000000
 
 # ---- BOOT.BIN (for SD card, loads at 0x00000000 — standard linker.ld) ----
 # Usage: make boot BOOT_SRC=../../tests/programs/hello/hello.c

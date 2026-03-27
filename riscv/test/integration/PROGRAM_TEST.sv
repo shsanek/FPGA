@@ -48,6 +48,12 @@ module PROGRAM_TEST ();
     logic uart_rx_pin = 1;
     wire  uart_tx_pin;
 
+    // QSPI flash mock wires
+    wire flash_cs_n, flash_sck, flash_mosi, flash_miso;
+
+    // SD card — not used in sim, tie off
+    wire sd_cs_n, sd_mosi, sd_sck;
+
     TOP #(
         .CLOCK_FREQ  (CLOCK_FREQ),
         .BAUD_RATE   (BAUD_RATE),
@@ -72,7 +78,35 @@ module PROGRAM_TEST ();
         .mig_app_wdf_rdy        (mig_app_wdf_rdy),
         .mig_app_rd_data        (mig_app_rd_data),
         .mig_app_rd_data_valid  (mig_app_rd_data_valid),
-        .mig_app_rd_data_end    (mig_app_rd_data_end)
+        .mig_app_rd_data_end    (mig_app_rd_data_end),
+        // OLED — unconnected
+        .oled_cs_n              (),
+        .oled_mosi              (),
+        .oled_sck               (),
+        .oled_dc                (),
+        .oled_res_n             (),
+        .oled_vccen             (),
+        .oled_pmoden            (),
+        // SD — unconnected
+        .sd_cs_n                (sd_cs_n),
+        .sd_mosi                (sd_mosi),
+        .sd_miso                (1'b1),
+        .sd_sck                 (sd_sck),
+        .sd_cd_n                (1'b1),
+        // QSPI flash
+        .flash_cs_n             (flash_cs_n),
+        .flash_mosi             (flash_mosi),
+        .flash_miso             (flash_miso),
+        .flash_sck              (flash_sck)
+    );
+
+    // SPI flash mock: serves stub program (j _start)
+    // FLASH_LOADER reads header + 4 bytes, writes to DDR, sets PC=0, releases bus
+    SPI_FLASH_STUB flash_mock (
+        .cs_n (flash_cs_n),
+        .sck  (flash_sck),
+        .mosi (flash_mosi),
+        .miso (flash_miso)
     );
 
     MIG_MODEL #(

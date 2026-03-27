@@ -43,6 +43,7 @@ module FLASH_LOADER #(
 
     output wire active
 );
+
     localparam [31:0] MAGIC = 32'hB007C0DE;
 
     // ---------------------------------------------------------------
@@ -115,7 +116,7 @@ module FLASH_LOADER #(
     assign mc_write_mask   = {(DATA_SIZE/8){1'b1}};
     assign set_pc          = set_pc_r;
     assign new_pc          = saved_load_addr;
-    assign active          = (state != S_DONE) && (state != S_WAIT_DDR);
+    assign active          = (state != S_DONE);
 
     // ---------------------------------------------------------------
     // CMD+ADDR sequence: 0x03, addr[23:16], addr[15:8], addr[7:0]
@@ -151,7 +152,7 @@ module FLASH_LOADER #(
             header_idx      <= 4'b0;
             ddr_addr        <= '0;
             bytes_remaining <= 32'b0;
-            bus_request_r   <= 1'b0;
+            bus_request_r   <= 1'b1;     // блокируем CPU и debug до завершения
             mc_wr_r         <= 1'b0;
             set_pc_r        <= 1'b0;
         end else begin
@@ -160,12 +161,10 @@ module FLASH_LOADER #(
 
             case (state)
                 // --------------------------------------------------
-                // В WAIT_DDR bus не захватываем — debug может работать
                 S_WAIT_DDR: begin
                     if (ddr_ready) begin
-                        bus_request_r <= 1'b1;  // захватываем bus
-                        cs_r          <= 1'b1;  // CS active
-                        state         <= S_CS_ON;
+                        cs_r  <= 1'b1;
+                        state <= S_CS_ON;
                     end
                 end
 

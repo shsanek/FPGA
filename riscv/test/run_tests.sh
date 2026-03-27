@@ -75,6 +75,7 @@ compile_testbench() {
         "$RTL_DIR/uart/SIMPLE_UART_RX.sv" \
         "$RTL_DIR/uart/UART_FIFO.sv" \
         "$RTL_DIR/uart/VALUE_STORAGE.sv" \
+        "$SCRIPT_DIR/peripheral/SPI_FLASH_STUB.sv" \
         2>&1 | grep -v "^.*sorry:" || true
     echo "Testbench compiled: $SIM_BIN"
 }
