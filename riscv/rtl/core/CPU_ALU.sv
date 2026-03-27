@@ -50,10 +50,14 @@ module CPU_ALU (
     // Запуск: is_muldiv=1 И MULDIV не занят И не done (удерживается) И нет stall
     wire muldiv_start = is_muldiv && !muldiv_busy && !muldiv_done && !cpu_stall;
 
+    // Подтверждение: CPU забирает результат (done=1 и pipeline в EXECUTE)
+    wire muldiv_ack = muldiv_done && !cpu_stall;
+
     MULDIV_UNIT muldiv (
         .clk    (clk),
         .reset  (reset),
         .start  (muldiv_start),
+        .ack    (muldiv_ack),
         .funct3 (funct3),
         .a      (a),
         .b      (b),

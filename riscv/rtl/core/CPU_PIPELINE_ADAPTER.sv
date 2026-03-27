@@ -27,7 +27,7 @@ module CPU_PIPELINE_ADAPTER (
     output wire        mem_stall,
 
     // Интерфейс с PERIPHERAL_BUS / MEMORY_CONTROLLER
-    output logic [27:0] mc_address,
+    output logic [28:0] mc_address,
     output logic        mc_read_trigger,
     output logic        mc_write_trigger,
     output logic [31:0] mc_write_value,
@@ -58,13 +58,13 @@ module CPU_PIPELINE_ADAPTER (
     PIPELINE_STATE state;
     logic [31:0] instr_reg;
     logic [31:0] data_reg;
-    logic [27:0] addr_reg;    // latched address for WAIT states
+    logic [28:0] addr_reg;    // latched address for WAIT states
 
     // Stepping: выполняем 1 инструкцию, игнорируем pause
     logic stepping;
 
     // Защёлкнутые CPU data-выходы (разрыв критического пути ALU → cache)
-    logic [27:0] data_addr_reg;
+    logic [28:0] data_addr_reg;
     logic [31:0] data_wr_data_reg;
     logic [3:0]  data_mask_reg;
     logic        data_rd_en_reg;
@@ -100,7 +100,7 @@ module CPU_PIPELINE_ADAPTER (
 
         case (state)
             S_FETCH_TRIG: begin
-                mc_address      = instr_addr[27:0];
+                mc_address      = instr_addr[28:0];
                 mc_read_trigger = mc_controller_ready;
             end
 
@@ -141,7 +141,7 @@ module CPU_PIPELINE_ADAPTER (
                     if (pause && !stepping)
                         state <= S_PAUSED;
                     else if (mc_controller_ready) begin
-                        addr_reg <= instr_addr[27:0];
+                        addr_reg <= instr_addr[28:0];
                         state    <= S_FETCH_WAIT;
                     end
                 end
@@ -158,7 +158,7 @@ module CPU_PIPELINE_ADAPTER (
 
                 S_EXECUTE: begin
                     if (mem_read_en || mem_write_en) begin
-                        data_addr_reg    <= mem_addr[27:0];
+                        data_addr_reg    <= mem_addr[28:0];
                         data_wr_data_reg <= mem_write_data;
                         data_mask_reg    <= mem_byte_mask;
                         data_rd_en_reg   <= mem_read_en;

@@ -29,7 +29,7 @@ module DEBUG_CONTROLLER_TEST();
     // MC stub
     logic        mc_ready = 1;
     logic [31:0] mc_rdata = 32'hCAFE_BABE;
-    wire  [27:0] mc_addr_w;
+    wire  [28:0] mc_addr_w;
     wire         mc_rd_w, mc_wr_w;
     wire  [31:0] mc_wdata_w;
 

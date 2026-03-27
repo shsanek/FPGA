@@ -10,10 +10,10 @@
 #include "../common/runtime.h"
 
 /* ---- SD регистры ---- */
-#define SD_DATA    (*(volatile unsigned int *)0x08020000U)
-#define SD_CONTROL (*(volatile unsigned int *)0x08020004U)
-#define SD_STATUS  (*(volatile unsigned int *)0x08020008U)
-#define SD_DIVIDER (*(volatile unsigned int *)0x0802000CU)
+#define SD_DATA    (*(volatile unsigned int *)0x10020000U)
+#define SD_CONTROL (*(volatile unsigned int *)0x10020004U)
+#define SD_STATUS  (*(volatile unsigned int *)0x10020008U)
+#define SD_DIVIDER (*(volatile unsigned int *)0x1002000CU)
 
 #define SD_CS_ON   1
 #define SD_CS_OFF  0

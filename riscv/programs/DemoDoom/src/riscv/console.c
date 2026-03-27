@@ -8,9 +8,9 @@
 #include "../doomdef.h"
 
 /* UART hardware (from common/uart.c addresses) */
-#define UART_TX_DATA  (*(volatile unsigned int *)0x08000000U)
-#define UART_RX_DATA  (*(volatile unsigned int *)0x08000004U)
-#define UART_STATUS   (*(volatile unsigned int *)0x08000008U)
+#define UART_TX_DATA  (*(volatile unsigned int *)0x10000000U)
+#define UART_RX_DATA  (*(volatile unsigned int *)0x10000004U)
+#define UART_STATUS   (*(volatile unsigned int *)0x10000008U)
 
 void console_putchar(char c)
 {

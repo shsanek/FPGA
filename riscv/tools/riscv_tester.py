@@ -27,6 +27,7 @@ riscv_tester.py — Тестер RISC-V процессора через UART
 """
 
 import argparse
+import msvcrt
 import os
 import struct
 import sys
@@ -648,6 +649,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     g = p.add_argument_group("Захват вывода")
     g.add_argument("--capture", action="store_true")
+    g.add_argument("--monitor", action="store_true",
+                   help="Бесконечный захват UART, выход по ESC")
     g.add_argument("--idle-timeout",  type=float, default=2.0, metavar="SEC")
     g.add_argument("--total-timeout", type=float, default=30.0, metavar="SEC")
 
@@ -704,6 +707,10 @@ def _run(dbg: RiscVDebug, args):
     if args.capture:
         any_action = True
         _cmd_capture(dbg, args.idle_timeout, args.total_timeout)
+
+    if args.monitor:
+        any_action = True
+        _cmd_monitor(dbg)
 
     if args.upload:
         any_action = True
@@ -766,6 +773,26 @@ def _cmd_capture(dbg: RiscVDebug, idle: float, total: float):
     for line in text.splitlines():
         print(f"  {line}")
     print("  " + "-" * 60)
+
+
+def _cmd_monitor(dbg: RiscVDebug):
+    print(f"\n{C.BOLD}=== Монитор UART (ESC для выхода) ==={C.RESET}\n")
+    try:
+        while True:
+            # Check for ESC key (Windows)
+            if msvcrt.kbhit():
+                key = msvcrt.getch()
+                if key == b'\x1b':  # ESC
+                    break
+            try:
+                b = dbg._cpu_queue.get(timeout=0.05)
+                ch = chr(b) if 32 <= b < 127 or b in (10, 13, 9) else f"\\x{b:02x}"
+                print(ch, end="", flush=True)
+            except Exception:
+                continue
+    except KeyboardInterrupt:
+        pass
+    print(f"\n\n{C.BOLD}=== Монитор остановлен ==={C.RESET}")
 
 
 def _cmd_upload(dbg: RiscVDebug, hex_path: str, idle: float, total: float):

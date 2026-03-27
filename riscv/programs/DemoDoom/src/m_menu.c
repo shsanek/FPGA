@@ -1362,7 +1362,7 @@ boolean M_Responder (event_t* ev)
 
     ch = -1;
 
-    printf("M_Responder\n");
+
 
     if (ev->type == ev_joystick && joywait < I_GetTime())
     {

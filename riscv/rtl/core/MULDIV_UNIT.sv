@@ -13,6 +13,7 @@ module MULDIV_UNIT (
     input  wire        reset,
 
     input  wire        start,      // запуск операции
+    input  wire        ack,        // подтверждение: CPU забрал результат (done сбрасывается)
     input  wire [2:0]  funct3,     // тип операции (0-7)
     input  wire [31:0] a,          // rs1
     input  wire [31:0] b,          // rs2
@@ -79,8 +80,8 @@ module MULDIV_UNIT (
                 // --------------------------------------------------------
                 S_IDLE: begin
                     if (done) begin
-                        // Удерживаем done пока start не упадёт
-                        if (!start)
+                        // Удерживаем done пока CPU не подтвердит (ack)
+                        if (ack)
                             done <= 1'b0;
                     end else if (start) begin
                         op_r <= funct3;

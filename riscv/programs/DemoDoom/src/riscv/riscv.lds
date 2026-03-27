@@ -1,6 +1,6 @@
 MEMORY
 {
-    RAM (xrw) : ORIGIN = 0x0, LENGTH = 0x1800000  /* 24 МБ */
+    RAM (xrw) : ORIGIN = 0x0, LENGTH = 0x1800000  /* 24 МБ (DDR 256MB, bus 29-bit) */
 }
 ENTRY(_start)
 SECTIONS {

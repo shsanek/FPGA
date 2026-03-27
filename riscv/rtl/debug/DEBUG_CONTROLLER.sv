@@ -17,7 +17,7 @@
 // При DEBUG_ENABLE=0 модуль синтезируется в заглушку.
 module DEBUG_CONTROLLER #(
     parameter DEBUG_ENABLE  = 1,
-    parameter ADDRESS_SIZE  = 28,
+    parameter ADDRESS_SIZE  = 29,
     parameter DATA_SIZE     = 32,
     parameter MASK_SIZE     = DATA_SIZE / 8
 )(

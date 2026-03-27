@@ -231,7 +231,7 @@ void D_Display (void)
     switch (gamestate)
     {
       case GS_LEVEL:
-        printf("GS_LEVEL:\n");
+
         if (!gametic)
             break;
         if (automapactive)
@@ -259,16 +259,16 @@ void D_Display (void)
 
     // draw buffered stuff to screen
     I_UpdateNoBlit ();
-    printf("I_UpdateNoBlit\n");
+
 
     // draw the view directly
     if (gamestate == GS_LEVEL && !automapactive && gametic)
         R_RenderPlayerView (&players[displayplayer]);
-    printf("R_RenderPlayerView\n");
+
 
     if (gamestate == GS_LEVEL && gametic)
         HU_Drawer ();
-    printf("HU_Drawer\n");
+
     // clean up border stuff
     if (gamestate != oldgamestate && gamestate != GS_LEVEL)
         I_SetPalette (W_CacheLumpName ("PLAYPAL",PU_CACHE));
@@ -279,7 +279,7 @@ void D_Display (void)
         viewactivestate = false;        // view was not active
         R_FillBackScreen ();    // draw the pattern into the back screen
     }
-    printf("R_FillBackScreen\n");
+
 
     // see if the border needs to be updated to the screen
     if (gamestate == GS_LEVEL && !automapactive && scaledviewwidth != 320)
@@ -293,7 +293,7 @@ void D_Display (void)
         }
 
     }
-    printf("R_DrawViewBorder\n");
+
 
     menuactivestate = menuactive;
     viewactivestate = viewactive;
@@ -311,19 +311,18 @@ void D_Display (void)
                           y,0,W_CacheLumpName ("M_PAUSE", PU_CACHE));
     }
 
-    printf("V_DrawPatchDirect\n");
 
     // menus go directly to the screen
     M_Drawer ();          // menu is drawn even on top of everything
-    printf("M_Drawer\n");
+
 
     NetUpdate ();         // send out any new accumulation
-    printf("NetUpdate\n");
+
 
 
     // normal update
     I_FinishUpdate ();              // page flip or blit buffer
-    printf("I_FinishUpdate\n");
+
 }
 
 
@@ -335,16 +334,16 @@ void D_DoomLoop (void)
 {
     I_InitGraphics ();
     
-    printf("Did init graphics\n");
+
 
     while (1)
     {
-        printf("Start loop\n");
+
         I_StartFrame ();
         TryRunTics ();
-        printf("Start update display\n");
+
         D_Display ();
-        printf("End update display\n");
+
     }
 }
 

@@ -1,17 +1,17 @@
 // Шина периферийных устройств.
 //
-// Маршрутизация по биту 27 адреса:
-//   address[27] == 0  →  MEMORY_CONTROLLER  (ОЗУ, кэш)
-//   address[27] == 1  →  I/O устройства
+// Маршрутизация по биту 28 адреса (29-битная шина):
+//   address[28] == 0  →  MEMORY_CONTROLLER  (DDR3 256 MB)
+//   address[28] == 1  →  I/O устройства
 //
 // I/O подразбивка по битам [17:16]:
-//   00 → UART_IO_DEVICE   (0x8000000)
-//   01 → OLED_IO_DEVICE   (0x8010000)
-//   10 → SD_IO_DEVICE     (0x8020000)
-//   11 → (свободно)
+//   00 → UART_IO_DEVICE   (0x10000000)
+//   01 → OLED_IO_DEVICE   (0x10010000)
+//   10 → SD_IO_DEVICE     (0x10020000)
+//   11 → TIMER_DEVICE     (0x10030000)
 module PERIPHERAL_BUS (
-    // Интерфейс с CPU_DATA_ADAPTER (upstream)
-    input  wire [27:0] address,
+    // Интерфейс с CPU (upstream) — 29-битная шина
+    input  wire [28:0] address,
     input  wire        read_trigger,
     input  wire        write_trigger,
     input  wire [31:0] write_value,
@@ -19,7 +19,7 @@ module PERIPHERAL_BUS (
     output wire [31:0] read_value,
     output wire        controller_ready,
 
-    // MEMORY_CONTROLLER (downstream)
+    // MEMORY_CONTROLLER (downstream) — 28-битный адрес (256 MB DDR)
     output wire [27:0] mc_address,
     output wire        mc_read_trigger,
     output wire        mc_write_trigger,
@@ -61,7 +61,7 @@ module PERIPHERAL_BUS (
     input  wire [31:0] timer_read_value,
     input  wire        timer_controller_ready
 );
-    wire io_sel   = address[27];
+    wire io_sel   = address[28];
     wire [1:0] io_dev = address[17:16];
 
     wire uart_sel  = io_sel & (io_dev == 2'b00);
@@ -70,35 +70,35 @@ module PERIPHERAL_BUS (
     wire timer_sel = io_sel & (io_dev == 2'b11);
 
     // --- MEMORY_CONTROLLER ---
-    assign mc_address       = address;
+    assign mc_address       = address[27:0];
     assign mc_read_trigger  = io_sel ? 1'b0 : read_trigger;
     assign mc_write_trigger = io_sel ? 1'b0 : write_trigger;
     assign mc_write_value   = write_value;
     assign mc_mask          = mask;
 
     // --- UART ---
-    assign io_address       = address;
+    assign io_address       = address[27:0];
     assign io_read_trigger  = uart_sel ? read_trigger  : 1'b0;
     assign io_write_trigger = uart_sel ? write_trigger : 1'b0;
     assign io_write_value   = write_value;
     assign io_mask          = mask;
 
     // --- OLED ---
-    assign oled_address       = address;
+    assign oled_address       = address[27:0];
     assign oled_read_trigger  = oled_sel ? read_trigger  : 1'b0;
     assign oled_write_trigger = oled_sel ? write_trigger : 1'b0;
     assign oled_write_value   = write_value;
     assign oled_mask          = mask;
 
     // --- SD ---
-    assign sd_address       = address;
+    assign sd_address       = address[27:0];
     assign sd_read_trigger  = sd_sel ? read_trigger  : 1'b0;
     assign sd_write_trigger = sd_sel ? write_trigger : 1'b0;
     assign sd_write_value   = write_value;
     assign sd_mask          = mask;
 
     // --- TIMER ---
-    assign timer_address      = address;
+    assign timer_address      = address[27:0];
     assign timer_read_trigger = timer_sel ? read_trigger : 1'b0;
 
     // --- Мультиплексирование ответа ---

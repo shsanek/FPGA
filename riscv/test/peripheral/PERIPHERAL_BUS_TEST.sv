@@ -6,11 +6,11 @@
 // и кормим cpu_rx_byte/cpu_rx_valid снаружи.
 //
 // Тесты:
-//   T1: WRITE TX  — CPU пишет 0x41 в TX (0x08000000), проверяем cpu_tx_valid=1
+//   T1: WRITE TX  — CPU пишет 0x41 в TX (0x10000000), проверяем cpu_tx_valid=1
 //   T2: READ STATUS — tx_ready=1, rx_avail=0 → 0x00000002
 //   T3: RX от DEBUG — инжектируем cpu_rx_valid, читаем STATUS (rx_avail=1)
-//   T4: READ RX_DATA — 0x08000004 → принятый байт
-//   T5: WRITE к MC — адрес 0x00000100 (bit27=0) → идёт в MC, не в I/O
+//   T4: READ RX_DATA — 0x10000004 → принятый байт
+//   T5: WRITE к MC — адрес 0x00000100 (bit28=0) → идёт в MC, не в I/O
 //   T6: READ от MC  — mc_read_value = 0xDEAD_CAFE
 module PERIPHERAL_BUS_TEST();
     logic clk = 0;
@@ -22,7 +22,7 @@ module PERIPHERAL_BUS_TEST();
     // ---------------------------------------------------------------
     // Сигналы между "адаптером" и PERIPHERAL_BUS
     // ---------------------------------------------------------------
-    logic [27:0] addr;
+    logic [28:0] addr;
     logic        rd_trig, wr_trig;
     logic [31:0] wdata;
     logic [3:0]  wmask;
@@ -110,7 +110,7 @@ module PERIPHERAL_BUS_TEST();
     // Вспомогательные задачи
     // ---------------------------------------------------------------
     // Эмуляция одного такта S_TRIG адаптера
-    task bus_write(input [27:0] a, input [31:0] d, input [3:0] m);
+    task bus_write(input [28:0] a, input [31:0] d, input [3:0] m);
         @(posedge clk); #1;
         addr    = a;
         wdata   = d;
@@ -121,7 +121,7 @@ module PERIPHERAL_BUS_TEST();
         wr_trig = 0;
     endtask
 
-    task bus_read(input [27:0] a, output [31:0] d);
+    task bus_read(input [28:0] a, output [31:0] d);
         @(posedge clk); #1;
         addr    = a;
         rd_trig = 1;
@@ -148,9 +148,9 @@ module PERIPHERAL_BUS_TEST();
         @(posedge clk); #1;
 
         // -------------------------------------------------------
-        // T1: WRITE TX (addr = 0x0800_0000 → bit27=1, reg_sel=0)
+        // T1: WRITE TX (addr = 0x1000_0000 → bit28=1, reg_sel=0)
         // -------------------------------------------------------
-        bus_write(28'h8000000, 32'h00000041, 4'hF);  // 'A'
+        bus_write(29'h10000000, 32'h00000041, 4'hF);  // 'A'
         // cpu_tx_valid должен был быть 1 в такте write_trigger
         // Проверяем что cpu_tx_byte = 0x41 (зафиксировано в tx_data_r)
         if (io_dev.tx_data_r !== 8'h41) begin
@@ -159,10 +159,10 @@ module PERIPHERAL_BUS_TEST();
         end
 
         // -------------------------------------------------------
-        // T2: READ STATUS (addr = 0x0800_0008 → reg_sel=2)
+        // T2: READ STATUS (addr = 0x1000_0008 → reg_sel=2)
         // tx_ready=1, rx_avail=0 → expected 0x00000002
         // -------------------------------------------------------
-        bus_read(28'h8000008, read_result);
+        bus_read(29'h10000008, read_result);
         if (read_result !== 32'h0000_0002) begin
             $display("FAIL T2: STATUS = 0x%08X, expected 0x00000002", read_result);
             error = error + 1;
@@ -178,16 +178,16 @@ module PERIPHERAL_BUS_TEST();
         cpu_rx_valid = 0;
 
         // Читаем STATUS: rx_avail=1, tx_ready=1 → 0x00000003
-        bus_read(28'h8000008, read_result);
+        bus_read(29'h10000008, read_result);
         if (read_result !== 32'h0000_0003) begin
             $display("FAIL T3: STATUS after RX = 0x%08X, expected 0x00000003", read_result);
             error = error + 1;
         end
 
         // -------------------------------------------------------
-        // T4: READ RX_DATA (addr = 0x0800_0004 → reg_sel=1)
+        // T4: READ RX_DATA (addr = 0x1000_0004 → reg_sel=1)
         // -------------------------------------------------------
-        bus_read(28'h8000004, read_result);
+        bus_read(29'h10000004, read_result);
         if (read_result[7:0] !== 8'hBB) begin
             $display("FAIL T4: RX_DATA = 0x%02X, expected 0xBB", read_result[7:0]);
             error = error + 1;
@@ -200,9 +200,9 @@ module PERIPHERAL_BUS_TEST();
         end
 
         // -------------------------------------------------------
-        // T5: WRITE к MC-адресу (bit27=0) — должен идти в MC, не в I/O
+        // T5: WRITE к MC-адресу (bit28=0) — должен идти в MC, не в I/O
         // -------------------------------------------------------
-        bus_write(28'h0000100, 32'h12345678, 4'hF);
+        bus_write(29'h0000100, 32'h12345678, 4'hF);
         // Проверяем что mc_wr_w был 1 в тот такт и io_wr_w был 0
         // Косвенно: tx_data_r не изменился (остался 0x41)
         if (io_dev.tx_data_r !== 8'h41) begin
@@ -213,7 +213,7 @@ module PERIPHERAL_BUS_TEST();
         // -------------------------------------------------------
         // T6: READ от MC-адреса
         // -------------------------------------------------------
-        bus_read(28'h0000100, read_result);
+        bus_read(29'h0000100, read_result);
         if (read_result !== 32'hDEAD_CAFE) begin
             $display("FAIL T6: MC read_value = 0x%08X, expected 0xDEADCAFE", read_result);
             error = error + 1;

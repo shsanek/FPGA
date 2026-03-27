@@ -2,7 +2,7 @@
 #define SDCARD_H
 
 /* SD card + FAT32 API.
- * SD через SD_IO_DEVICE (0x08020000), SPI mode.
+ * SD через SD_IO_DEVICE (0x10020000), SPI mode.
  * FAT32: open/read/close + write (TODO).
  */
 

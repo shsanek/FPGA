@@ -3,7 +3,7 @@
 // Состав:
 //   CPU_SINGLE_CYCLE   — однотактовый RV32I процессор
 //   CPU_DATA_ADAPTER   — FSM-адаптер: CPU data port ↔ PERIPHERAL_BUS
-//   PERIPHERAL_BUS     — маршрутизатор (addr[27]=0→MC, addr[27]=1→I/O)
+//   PERIPHERAL_BUS     — маршрутизатор (addr[28]=0→MC, addr[28]=1→I/O)
 //   MEMORY_CONTROLLER  — кэш 4×CHUNK (128 бит), интерфейс с RAM
 //   RAM_CONTROLLER     — MIG7-интерфейс (DDR SDRAM)
 //   UART_IO_DEVICE     — memory-mapped UART регистры (TX/RX/STATUS)
@@ -12,27 +12,27 @@
 //   I_O_OUTPUT_CONTROLLER — физический UART TX (byte → serial)
 //   Instruction ROM    — 32-битный ROM размером ROM_DEPTH слов (NOP по умолчанию)
 //
-// Адресная карта (28-битный адрес из CPU_DATA_ADAPTER):
-//   0x000_0000 – 0x7FF_FFFF  →  MEMORY_CONTROLLER (ОЗУ)
-//   0x800_0000 – 0x800_FFFF  →  UART_IO_DEVICE
-//     0x800_0000 : TX_DATA   (W/R)
-//     0x800_0004 : RX_DATA   (R)
-//     0x800_0008 : STATUS    (R) {…, tx_ready, rx_avail}
-//   0x801_0000 – 0x801_FFFF  →  OLED_IO_DEVICE (PmodOLEDrgb SSD1331)
-//     0x801_0000 : DATA      (W)   — SPI byte
-//     0x801_0004 : CONTROL   (W/R) — {PMODEN, VCCEN, RES, DC, CS}
-//     0x801_0008 : STATUS    (R)   — {…, spi_busy, 0}
-//     0x801_000C : DIVIDER   (W/R) — SPI clock divider
-//   0x802_0000 – 0x802_FFFF  →  SD_IO_DEVICE (PmodMicroSD, SPI mode)
-//     0x802_0000 : DATA      (W/R) — SPI byte TX/RX (full-duplex)
-//     0x802_0004 : CONTROL   (W/R) — {CS}
-//     0x802_0008 : STATUS    (R)   — {…, card_detect, spi_busy, 0}
-//     0x802_000C : DIVIDER   (W/R) — SPI clock divider
-//   0x803_0000 – 0x803_FFFF  →  TIMER_DEVICE (счётчик тактов и времени)
-//     0x803_0000 : CYCLE_LO  (R)   — нижние 32 бита счётчика тактов (64-бит)
-//     0x803_0004 : CYCLE_HI  (R)   — верхние 32 бита (snapshot при чтении LO)
-//     0x803_0008 : TIME_MS   (R)   — миллисекунды с момента reset (32-бит, ~49 дней)
-//     0x803_000C : TIME_US   (R)   — микросекунды с момента reset (32-бит, ~71 мин)
+// Адресная карта (29-битная шина, addr[28] — I/O select):
+//   0x0000_0000 – 0x0FFF_FFFF  →  MEMORY_CONTROLLER (DDR3 256 MB)
+//   0x1000_0000 – 0x1000_FFFF  →  UART_IO_DEVICE
+//     0x1000_0000 : TX_DATA   (W/R)
+//     0x1000_0004 : RX_DATA   (R)
+//     0x1000_0008 : STATUS    (R) {…, tx_ready, rx_avail}
+//   0x1001_0000 – 0x1001_FFFF  →  OLED_IO_DEVICE (PmodOLEDrgb SSD1331)
+//     0x1001_0000 : DATA      (W)   — SPI byte
+//     0x1001_0004 : CONTROL   (W/R) — {PMODEN, VCCEN, RES, DC, CS}
+//     0x1001_0008 : STATUS    (R)   — {…, spi_busy, 0}
+//     0x1001_000C : DIVIDER   (W/R) — SPI clock divider
+//   0x1002_0000 – 0x1002_FFFF  →  SD_IO_DEVICE (PmodMicroSD, SPI mode)
+//     0x1002_0000 : DATA      (W/R) — SPI byte TX/RX (full-duplex)
+//     0x1002_0004 : CONTROL   (W/R) — {CS}
+//     0x1002_0008 : STATUS    (R)   — {…, card_detect, spi_busy, 0}
+//     0x1002_000C : DIVIDER   (W/R) — SPI clock divider
+//   0x1003_0000 – 0x1003_FFFF  →  TIMER_DEVICE (счётчик тактов и времени)
+//     0x1003_0000 : CYCLE_LO  (R)   — нижние 32 бита счётчика тактов (64-бит)
+//     0x1003_0004 : CYCLE_HI  (R)   — верхние 32 бита (snapshot при чтении LO)
+//     0x1003_0008 : TIME_MS   (R)   — миллисекунды с момента reset (32-бит, ~49 дней)
+//     0x1003_000C : TIME_US   (R)   — микросекунды с момента reset (32-бит, ~71 мин)
 //
 // Синтез: mig_* порты подключаются к Xilinx MIG7 IP core.
 // Симуляция: подключить MIG_MODEL к mig_* портам в тестбенче.
@@ -114,7 +114,7 @@ module TOP #(
     // ---------------------------------------------------------------
     // CPU_PIPELINE_ADAPTER outputs (before debug mux)
     // ---------------------------------------------------------------
-    wire [27:0] pipe_addr;
+    wire [28:0] pipe_addr;
     wire        pipe_rd, pipe_wr;
     wire [31:0] pipe_wr_data;
     wire [3:0]  pipe_mask;
@@ -122,7 +122,7 @@ module TOP #(
     // ---------------------------------------------------------------
     // Bus (after debug mux) ↔ PERIPHERAL_BUS
     // ---------------------------------------------------------------
-    wire [27:0] bus_addr;
+    wire [28:0] bus_addr;
     wire        bus_rd, bus_wr;
     wire [31:0] bus_wr_data, bus_rd_data;
     wire [3:0]  bus_mask;
@@ -200,7 +200,7 @@ module TOP #(
     // ---------------------------------------------------------------
     // DEBUG_CONTROLLER memory port (muxed with CPU onto bus)
     // ---------------------------------------------------------------
-    wire [ADDRESS_SIZE-1:0] mc_dbg_addr;
+    wire [28:0] mc_dbg_addr;
     wire        mc_dbg_rd, mc_dbg_wr;
     wire [31:0] mc_dbg_wr_data, mc_dbg_rd_data;
     wire        mc_dbg_ready;
@@ -448,8 +448,8 @@ module TOP #(
     // Priority: flash_loader (boot) > debug > pipeline.
     // flash_active=1 only during boot. After DONE, flash is transparent.
 
-    assign bus_addr    = flash_active    ? mc_flash_addr[27:0]   :
-                         pipeline_paused ? mc_dbg_addr[27:0]     : pipe_addr;
+    assign bus_addr    = flash_active    ? {1'b0, mc_flash_addr[27:0]} :
+                         pipeline_paused ? mc_dbg_addr              : pipe_addr;
     assign bus_rd      = flash_active    ? 1'b0                  :
                          pipeline_paused ? mc_dbg_rd             : pipe_rd;
     assign bus_wr      = flash_active    ? mc_flash_wr           :

@@ -54,7 +54,7 @@ module CPU_MEMORY_INTEGRATION_TEST();
     wire [3:0]  mem_byte_mask;
     wire        mem_stall;
 
-    wire [27:0] mc_address;
+    wire [28:0] mc_address;
     wire        mc_read_trigger, mc_write_trigger;
     wire [31:0] mc_write_value, mc_read_value;
     wire [3:0]  mc_mask;
@@ -138,7 +138,7 @@ module CPU_MEMORY_INTEGRATION_TEST();
         .ram_read_address   (ram_read_address),
         .ram_read_value_ready(ram_read_value_ready),
         .controller_ready   (mc_controller_ready),
-        .address            (mc_address),
+        .address            (mc_address[27:0]),
         .mask               (mc_mask),
         .write_trigger      (mc_write_trigger),
         .write_value        (mc_write_value),
