@@ -14,9 +14,9 @@ FPGA hardware design project implementing two subsystems in SystemVerilog:
 ## Technology Stack
 
 - **Language:** SystemVerilog (IEEE 1800-2012)
-- **Simulator:** `iverilog` + `vvp` → `/c/iverilog/bin/iverilog`, `/c/iverilog/bin/vvp`
-- **Synthesis:** Vivado 2025.2 → `/c/AMDDesignTools/2025.2/Vivado/bin/vivado.bat`
-- **RISC-V GCC:** xpack riscv-none-elf-gcc 14.2.0 → `/c/riscv-gcc/xpack-riscv-none-elf-gcc-14.2.0-3/bin/riscv-none-elf-gcc`
+- **Simulator:** `iverilog` + `vvp`
+- **Synthesis:** Vivado 2025.2
+- **RISC-V GCC:** xpack riscv-none-elf-gcc 14.2.0
 - **Waveforms:** VCD files (excluded from git)
 - **Board:** Arty A7-100T, UART на COM4 (115200 baud)
 
@@ -121,7 +121,7 @@ Implements all 8 RISC-V R-type operations. Dispatch is based on `funct3`; `funct
 - **OUTPUT_CONTROLLER** — parallel-to-serial UART transmitter
 - **VALUE_STORAGE** — 4-button / 4-LED state machine buffer
 
-### `riscv/MEMORY/` (Memory subsystem — branch `f/cash`)
+### `riscv/MEMORY/` (Memory subsystem)
 
 Cache hierarchy between the processor and DDR RAM:
 

@@ -121,8 +121,8 @@ UART_IO_DEVICE регистры (base = 0x0800_0000):
   - [x] `tests/programs/sum/` — Сумма 1..100=5050 (700 cycles)
   - [x] Toolchain: riscv64-elf-gcc -march=rv32i -mabi=ilp32
   - [x] Bug fix: UART_IO_DEVICE cpu_tx_byte = write_value (не tx_data_r)
-- [ ] Синтез под Xilinx (constraints, pin mapping)
-- [ ] Тест на железе: загрузить программу через UART, выполнить, прочитать результат
+- [x] Синтез под Xilinx (constraints, pin mapping)
+- [x] Тест на железе: загрузить программу через UART, выполнить, прочитать результат
 
 ### Заметки по симуляции
 - `I_O_INPUT_CONTROLLER` переворачивает биты (shift-left аккумуляция): чтобы

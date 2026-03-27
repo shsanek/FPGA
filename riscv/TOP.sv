@@ -76,7 +76,13 @@ module TOP #(
     output wire        sd_mosi,
     input  wire        sd_miso,
     output wire        sd_sck,
-    input  wire        sd_cd_n       // card detect (0=inserted)
+    input  wire        sd_cd_n,      // card detect (0=inserted)
+
+    // QSPI Flash (onboard, for FLASH_LOADER)
+    output wire        flash_cs_n,
+    output wire        flash_mosi,
+    input  wire        flash_miso,
+    output wire        flash_sck
 );
     localparam MASK_SIZE  = DATA_SIZE / 8;
     localparam BIT_PERIOD = CLOCK_FREQ / BAUD_RATE;
@@ -182,6 +188,19 @@ module TOP #(
     wire        cpu_rx_valid;
     wire [7:0]  cpu_tx_byte;
     wire        cpu_tx_valid, cpu_tx_ready;
+
+    // ---------------------------------------------------------------
+    // FLASH_LOADER (boot from QSPI flash)
+    // ---------------------------------------------------------------
+    wire        flash_bus_request;
+    wire        flash_active;
+    wire [ADDRESS_SIZE-1:0] mc_flash_addr;
+    wire        mc_flash_wr;
+    wire [31:0] mc_flash_wr_data;
+    wire [MASK_SIZE-1:0] mc_flash_mask;
+    wire        mc_flash_ready;
+    wire        flash_set_pc;
+    wire [31:0] flash_new_pc;
 
     // ---------------------------------------------------------------
     // UART byte interface
@@ -353,6 +372,10 @@ module TOP #(
     );
 
     // --- CPU ---
+    // set_pc mux: flash_loader has priority during boot
+    wire        combined_set_pc = flash_set_pc | dbg_set_pc;
+    wire [31:0] combined_new_pc = flash_set_pc ? flash_new_pc : dbg_new_pc;
+
     CPU_SINGLE_CYCLE #(.DEBUG_ENABLE(DEBUG_ENABLE)) cpu (
         .clk               (clk),
         .reset             (reset),
@@ -366,8 +389,8 @@ module TOP #(
         .mem_read_data     (cpu_mem_read_data),
         .mem_stall         (cpu_mem_stall),
         .instr_stall       (instr_stall_w),
-        .dbg_set_pc        (dbg_set_pc),
-        .dbg_new_pc        (dbg_new_pc),
+        .dbg_set_pc        (combined_set_pc),
+        .dbg_new_pc        (combined_new_pc),
         .dbg_is_halted     (dbg_is_halted),
         .dbg_current_pc    (dbg_current_pc),
         .dbg_current_instr (dbg_current_instr)
@@ -394,23 +417,30 @@ module TOP #(
         .mc_mask           (pipe_mask),
         .mc_read_value     (bus_rd_data),
         .mc_controller_ready(bus_ready),
-        .flush             (dbg_set_pc),
-        .pause             (dbg_bus_request),
+        .flush             (combined_set_pc),
+        .pause             (dbg_bus_request | flash_bus_request),
         .paused            (pipeline_paused),
         .step              (dbg_step_pipeline)
     );
 
-    // --- DEBUG/CPU BUS MUX ---
-    // When pipeline paused, debug owns the bus. Simple combinational mux.
+    // --- FLASH_LOADER / DEBUG / CPU BUS MUX ---
+    // Priority: flash_loader (boot) > debug > pipeline.
+    // flash_active=1 only during boot. After DONE, flash is transparent.
 
-    assign bus_addr    = pipeline_paused ? mc_dbg_addr[27:0]     : pipe_addr;
-    assign bus_rd      = pipeline_paused ? mc_dbg_rd             : pipe_rd;
-    assign bus_wr      = pipeline_paused ? mc_dbg_wr             : pipe_wr;
-    assign bus_wr_data = pipeline_paused ? mc_dbg_wr_data        : pipe_wr_data;
-    assign bus_mask    = pipeline_paused ? {MASK_SIZE{1'b1}}     : pipe_mask;
+    assign bus_addr    = flash_active    ? mc_flash_addr[27:0]   :
+                         pipeline_paused ? mc_dbg_addr[27:0]     : pipe_addr;
+    assign bus_rd      = flash_active    ? 1'b0                  :
+                         pipeline_paused ? mc_dbg_rd             : pipe_rd;
+    assign bus_wr      = flash_active    ? mc_flash_wr           :
+                         pipeline_paused ? mc_dbg_wr             : pipe_wr;
+    assign bus_wr_data = flash_active    ? mc_flash_wr_data      :
+                         pipeline_paused ? mc_dbg_wr_data        : pipe_wr_data;
+    assign bus_mask    = flash_active    ? mc_flash_mask          :
+                         pipeline_paused ? {MASK_SIZE{1'b1}}     : pipe_mask;
 
     assign mc_dbg_rd_data = bus_rd_data;
-    assign mc_dbg_ready   = pipeline_paused ? bus_ready : 1'b0;
+    assign mc_dbg_ready   = (!flash_active & pipeline_paused) ? bus_ready : 1'b0;
+    assign mc_flash_ready = flash_active ? bus_ready : 1'b0;
 
     // --- PERIPHERAL_BUS ---
     PERIPHERAL_BUS pbus (
@@ -509,6 +539,30 @@ module TOP #(
         .sd_miso           (sd_miso),
         .sd_cs_n           (sd_cs_n),
         .sd_cd_n           (sd_cd_n)
+    );
+
+    // --- FLASH_LOADER (boot from QSPI flash) ---
+    FLASH_LOADER #(
+        .ADDRESS_SIZE (ADDRESS_SIZE),
+        .DATA_SIZE    (DATA_SIZE)
+    ) flash_loader (
+        .clk              (clk),
+        .reset            (reset),
+        .ddr_ready        (mig_init_calib_complete),
+        .bus_request      (flash_bus_request),
+        .bus_granted      (pipeline_paused & flash_active),
+        .mc_address       (mc_flash_addr),
+        .mc_write_trigger (mc_flash_wr),
+        .mc_write_data    (mc_flash_wr_data),
+        .mc_write_mask    (mc_flash_mask),
+        .mc_ready         (mc_flash_ready),
+        .set_pc           (flash_set_pc),
+        .new_pc           (flash_new_pc),
+        .flash_cs_n       (flash_cs_n),
+        .flash_sck        (flash_sck),
+        .flash_mosi       (flash_mosi),
+        .flash_miso       (flash_miso),
+        .active           (flash_active)
     );
 
     // --- MEMORY_CONTROLLER ---

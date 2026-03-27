@@ -57,8 +57,16 @@ module FPGA_TOP (
     output wire        jc_sd_sck,      // JC[3] pin 4
     // JC[4] pin 7 = DAT1 (unused in SPI)
     // JC[5] pin 8 = DAT2 (unused in SPI)
-    input  wire        jc_sd_cd_n      // JC[6] pin 9  card detect
+    input  wire        jc_sd_cd_n,     // JC[6] pin 9  card detect
     // JC[7] pin 10 = NC
+
+    // Onboard QSPI Flash (for FLASH_LOADER boot)
+    output wire        flash_cs_n,     // L13 (FCS_B)
+    output wire        flash_mosi,     // K17 (DQ0)
+    input  wire        flash_miso,     // K18 (DQ1)
+    output wire        flash_sck,      // L16
+    output wire        flash_wp_n,     // L14 (DQ2, tie high)
+    output wire        flash_hold_n    // M14 (DQ3, tie high)
 );
 
     // ---------------------------------------------------------------
@@ -162,6 +170,10 @@ module FPGA_TOP (
     // ---------------------------------------------------------------
     wire sys_reset = ~clk_wiz_locked;
 
+    // QSPI flash WP# and HOLD# — inactive (active low)
+    assign flash_wp_n   = 1'b1;
+    assign flash_hold_n = 1'b1;
+
     // ---------------------------------------------------------------
     // TOP (RISC-V system)
     // Two clock domains:
@@ -212,7 +224,13 @@ module FPGA_TOP (
         .sd_mosi                (jc_sd_mosi),
         .sd_miso                (jc_sd_miso),
         .sd_sck                 (jc_sd_sck),
-        .sd_cd_n                (jc_sd_cd_n)
+        .sd_cd_n                (jc_sd_cd_n),
+
+        // QSPI Flash
+        .flash_cs_n             (flash_cs_n),
+        .flash_mosi             (flash_mosi),
+        .flash_miso             (flash_miso),
+        .flash_sck              (flash_sck)
     );
 
     // ---------------------------------------------------------------
