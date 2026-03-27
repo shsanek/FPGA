@@ -43,7 +43,11 @@ static void notaken(void) { cnt_notaken++; }
         CHECK(cnt_notaken == 1, name " not-taken"); \
     } while(0)
 
-int main(void) {
+int test_branch_run(void);
+#ifndef NO_MAIN
+int main(void) { return test_branch_run(); }
+#endif
+int test_branch_run(void) {
     volatile int  sa = 0, sb = 0;
     volatile unsigned int ua = 0, ub = 0;
 

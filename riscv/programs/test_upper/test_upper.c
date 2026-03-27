@@ -42,7 +42,11 @@ static unsigned int load_tricky_2(void) { return 0x12345800u; }
 __attribute__((noinline))
 static unsigned int load_tricky_3(void) { return 0xFFFFFFFFu; }
 
-int main(void) {
+int test_upper_run(void);
+#ifndef NO_MAIN
+int main(void) { return test_upper_run(); }
+#endif
+int test_upper_run(void) {
     /* ================================================================== */
     /* Тест 1: LUI — чистые 20-битные верхние части                       */
     /* ================================================================== */

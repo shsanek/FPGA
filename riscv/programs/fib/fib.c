@@ -5,7 +5,11 @@ static int fib(int n) {
     return fib(n - 1) + fib(n - 2);
 }
 
-int main(void) {
+int fib_run(void);
+#ifndef NO_MAIN
+int main(void) { return fib_run(); }
+#endif
+int fib_run(void) {
     for (int i = 0; i < 10; i++) {
         print_int(fib(i));
         putchar('\n');

@@ -3,6 +3,9 @@
  * UART output → UART_IO_DEVICE TX_DATA (0x08000000)
  */
 
+/* g_failed — используется check.h макросами для отслеживания ошибок */
+int g_failed = 0;
+
 #define UART_TX  ((volatile unsigned int *)0x08000000U)
 #define UART_STS ((volatile unsigned int *)0x08000008U)
 

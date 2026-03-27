@@ -18,7 +18,7 @@ LDLIBS   := -lgcc
 
 RUNTIME  := $(COMMON)/crt0.s $(COMMON)/runtime.c
 
-PROGRAMS := $(sort $(filter-out common/,$(dir $(wildcard */))))
+PROGRAMS := $(sort $(filter-out common/ boot_tests/,$(dir $(wildcard */))))
 HEXFILES := $(patsubst %/,%/program.hex,$(PROGRAMS))
 
 .PHONY: all clean

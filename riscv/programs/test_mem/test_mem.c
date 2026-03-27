@@ -28,7 +28,11 @@ static volatile unsigned char buf[64];
 #define BP(off)  ((volatile unsigned char  *)(buf + (off)))
 #define SBP(off) ((volatile signed char    *)(buf + (off)))
 
-int main(void) {
+int test_mem_run(void);
+#ifndef NO_MAIN
+int main(void) { return test_mem_run(); }
+#endif
+int test_mem_run(void) {
 
     /* ================================================================== */
     /* SW + LW                                                             */

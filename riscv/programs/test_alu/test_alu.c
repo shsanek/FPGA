@@ -13,7 +13,11 @@
 __attribute__((noinline)) static int       I(int x)          { return x; }
 __attribute__((noinline)) static unsigned  U(unsigned int x)  { return x; }
 
-int main(void) {
+int test_alu_run(void);
+#ifndef NO_MAIN
+int main(void) { return test_alu_run(); }
+#endif
+int test_alu_run(void) {
     int       a, b;
     unsigned  ua, ub;
 

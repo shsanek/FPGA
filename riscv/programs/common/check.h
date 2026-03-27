@@ -1,7 +1,7 @@
 #pragma once
 #include "runtime.h"
 
-static int g_failed = 0;
+extern int g_failed;
 
 static void chk_fail(const char *msg) {
     puts(msg);

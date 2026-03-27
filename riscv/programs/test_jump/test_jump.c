@@ -65,7 +65,11 @@ static int call_table(int_fn tbl[], int idx, int arg) {
     return tbl[idx](arg);  /* JALR через load + register */
 }
 
-int main(void) {
+int test_jump_run(void);
+#ifndef NO_MAIN
+int main(void) { return test_jump_run(); }
+#endif
+int test_jump_run(void) {
     /* 1. Прямой вызов */
     CHECK_EQ(square(0),  0,  "JAL square(0)");
     CHECK_EQ(square(5),  25, "JAL square(5)");

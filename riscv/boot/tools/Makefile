@@ -50,15 +50,25 @@ stub.bin: stub.o
 stub_hdr: stub.bin
 	python3 prepend_header.py stub.bin stub_with_header.bin 0x00000000
 
-# ---- BOOT.BIN (for SD card, loads at 0x00000000 — standard linker.ld) ----
-# Usage: make boot BOOT_SRC=../../tests/programs/hello/hello.c
+# ---- BOOT.BIN (for SD card, loads at 0x00000000) ----
 
-BOOT_SRC ?= ../../programs/hello/hello.c
+PROG_DIR = ../../programs
+
+# boot_tests — все тесты в одном бинарнике
+BOOT_TESTS_SRC = $(PROG_DIR)/boot_tests/boot_tests.c \
+    $(PROG_DIR)/hello/hello.c \
+    $(PROG_DIR)/fib/fib.c \
+    $(PROG_DIR)/sum/sum.c \
+    $(PROG_DIR)/test_alu/test_alu.c \
+    $(PROG_DIR)/test_branch/test_branch.c \
+    $(PROG_DIR)/test_jump/test_jump.c \
+    $(PROG_DIR)/test_mem/test_mem.c \
+    $(PROG_DIR)/test_upper/test_upper.c
 
 boot: BOOT.BIN
 
-boot.elf: $(CRT0) $(RUNTIME) $(BOOT_SRC) $(COMMON)/linker.ld
-	$(CC) $(CFLAGS) -T $(COMMON)/linker.ld $(CRT0) $(RUNTIME) $(BOOT_SRC) -lgcc -o $@
+boot.elf: $(CRT0) $(RUNTIME) $(BOOT_TESTS_SRC) $(COMMON)/linker.ld
+	$(CC) $(CFLAGS) -DNO_MAIN -T $(COMMON)/linker.ld $(CRT0) $(RUNTIME) $(BOOT_TESTS_SRC) -lgcc -o $@
 
 BOOT.BIN: boot.elf
 	$(OBJCOPY) -O binary $< $@

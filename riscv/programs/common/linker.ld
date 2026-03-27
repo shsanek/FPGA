@@ -1,17 +1,16 @@
 /*
  * Linker script for bare-metal RV32I.
  *
- * Instruction memory (ROM): 0x00000000 – 0x00003FFF  (16 KB, 4096 words)
- * Data memory     (RAM):    0x00010000 – 0x0001FFFF  (64 KB via MEMORY_CONTROLLER)
+ * Code (ROM): 0x00000000 – 0x0000FFFF  (64 KB)
+ * Data (RAM): 0x00010000 – 0x0001FFFF  (64 KB via MEMORY_CONTROLLER)
  *
- * Note: instruction fetch and data access use separate CPU ports (Harvard-like),
- * so ROM and RAM address spaces are independent even though bit27=0 for both.
+ * Von Neumann — всё в DDR, разделение чисто логическое.
  */
 
 ENTRY(_start)
 
 MEMORY {
-    ROM (rx)  : ORIGIN = 0x00000000, LENGTH = 16K
+    ROM (rx)  : ORIGIN = 0x00000000, LENGTH = 64K
     RAM (rwx) : ORIGIN = 0x00010000, LENGTH = 64K
 }
 
