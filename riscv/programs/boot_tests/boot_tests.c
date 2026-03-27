@@ -23,6 +23,8 @@ int test_branch_run(void);
 int test_jump_run(void);
 int test_mem_run(void);
 int test_upper_run(void);
+int test_oled_run(void);
+int test_muldiv_run(void);
 
 static int run_suite(const char *name, int (*fn)(void)) {
     puts("--- ");
@@ -61,10 +63,16 @@ int main(void) {
     fail += run_suite("test_jump",   test_jump_run);
     fail += run_suite("test_mem",    test_mem_run);
     fail += run_suite("test_upper",  test_upper_run);
+    fail += run_suite("test_muldiv", test_muldiv_run);
+
+    /* Hardware тесты */
+    puts("--- test_oled");
+    test_oled_run();
+    puts("  OK");
 
     puts("");
     if (fail == 0) {
-        puts("=== ALL 8 TESTS PASSED ===");
+        puts("=== ALL 10 TESTS PASSED ===");
     } else {
         puts("=== FAILURES: ");
         print_int(fail);
