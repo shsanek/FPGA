@@ -651,6 +651,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--capture", action="store_true")
     g.add_argument("--monitor", action="store_true",
                    help="Бесконечный захват UART, выход по ESC")
+    g.add_argument("--keyboard", "-k", action="store_true",
+                   help="Интерактивный режим: клавиши → CPU INPUT, лог в реальном времени. ~ для выхода")
     g.add_argument("--idle-timeout",  type=float, default=2.0, metavar="SEC")
     g.add_argument("--total-timeout", type=float, default=30.0, metavar="SEC")
 
@@ -711,6 +713,10 @@ def _run(dbg: RiscVDebug, args):
     if args.monitor:
         any_action = True
         _cmd_monitor(dbg)
+
+    if args.keyboard:
+        any_action = True
+        _cmd_keyboard(dbg)
 
     if args.upload:
         any_action = True
@@ -793,6 +799,132 @@ def _cmd_monitor(dbg: RiscVDebug):
     except KeyboardInterrupt:
         pass
     print(f"\n\n{C.BOLD}=== Монитор остановлен ==={C.RESET}")
+
+
+def _cmd_keyboard(dbg: RiscVDebug):
+    """Интерактивный режим: все нажатия → CMD_INPUT (2 байта), CPU output → экран.
+
+    Каждое нажатие/отпускание отправляется как 2 байта:
+      Byte 1: VK code (Windows Virtual Key Code)
+      Byte 2: flags
+        bit 7 = 0 press, 1 release
+        bit 0 = Shift
+        bit 1 = Ctrl
+        bit 2 = Alt
+
+    Выход по ~ (тильда press).
+    Использует Win32 ReadConsoleInput для перехвата всех клавиш.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.windll.kernel32
+
+    STD_INPUT_HANDLE = ctypes.c_ulong(-10 & 0xFFFFFFFF)
+    KEY_EVENT = 0x0001
+    ENABLE_PROCESSED_INPUT = 0x0001
+    ENABLE_LINE_INPUT      = 0x0002
+    ENABLE_ECHO_INPUT      = 0x0004
+
+    # Modifier flags from dwControlKeyState
+    SHIFT_PRESSED     = 0x0010
+    LEFT_CTRL_PRESSED = 0x0008
+    RIGHT_CTRL_PRESSED = 0x0004
+    LEFT_ALT_PRESSED  = 0x0002
+    RIGHT_ALT_PRESSED = 0x0001
+
+    class KEY_EVENT_RECORD(ctypes.Structure):
+        _fields_ = [
+            ("bKeyDown", wintypes.BOOL),
+            ("wRepeatCount", wintypes.WORD),
+            ("wVirtualKeyCode", wintypes.WORD),
+            ("wVirtualScanCode", wintypes.WORD),
+            ("uChar", ctypes.c_wchar),
+            ("dwControlKeyState", wintypes.DWORD),
+        ]
+
+    class INPUT_RECORD_UNION(ctypes.Union):
+        _fields_ = [("KeyEvent", KEY_EVENT_RECORD)]
+
+    class INPUT_RECORD(ctypes.Structure):
+        _fields_ = [
+            ("EventType", wintypes.WORD),
+            ("_pad", wintypes.WORD),
+            ("Event", INPUT_RECORD_UNION),
+        ]
+
+    h_stdin = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+
+    # Сохраняем и меняем режим консоли (убираем echo, line input, processed input)
+    old_mode = wintypes.DWORD()
+    kernel32.GetConsoleMode(h_stdin, ctypes.byref(old_mode))
+    kernel32.SetConsoleMode(h_stdin, 0)
+
+    WAIT_OBJECT_0 = 0
+    WAIT_TIMEOUT  = 258
+
+    print(f"\n{C.BOLD}=== Клавиатурный режим (~ для выхода) ==={C.RESET}")
+    print(f"  Каждое нажатие → 2 байта: [VK_CODE] [FLAGS]")
+    print(f"  FLAGS: bit7=release, bit0=Shift, bit1=Ctrl, bit2=Alt")
+    print(f"  CPU output → экран в реальном времени\n")
+
+    record = INPUT_RECORD()
+    count  = wintypes.DWORD()
+
+    try:
+        while True:
+            # --- Вывод CPU output ---
+            while not dbg._cpu_queue.empty():
+                try:
+                    b = dbg._cpu_queue.get_nowait()
+                    ch = chr(b) if 32 <= b < 127 or b in (10, 13, 9) else f"\\x{b:02x}"
+                    print(ch, end="", flush=True)
+                except queue.Empty:
+                    break
+
+            # --- Чтение клавиши (таймаут 10 мс) ---
+            rc = kernel32.WaitForSingleObject(h_stdin, 10)
+            if rc == WAIT_OBJECT_0:
+                kernel32.ReadConsoleInputW(
+                    h_stdin, ctypes.byref(record), 1, ctypes.byref(count))
+
+                if record.EventType != KEY_EVENT:
+                    continue
+
+                ke = record.Event.KeyEvent
+                vk    = ke.wVirtualKeyCode & 0xFF
+                down  = bool(ke.bKeyDown)
+                state = ke.dwControlKeyState
+
+                # ~ press = выход
+                if down and ke.uChar == '~':
+                    break
+
+                # Собираем flags
+                flags = 0
+                if not down:
+                    flags |= 0x80  # bit 7 = release
+                if state & SHIFT_PRESSED:
+                    flags |= 0x01  # bit 0 = Shift
+                if state & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED):
+                    flags |= 0x02  # bit 1 = Ctrl
+                if state & (LEFT_ALT_PRESSED | RIGHT_ALT_PRESSED):
+                    flags |= 0x04  # bit 2 = Alt
+
+                # Отправляем 2 байта: VK code + flags
+                try:
+                    dbg.input_byte(vk)
+                    dbg.input_byte(flags)
+                except Exception as e:
+                    print(f"\n{C.RED}INPUT err: {e}{C.RESET}", flush=True)
+
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Восстанавливаем режим консоли
+        kernel32.SetConsoleMode(h_stdin, old_mode)
+
+    print(f"\n\n{C.BOLD}=== Клавиатурный режим завершён ==={C.RESET}")
 
 
 def _cmd_upload(dbg: RiscVDebug, hex_path: str, idle: float, total: float):
