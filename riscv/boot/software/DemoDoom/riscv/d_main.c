@@ -78,6 +78,7 @@ rcsid[] = "$Id: d_main.c,v 1.8 1997/02/03 22:45:09 b1 Exp $";
 
 
 #include "d_main.h"
+#include "console.h"
 #include "doomdata.h"
 
 //
@@ -547,9 +548,12 @@ void IdentifyVersion (void)
 //
 void D_DoomMain (void)
 {
-    IdentifyVersion ();
+    console_puts("[DOOM] D_DoomMain enter");
 
-    setbuf (stdout, NULL);
+    console_puts("[DOOM] IdentifyVersion...");
+    IdentifyVersion ();
+    console_puts("[DOOM] IdentifyVersion OK");
+
     modifiedgame = false;
 
     /* Static options */
@@ -564,48 +568,53 @@ void D_DoomMain (void)
     startmap     = 1;
     autostart    = false;
 
-    /* Custom title */
-    printf ( "----------------------------\n"
-             "RISC-V DOOM Startup v%i.%i\n"
-             "----------------------------\n",
-             VERSION/100,VERSION%100);
-
-    // init subsystems
-    printf ("V_Init: allocate screens.\n");
+    console_puts("[DOOM] V_Init...");
     V_Init ();
+    console_puts("[DOOM] V_Init OK");
 
-    printf ("M_LoadDefaults: Load system defaults.\n");
-    M_LoadDefaults ();              // load before initing other systems
+    console_puts("[DOOM] M_LoadDefaults...");
+    M_LoadDefaults ();
+    console_puts("[DOOM] M_LoadDefaults OK");
 
-    printf ("Z_Init: Init zone memory allocation daemon. \n");
+    console_puts("[DOOM] Z_Init...");
     Z_Init ();
+    console_puts("[DOOM] Z_Init OK");
 
-    printf ("W_Init: Init WADfiles.\n");
+    console_puts("[DOOM] W_Init (WAD)...");
     W_InitMultipleFiles (wadfiles);
+    console_puts("[DOOM] W_Init OK");
 
-    printf ("M_Init: Init miscellaneous info.\n");
+    console_puts("[DOOM] M_Init...");
     M_Init ();
+    console_puts("[DOOM] M_Init OK");
 
-    printf ("R_Init: Init DOOM refresh daemon - ");
+    console_puts("[DOOM] R_Init...");
     R_Init ();
+    console_puts("[DOOM] R_Init OK");
 
-    printf ("\nP_Init: Init Playloop state.\n");
+    console_puts("[DOOM] P_Init...");
     P_Init ();
+    console_puts("[DOOM] P_Init OK");
 
-    printf ("I_Init: Setting up machine state.\n");
+    console_puts("[DOOM] I_Init...");
     I_Init ();
+    console_puts("[DOOM] I_Init OK");
 
-    printf ("D_CheckNetGame: Checking network game status.\n");
+    console_puts("[DOOM] D_CheckNetGame...");
     D_CheckNetGame ();
+    console_puts("[DOOM] D_CheckNetGame OK");
 
-    printf ("S_Init: Setting up sound.\n");
-    S_Init (snd_SfxVolume /* *8 */, snd_MusicVolume /* *8*/ );
+    console_puts("[DOOM] S_Init...");
+    S_Init (snd_SfxVolume, snd_MusicVolume);
+    console_puts("[DOOM] S_Init OK");
 
-    printf ("HU_Init: Setting up heads up display.\n");
+    console_puts("[DOOM] HU_Init...");
     HU_Init ();
+    console_puts("[DOOM] HU_Init OK");
 
-    printf ("ST_Init: Init status bar.\n");
+    console_puts("[DOOM] ST_Init...");
     ST_Init ();
+    console_puts("[DOOM] ST_Init OK");
 
     if ( gameaction != ga_loadgame )
     {
@@ -615,5 +624,6 @@ void D_DoomMain (void)
             D_StartTitle ();                // start up intro loop
     }
 
+    console_puts("[DOOM] Entering D_DoomLoop...");
     D_DoomLoop ();  // never returns
 }

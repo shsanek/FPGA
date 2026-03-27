@@ -1,11 +1,10 @@
-CROSS = /Users/alexander/Documents/Project/risc/comp/bin/riscv32-unknown-elf-
+CROSS ?= riscv64-elf-
 
 CC = $(CROSS)gcc
 OBJCOPY = $(CROSS)objcopy
 SIZE = $(CROSS)size
-ICEPROG = iceprog
 
-CFLAGS=-Wall -O2 -march=rv32im -mabi=ilp32 -ffreestanding -flto -nostartfiles -fomit-frame-pointer -Wl,--gc-section --specs=nano.specs -I..
+CFLAGS=-Wall -O2 -march=rv32i -mabi=ilp32 -ffreestanding -flto -nostartfiles -fomit-frame-pointer -Wl,--gc-section -I.. -lc -lgcc
 
 CFLAGS += \
 	-DNORMALUNIX \
@@ -37,6 +36,9 @@ SOURCES_doom_arch := \
 
 
 all: doom-riscv.bin
+
+BOOT.BIN: doom-riscv.bin
+	cp $< $@
 
 doom-riscv.elf: riscv.lds $(addprefix ../,$(SOURCES_doom)) $(SOURCES_doom_arch)
 	$(CC) $(CFLAGS) -Wl,-Bstatic,-T,riscv.lds,--strip-debug -o $@ $(addprefix ../,$(SOURCES_doom)) $(SOURCES_doom_arch)

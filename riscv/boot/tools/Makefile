@@ -64,6 +64,7 @@ BOOT_TESTS_SRC = $(PROG_DIR)/boot_tests/boot_tests.c \
     $(PROG_DIR)/test_jump/test_jump.c \
     $(PROG_DIR)/test_mem/test_mem.c \
     $(PROG_DIR)/test_upper/test_upper.c \
+    $(PROG_DIR)/test_muldiv/test_muldiv.c \
     $(PROG_DIR)/test_oled/test_oled.c \
     $(COMMON)/oled.c
 
