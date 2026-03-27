@@ -60,13 +60,13 @@ static void delay(volatile unsigned int n) {
 #define DELAY_1MS   81250
 
 /* ---- OLED framebuffer helpers ---- */
-static void fb_wait(void) {
+static void fb_sync(void) {
     while (OLED_STATUS & 1) ;
 }
 
 static void fb_flush(void) {
-    OLED_CONTROL = 1;  /* mode=RGB565, flush */
-    fb_wait();
+    fb_sync();  /* ждём предыдущий flush */
+    OLED_CONTROL = 1;  /* mode=RGB565, flush — неблокирующий */
 }
 
 static void fb_pixel(int x, int y, unsigned short color) {

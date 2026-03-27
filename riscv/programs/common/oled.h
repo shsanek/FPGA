@@ -58,11 +58,12 @@ void oled_pixel_pal(int x, int y, unsigned char idx);
 /* Текст по строкам (row=0..5, col=0..11) — удобная обёртка */
 void oled_text(int row, int col, const char *s, unsigned short fg, unsigned short bg);
 
-/* Отправить фреймбуфер на экран (блокирует CPU до конца отрисовки) */
+/* Запустить отрисовку (неблокирующий — CPU может работать дальше).
+ * Запись в FB во время рендера → CPU stall аппаратно. */
 void oled_flush(void);
 
-/* Ждёт пока предыдущий flush завершится */
-void oled_wait(void);
+/* Ждёт завершения текущего рендера (блокирующий) */
+void oled_sync(void);
 
 /* Busy? (неблокирующая проверка) */
 int oled_busy(void);

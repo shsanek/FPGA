@@ -65,16 +65,17 @@ void oled_set_palette(int idx, unsigned short color) {
         OLED_PALETTE[idx] = color;
 }
 
-/* ---- Flush ---- */
+/* ---- Flush (неблокирующий — только выставляет флаг) ---- */
 void oled_flush(void) {
-    /* Trigger flush with current mode */
-    OLED_CONTROL = (cur_mode ? 2 : 0) | 1;  /* bit1=mode, bit0=flush */
-    /* CPU stalls automatically on next OLED access while busy.
-     * But we wait explicitly so caller knows flush is done. */
+    /* Если предыдущий flush ещё идёт — ждём (иначе потеряем новый запрос) */
     while (OLED_STATUS & 1) ;
+    OLED_CONTROL = (cur_mode ? 2 : 0) | 1;  /* bit1=mode, bit0=flush */
+    /* Не ждём — CPU может работать дальше.
+     * Запись в FB во время рендера → CPU stall аппаратно (controller_ready=0) */
 }
 
-void oled_wait(void) {
+/* ---- Sync (блокирующий — ждёт завершения рендера) ---- */
+void oled_sync(void) {
     while (OLED_STATUS & 1) ;
 }
 
