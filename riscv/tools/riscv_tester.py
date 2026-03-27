@@ -863,13 +863,17 @@ def _cmd_keyboard(dbg: RiscVDebug):
     WAIT_OBJECT_0 = 0
     WAIT_TIMEOUT  = 258
 
+    MAX_KEYS = 4  # максимум одновременно нажатых клавиш
+
     print(f"\n{C.BOLD}=== Клавиатурный режим (~ для выхода) ==={C.RESET}")
-    print(f"  Каждое нажатие → 2 байта: [VK_CODE] [FLAGS]")
+    print(f"  Каждое нажатие/отпускание → 2 байта: [VK_CODE] [FLAGS]")
     print(f"  FLAGS: bit7=release, bit0=Shift, bit1=Ctrl, bit2=Alt")
+    print(f"  Макс {MAX_KEYS} клавиш одновременно, repeat фильтруется")
     print(f"  CPU output → экран в реальном времени\n")
 
     record = INPUT_RECORD()
     count  = wintypes.DWORD()
+    pressed = set()  # множество нажатых VK кодов
 
     try:
         while True:
@@ -896,9 +900,23 @@ def _cmd_keyboard(dbg: RiscVDebug):
                 down  = bool(ke.bKeyDown)
                 state = ke.dwControlKeyState
 
-                # ~ press = выход
-                if down and ke.uChar == '~':
+                # Тильда/ё (VK_OEM_3 = 0xC0) = выход
+                if down and vk == 0xC0:
                     break
+
+                if down:
+                    # Repeat — клавиша уже в pressed, игнорируем
+                    if vk in pressed:
+                        continue
+                    # Лимит одновременных нажатий
+                    if len(pressed) >= MAX_KEYS:
+                        continue
+                    pressed.add(vk)
+                else:
+                    # Release — убираем из множества
+                    if vk not in pressed:
+                        continue  # не было press (или было отфильтровано)
+                    pressed.discard(vk)
 
                 # Собираем flags
                 flags = 0
