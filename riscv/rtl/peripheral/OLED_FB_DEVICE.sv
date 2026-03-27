@@ -50,8 +50,8 @@ module OLED_FB_DEVICE (
     parameter BRAM_DEPTH = 12288;
     localparam BRAM_ADDR_W = $clog2(BRAM_DEPTH);
 
-    // SPI делитель (~10 MHz при 81.25 MHz clk)
-    localparam SPI_DIVIDER = 16'd3;
+    // SPI делитель (~5 MHz при 81.25 MHz clk, SSD1331 max 6.67 MHz)
+    localparam SPI_DIVIDER = 16'd7;
 
     // =========================================================
     // Регистры
