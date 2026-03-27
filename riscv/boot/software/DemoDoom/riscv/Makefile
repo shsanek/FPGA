@@ -4,7 +4,7 @@ CC = $(CROSS)gcc
 OBJCOPY = $(CROSS)objcopy
 SIZE = $(CROSS)size
 
-CFLAGS=-Wall -O2 -march=rv32i -mabi=ilp32 -ffreestanding -nostartfiles -fomit-frame-pointer -fno-short-enums -Wl,--gc-section -I.. -lc -lgcc \
+CFLAGS=-Wall -O2 -march=rv32im -mabi=ilp32 -ffreestanding -nostartfiles -fomit-frame-pointer -fno-short-enums -Wl,--gc-section -I.. -lc -lgcc \
 	-Dprintf=console_printf -Dfprintf=doom_fprintf -Dvfprintf=doom_vfprintf -Dfflush=doom_fflush
 
 CFLAGS += \

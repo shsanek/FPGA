@@ -128,6 +128,11 @@ static void test_alu_imm(void) {
     chk("0<1", (unsigned)(I(0)<1), 1);
     chk("1<0", (unsigned)(I(1)<0), 0);
     chk("-1<0", (unsigned)(I(-1)<0), 1);
+
+    puts(" SLTIU:");
+    chk("0<u1", (unsigned)(U(0)<1u), 1);
+    chk("1<u0", (unsigned)(U(1)<0u), 0);
+    chk("MAX<u0", (unsigned)(U(0xFFFFFFFF)<0u), 0);
 }
 
 /* ---- MUL/DIV (M-extension) ---- */
