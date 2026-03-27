@@ -98,7 +98,13 @@ FPGA/
 │   ├── programs/                       # C тестовые программы
 │   │   ├── common/                     # crt0.s, runtime.c/h, linker.ld, check.h
 │   │   ├── hello/, fib/, sum/          # Базовые тесты
-│   │   └── test_alu/branch/jump/mem/upper/oled/sd/
+│   │   ├── test_alu/branch/jump/mem/upper/  # ISA unit тесты (симуляция)
+│   │   ├── test_muldiv/               # Софтверное MUL/DIV (rv32i)
+│   │   ├── test_muldiv_hw/            # Аппаратное MUL/DIV (rv32im M-extension)
+│   │   ├── test_hw_full/              # Полный HW тест: ALU+MUL/DIV+MEM+BRANCH+JUMP+FIB
+│   │   ├── test_boot_demo/            # Демо: бегущий текст на OLED
+│   │   ├── test_oled/, test_sd/       # Программы для железа (не симуляция)
+│   │   └── boot_tests/               # Объединённый BOOT.BIN (10 тестов)
 │   │
 │   ├── boot/                           # Загрузчик (QSPI flash → SD card)
 │   │   ├── software/                   # Stage 1: sd.c, fat32.c, stage1.c
