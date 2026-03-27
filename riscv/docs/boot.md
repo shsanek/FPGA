@@ -28,7 +28,7 @@ Stage 2 (software)  исполняется с 0x00000000                       |
 
 ```
 0x000000          Битстрим FPGA (~2.1 МБ для Arty A7-100T)
-0x300000          Header: [4B magic 0xB007C0DE] [4B size] [4B load_addr]
+0xF00000          Header: [4B magic 0xB007C0DE] [4B size] [4B load_addr]
 0x30000C          Stage 1 бинарник (~5.3 КБ)
 ```
 
@@ -159,7 +159,7 @@ make boot BOOT_SRC=../../tests/programs/hello/hello.c CROSS=riscv64-elf-
 # В Vivado Tcl console:
 write_cfgmem -format mcs -interface SPIx1 -size 16 \
   -loadbit "up 0x0 bitstream.bit" \
-  -loaddata "up 0x300000 stage1_with_header.bin" \
+  -loaddata "up 0xF00000 stage1_with_header.bin" \
   -file boot.mcs
 ```
 

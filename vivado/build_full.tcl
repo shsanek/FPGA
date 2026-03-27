@@ -7,15 +7,15 @@ set src_dir  "C:/Users/ssane/Documents/FPGA/riscv"
 open_project ${proj_dir}/project_1.xpr
 
 # Add peripheral source files (catch if already added)
-foreach f {CPU/SPI_MASTER.sv CPU/OLED_IO_DEVICE.sv CPU/SD_IO_DEVICE.sv} {
+foreach f {rtl/peripheral/SPI_MASTER.sv rtl/peripheral/OLED_IO_DEVICE.sv rtl/peripheral/SD_IO_DEVICE.sv rtl/peripheral/FLASH_LOADER.sv} {
     set fpath "${src_dir}/${f}"
     catch {add_files -norecurse -fileset [get_filesets sources_1] $fpath}
     catch {set_property file_type SystemVerilog [get_files $fpath]}
 }
 
 # Ensure FPGA_TOP is added and set as top
-catch {add_files -norecurse -fileset [get_filesets sources_1] ${src_dir}/FPGA_TOP.sv}
-catch {set_property file_type SystemVerilog [get_files ${src_dir}/FPGA_TOP.sv]}
+catch {add_files -norecurse -fileset [get_filesets sources_1] ${src_dir}/rtl/FPGA_TOP.sv}
+catch {set_property file_type SystemVerilog [get_files ${src_dir}/rtl/FPGA_TOP.sv]}
 set_property top FPGA_TOP [current_fileset]
 update_compile_order -fileset sources_1
 
@@ -110,10 +110,61 @@ if {$bit_file ne ""} {
     puts "WARNING: Bitstream file not found"
 }
 
+# =========================================
+# 4. BUILD STAGE 1 BOOTLOADER
+# =========================================
+puts "========================================="
+puts "STEP 4: Build Stage 1 bootloader"
+puts "========================================="
+set boot_dir "C:/Users/ssane/Documents/FPGA/riscv/boot/tools"
+set stage1_hdr "${boot_dir}/stage1_with_header.bin"
+
+if {[catch {exec bash -c "cd '${boot_dir}' && make clean && make stage1_hdr"} result]} {
+    puts "Stage 1 build output: ${result}"
+    # Check if output file was created despite make returning non-zero
+    if {![file exists $stage1_hdr]} {
+        puts "WARNING: Stage 1 build failed. MCS will contain bitstream only."
+        set stage1_ok 0
+    } else {
+        set stage1_ok 1
+    }
+} else {
+    puts "Stage 1 build output: ${result}"
+    set stage1_ok 1
+}
+
+# =========================================
+# 5. GENERATE MCS (bitstream + Stage 1)
+# =========================================
+puts "========================================="
+puts "STEP 5: Generate MCS file"
+puts "========================================="
+set mcs_file "${proj_dir}/boot.mcs"
+
+if {$bit_file ne ""} {
+    if {$stage1_ok && [file exists $stage1_hdr]} {
+        write_cfgmem -format mcs -interface SPIx1 -size 16 \
+            -loadbit "up 0x0 ${bit_file}" \
+            -loaddata "up 0xF00000 ${stage1_hdr}" \
+            -file $mcs_file -force
+        puts "MCS file (bitstream + stage1): ${mcs_file}"
+    } else {
+        write_cfgmem -format mcs -interface SPIx1 -size 16 \
+            -loadbit "up 0x0 ${bit_file}" \
+            -file $mcs_file -force
+        puts "MCS file (bitstream only, no stage1): ${mcs_file}"
+    }
+} else {
+    puts "WARNING: No bitstream — skipping MCS generation"
+}
+
 puts ""
 puts "========================================="
 puts "BUILD COMPLETE"
 puts "  Synthesis:      ${synth_status}"
 puts "  Implementation: ${impl_status}"
 puts "  Bitstream:      ${bit_status}"
+if {$bit_file ne ""} {
+    puts "  MCS file:       ${mcs_file}"
+}
 puts "========================================="

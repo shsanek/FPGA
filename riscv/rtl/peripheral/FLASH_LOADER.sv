@@ -16,7 +16,7 @@
 module FLASH_LOADER #(
     parameter ADDRESS_SIZE  = 28,
     parameter DATA_SIZE     = 32,
-    parameter FLASH_OFFSET  = 24'h300000,
+    parameter FLASH_OFFSET  = 24'hF00000,
     parameter SPI_DIVIDER   = 7
 )(
     input  wire clk,

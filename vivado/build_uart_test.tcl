@@ -4,9 +4,9 @@ set src_dir  "C:/Users/ssane/Documents/FPGA/riscv"
 open_project ${proj_dir}/project_1.xpr
 
 foreach f [list \
-    ${src_dir}/SIMPLE_UART_RX.sv \
-    ${src_dir}/UART_FIFO.sv \
-    ${src_dir}/CPU/CPU_PIPELINE_ADAPTER.sv \
+    ${src_dir}/rtl/uart/SIMPLE_UART_RX.sv \
+    ${src_dir}/rtl/uart/UART_FIFO.sv \
+    ${src_dir}/rtl/core/CPU_PIPELINE_ADAPTER.sv \
 ] {
     catch {add_files -norecurse -fileset [get_filesets sources_1] $f}
     catch {set_property file_type SystemVerilog [get_files $f]}

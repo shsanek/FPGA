@@ -8,8 +8,8 @@ set src_dir  "C:/Users/ssane/Documents/FPGA/riscv"
 open_project ${proj_dir}/project_1.xpr
 
 # Add FPGA_TOP (may already exist, catch error)
-catch {add_files -norecurse -fileset [get_filesets sources_1] ${src_dir}/FPGA_TOP.sv}
-catch {set_property file_type SystemVerilog [get_files ${src_dir}/FPGA_TOP.sv]}
+catch {add_files -norecurse -fileset [get_filesets sources_1] ${src_dir}/rtl/FPGA_TOP.sv}
+catch {set_property file_type SystemVerilog [get_files ${src_dir}/rtl/FPGA_TOP.sv]}
 
 # Set FPGA_TOP as top module
 set_property top FPGA_TOP [current_fileset]

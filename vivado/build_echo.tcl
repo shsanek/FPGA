@@ -15,10 +15,10 @@ puts "Original top: ${orig_top}"
 
 # Add echo sources
 foreach f [list \
-    ${src_dir}/UART_ECHO_TOP.sv \
-    ${src_dir}/SIMPLE_UART_RX.sv \
-    ${src_dir}/I_O/I_O_TIMER_GENERATOR.sv \
-    ${src_dir}/I_O/OUTPUT_CONTROLLER/I_O_OUTPUT_CONTROLLER.sv \
+    ${src_dir}/rtl/uart/UART_ECHO_TOP.sv \
+    ${src_dir}/rtl/uart/SIMPLE_UART_RX.sv \
+    ${src_dir}/rtl/uart/I_O_TIMER_GENERATOR.sv \
+    ${src_dir}/rtl/uart/I_O_OUTPUT_CONTROLLER.sv \
 ] {
     catch {add_files -norecurse -fileset [get_filesets sources_1] $f}
     catch {set_property file_type SystemVerilog [get_files $f]}
