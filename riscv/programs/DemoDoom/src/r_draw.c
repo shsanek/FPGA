@@ -115,7 +115,7 @@ void R_DrawColumn (void)
         I_Error ("R_DrawColumn: %i to %i at %i", dc_yl, dc_yh, dc_x);
 #endif
 
-    BLIT_SRC_ADDR   = (uint32_t)dc_source | 0x20000000U;  // bit29=stream
+    BLIT_SRC_ADDR   = (uint32_t)dc_source;
     BLIT_SRC_FRAC   = dc_texturemid + (dc_yl - centery) * dc_iscale;
     BLIT_SRC_STEP   = dc_iscale;
     BLIT_SRC_MASK   = 127;
@@ -455,7 +455,7 @@ void R_DrawSpan (void)
     if (count < 0)
         return;
 
-    BLIT_SRC_ADDR    = (uint32_t)ds_source | 0x20000000U;  // bit29=stream
+    BLIT_SRC_ADDR    = (uint32_t)ds_source;
     BLIT_SRC_FRAC    = ds_xfrac;
     BLIT_SRC_STEP    = ds_xstep;
     BLIT_SRC_MASK    = 63;

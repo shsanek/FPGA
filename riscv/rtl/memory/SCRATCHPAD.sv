@@ -111,12 +111,13 @@ module SCRATCHPAD #(
     localparam [3:0]
         S_IDLE        = 4'd0,
         S_FETCH_TEX   = 4'd1,
-        S_WAIT_TEX    = 4'd2,
-        S_LOOKUP_CMAP = 4'd3,
-        S_READ_CMAP   = 4'd4,
-        S_WRITE_PIXEL = 4'd5,
-        S_NEXT        = 4'd6,
-        S_DONE        = 4'd7;
+        S_WAIT_BUS    = 4'd2,
+        S_WAIT_TEX    = 4'd3,
+        S_LOOKUP_CMAP = 4'd4,
+        S_READ_CMAP   = 4'd5,
+        S_WRITE_PIXEL = 4'd6,
+        S_NEXT        = 4'd7,
+        S_DONE        = 4'd8;
 
     logic [3:0]  blit_state;
     wire         blit_busy = (blit_state != S_IDLE);
@@ -252,6 +253,17 @@ module SCRATCHPAD #(
                     // Address is word-aligned (drop low 2 bits for bus)
                     blit_addr <= {reg_src_addr[29:28], tex_ddr_addr[27:2], 2'b0};
                     blit_rd   <= 1'b1;
+                    // Go to WAIT_BUS first — registered addr/rd take 1 cycle
+                    // to reach MEMORY_CONTROLLER, so we must skip the first
+                    // ready which may be stale from a previous cache hit.
+                    blit_state <= S_WAIT_BUS;
+                end
+
+                S_WAIT_BUS: begin
+                    // 1-cycle settle: addr and rd are now on the bus.
+                    // MEMORY_CONTROLLER sees read_trigger and will drop
+                    // controller_ready on cache miss (or keep it on hit
+                    // for the NEW address). Next cycle is safe to sample.
                     blit_state <= S_WAIT_TEX;
                 end
 
