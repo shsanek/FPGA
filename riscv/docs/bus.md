@@ -7,7 +7,7 @@ FLASH_LOADER ──┐
                │
 DEBUG_CTRL ────┤   BUS MUX      PERIPHERAL_BUS       MEMORY_CONTROLLER
                ├──→ (TOP.sv) ──→ (addr decode) ──┬──→ (cache + DDR)
-CPU_PIPELINE ──┘                                 │
+CPU_PIPELINE ──┘                                 ├──→ SCRATCHPAD (128 KB BRAM)
                                                  ├──→ UART_IO_DEVICE
                                                  ├──→ OLED_FB_DEVICE
                                                  ├──→ SD_IO_DEVICE
@@ -70,22 +70,28 @@ FLASH_LOADER done (bus_request=0)       ← debug и CPU разблокиров�
 29-битная шина. Бит `[28]` разделяет память и I/O.
 
 ```
-addr[28] = 0  →  MEMORY_CONTROLLER (DDR3 256 MB через кэш)
-addr[28] = 1  →  I/O, подразбивка по addr[17:16]:
+addr[28] = 0                          →  MEMORY_CONTROLLER (DDR3 256 MB через кэш)
+addr[28] = 1, addr[18] = 0           →  I/O, подразбивка по addr[17:16]:
+addr[28] = 1, addr[18] = 1           →  SCRATCHPAD (BRAM 128 KB, 1 такт)
 ```
 
-| addr[17:16] | Базовый адрес | Устройство | Регистры |
-|-------------|---------------|------------|----------|
-| 00 | 0x1000_0000 | UART_IO_DEVICE | TX, RX, STATUS |
-| 01 | 0x1001_0000 | OLED_FB_DEVICE | CONTROL, STATUS, VP_W/H, PALETTE, FB |
-| 10 | 0x1002_0000 | SD_IO_DEVICE | DATA, CONTROL, STATUS, DIVIDER |
-| 11 | 0x1003_0000 | TIMER_DEVICE | CYCLE_LO, CYCLE_HI, TIME_MS, TIME_US |
+| Диапазон | Устройство | Описание |
+|----------|------------|----------|
+| 0x0000_0000 – 0x07FF_FFFF | MEMORY_CONTROLLER | DDR3 128 MB, write-back cache |
+| 0x0800_0000 – 0x0801_FFFF | SCRATCHPAD | BRAM 128 KB, 1 такт, byte mask |
+| 0x1000_0000 | UART_IO_DEVICE | TX, RX, STATUS |
+| 0x1001_0000 | OLED_FB_DEVICE | CONTROL, STATUS, VP_W/H, PALETTE, FB |
+| 0x1002_0000 | SD_IO_DEVICE | DATA, CONTROL, STATUS, DIVIDER |
+| 0x1003_0000 | TIMER_DEVICE | CYCLE_LO, CYCLE_HI, TIME_MS, TIME_US |
+| 0x1004_0000 – 0x1005_FFFF | SCRATCHPAD | BRAM 128 KB, byte mask, 1 такт |
 
 ### Декодирование (комбинационное)
 
 ```systemverilog
 wire io_sel   = address[28];
-wire uart_sel = io_sel & (io_dev == 2'b00);
+wire sp_sel   = io_sel & address[18];              // scratchpad
+wire dev_sel  = io_sel & ~address[18];             // I/O devices
+wire uart_sel = dev_sel & (io_dev == 2'b00);
 wire oled_sel = io_sel & (io_dev == 2'b01);
 wire sd_sel   = io_sel & (io_dev == 2'b10);
 
@@ -130,9 +136,10 @@ MIG7 → DDR3 SDRAM
 
 | Операция | Такты |
 |----------|-------|
-| Cache hit (read/write) | 1-2 |
-| Cache miss (clean) | ~10-20 (DDR fetch) |
-| Cache miss (dirty) | ~20-40 (evict + fetch) |
+| DDR cache hit | 1-2 |
+| DDR cache miss (clean) | ~10-20 (DDR fetch) |
+| DDR cache miss (dirty) | ~20-40 (evict + fetch) |
+| **SCRATCHPAD read/write** | **1** (BRAM, controller_ready=1) |
 | I/O register read/write | 1 (combinational ready) |
 | SPI transfer (SD) | N (busy пока SPI не завершит) |
 | OLED FB read/write | 1 (controller_ready=1 всегда, dual-port BRAM) |

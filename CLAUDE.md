@@ -195,9 +195,13 @@ MEMORY_CONTROLLER
   0x1003_0004 : CYCLE_HI  (R)   — верхние 32 бита (snapshot при чтении CYCLE_LO)
   0x1003_0008 : TIME_MS   (R)   — миллисекунды с момента reset (32-бит, ~49 дней)
   0x1003_000C : TIME_US   (R)   — микросекунды с момента reset (32-бит, ~71 мин)
+0x1004_0000 – 0x1005_FFFF  →  SCRATCHPAD (BRAM 128 KB, 1-тактовый доступ)
 ```
 
-Декодирование: `addr[28]=1` → I/O, `addr[17:16]` → устройство (00=UART, 01=OLED, 10=SD, 11=TIMER).
+Декодирование:
+- `addr[28]=0` → DDR (MEMORY_CONTROLLER, 256 MB)
+- `addr[28]=1, addr[18]=0` → I/O, `addr[17:16]` → устройство (00=UART, 01=OLED, 10=SD, 11=TIMER)
+- `addr[28]=1, addr[18]=1` → SCRATCHPAD (128 KB BRAM)
 
 ### `riscv/CPU/SPI_MASTER.sv`
 Full-duplex SPI Mode 0 (CPOL=0, CPHA=0), MSB first. Настраиваемый делитель тактовой.
