@@ -1,8 +1,13 @@
 /*
- * i_video.c — Video output for DOOM on Arty A7 (OLED 96×64).
+ * i_video.c — Video output for DOOM on Arty A7.
  *
- * DOOM renders 320×200 8-bit indexed color.
- * We downscale to 96×64 and convert palette to RGB565 for OLED.
+ * Uses OLED_FB_DEVICE PAL256 mode:
+ *   - CPU writes 8-bit palette indices to MMIO framebuffer
+ *   - Hardware does palette lookup → RGB565 → SPI → SSD1331
+ *   - Hardware downscales viewport to 96×64
+ *
+ * DOOM renders 320×200, but viewport limited to 256×200 max (BRAM size).
+ * We use 160×100 viewport → hardware 2:1 downscale → good fit for 96×64.
  */
 
 #include <stdint.h>
@@ -14,69 +19,49 @@
 #include "i_video.h"
 #include "config.h"
 
-/* OLED hardware registers */
-#define OLED_DATA_REG    (*(volatile unsigned int *)0x10010000U)
-#define OLED_CONTROL_REG (*(volatile unsigned int *)0x10010004U)
-#define OLED_STATUS_REG  (*(volatile unsigned int *)0x10010008U)
-#define OLED_DIVIDER_REG (*(volatile unsigned int *)0x1001000CU)
+/* OLED FB DEVICE registers */
+#define OLED_CONTROL   (*(volatile unsigned int *)0x10010000U)
+#define OLED_STATUS    (*(volatile unsigned int *)0x10010004U)
+#define OLED_VP_WIDTH  (*(volatile unsigned int *)0x10010008U)
+#define OLED_VP_HEIGHT (*(volatile unsigned int *)0x1001000CU)
+#define OLED_PALETTE   ((volatile unsigned short *)0x10010010U)
+#define OLED_FB_BASE   0x10014000U
+#define OLED_FB        ((volatile unsigned int *)OLED_FB_BASE)
 
-#define CTL_CS     (1 << 0)
-#define CTL_DC     (1 << 1)
-#define CTL_RES    (1 << 2)
-#define CTL_VCCEN  (1 << 3)
-#define CTL_PMODEN (1 << 4)
+/* Viewport for DOOM — downscaled from 320×200 */
+#define VP_W  96
+#define VP_H  64
+#define VP_STRIDE_SHIFT 7  /* log2(128), stride for BRAM addressing */
 
-#define OLED_W 96
-#define OLED_H 64
-
-static uint16_t palette565[256];
-static uint16_t oled_fb[OLED_W * OLED_H];
-
-/* ---- SPI helpers ---- */
-
-static void spi_wait(void) {
-    while (OLED_STATUS_REG & 0x2) ;
+static void oled_sync(void) {
+    while (OLED_STATUS & 1) ;
 }
-
-static void oled_cmd(unsigned char c) {
-    OLED_CONTROL_REG = CTL_PMODEN | CTL_VCCEN | CTL_CS;
-    spi_wait();
-    OLED_DATA_REG = c;
-    spi_wait();
-}
-
-static void oled_data(unsigned char d) {
-    OLED_CONTROL_REG = CTL_PMODEN | CTL_VCCEN | CTL_CS | CTL_DC;
-    spi_wait();
-    OLED_DATA_REG = d;
-    spi_wait();
-}
-
-static void delay(volatile unsigned int n) {
-    while (n--) __asm__ volatile("");
-}
-#define DELAY_1MS   81250
-#define DELAY_20MS  (20 * DELAY_1MS)
-#define DELAY_100MS (100 * DELAY_1MS)
-
-/* ---- Init ---- */
 
 void I_InitGraphics(void)
 {
-    /* OLED already initialized by boot_oled_init() */
-    memset(oled_fb, 0, sizeof(oled_fb));
-    usegamma = 1;
+    oled_sync();
+
+    /* Switch to PAL256 mode for DOOM */
+    OLED_VP_WIDTH  = VP_W;
+    OLED_VP_HEIGHT = VP_H;
+
+    /* Clear framebuffer (old RGB565 boot screen data) */
+    int total_words = (VP_H << VP_STRIDE_SHIFT) >> 2;
+    for (int i = 0; i < total_words; i++)
+        OLED_FB[i] = 0;
+
+    /* Init palette to black so first frame doesn't flash garbage */
+    for (int i = 0; i < 256; i++)
+        OLED_PALETTE[i] = 0;
+
+    usegamma = 0;
 }
 
 void I_ShutdownGraphics(void)
 {
-    oled_cmd(0xAE);
-    OLED_CONTROL_REG = CTL_PMODEN;
-    delay(DELAY_100MS);
-    OLED_CONTROL_REG = 0;
 }
 
-/* ---- Palette: DOOM RGB888 → RGB565 ---- */
+/* ---- Palette: load DOOM palette into hardware LUT ---- */
 
 void I_SetPalette(byte *palette)
 {
@@ -84,38 +69,47 @@ void I_SetPalette(byte *palette)
         uint8_t r = gammatable[usegamma][*palette++];
         uint8_t g = gammatable[usegamma][*palette++];
         uint8_t b = gammatable[usegamma][*palette++];
-        palette565[i] = ((uint16_t)(r >> 3) << 11)
-                      | ((uint16_t)(g >> 2) <<  5)
-                      | ((uint16_t)(b >> 3));
+        uint16_t c = ((uint16_t)(r >> 3) << 11)
+                   | ((uint16_t)(g >> 2) <<  5)
+                   | ((uint16_t)(b >> 3));
+        OLED_PALETTE[i] = c;
     }
 }
 
 void I_UpdateNoBlit(void) {}
 
-/* ---- Finish update: downscale 320×200 → 96×64, push to OLED ---- */
+/* ---- Finish update: downscale 320×200 → VP_W×VP_H, write to MMIO FB ---- */
 
 void I_FinishUpdate(void)
 {
     byte *src = screens[0]; /* 320×200, 8-bit indexed */
 
-    /* Nearest-neighbor downscale */
-    for (int oy = 0; oy < OLED_H; oy++) {
-        int sy = (oy * SCREENHEIGHT) / OLED_H;
-        for (int ox = 0; ox < OLED_W; ox++) {
-            int sx = (ox * SCREENWIDTH) / OLED_W;
-            oled_fb[oy * OLED_W + ox] = palette565[src[sy * SCREENWIDTH + sx]];
+    /* Wait for previous render before writing to FB */
+    oled_sync();
+
+    /* Write palette indices directly — hardware does the rest */
+    for (int oy = 0; oy < VP_H; oy++) {
+        int sy = (oy * SCREENHEIGHT) / VP_H;
+        int fb_row_base = (oy << VP_STRIDE_SHIFT) >> 2; /* word offset for row */
+
+        for (int ox = 0; ox < VP_W; ox += 4) {
+            int sx0 = ((ox + 0) * SCREENWIDTH) / VP_W;
+            int sx1 = ((ox + 1) * SCREENWIDTH) / VP_W;
+            int sx2 = ((ox + 2) * SCREENWIDTH) / VP_W;
+            int sx3 = ((ox + 3) * SCREENWIDTH) / VP_W;
+
+            /* Pack 4 palette indices into one 32-bit write */
+            uint32_t word = (uint32_t)src[sy * SCREENWIDTH + sx0]
+                         | ((uint32_t)src[sy * SCREENWIDTH + sx1] << 8)
+                         | ((uint32_t)src[sy * SCREENWIDTH + sx2] << 16)
+                         | ((uint32_t)src[sy * SCREENWIDTH + sx3] << 24);
+
+            OLED_FB[fb_row_base + (ox >> 2)] = word;
         }
     }
 
-    /* Set window */
-    oled_cmd(0x15); oled_cmd(0x00); oled_cmd(0x5F);
-    oled_cmd(0x75); oled_cmd(0x00); oled_cmd(0x3F);
-
-    /* Stream pixels */
-    for (int i = 0; i < OLED_W * OLED_H; i++) {
-        oled_data((oled_fb[i] >> 8) & 0xFF);
-        oled_data(oled_fb[i] & 0xFF);
-    }
+    /* Kick hardware render (non-blocking): mode=PAL256 (bit1), flush (bit0) */
+    OLED_CONTROL = 0x03;
 }
 
 void I_WaitVBL(int count) { (void)count; }
@@ -125,9 +119,9 @@ void I_ReadScreen(byte *scr)
     memcpy(scr, screens[0], SCREENHEIGHT * SCREENWIDTH);
 }
 
-/* ---- Boot screen (called before DOOM init) ---- */
+/* ==== Boot screen (RGB565 mode, before DOOM starts) ==== */
 
-/* Tiny 3x5 font for boot screen — digits, letters, punctuation */
+/* Tiny 3x5 font for boot screen */
 static const uint8_t boot_font[][3] = {
     /* ' ' */ {0x00,0x00,0x00},
     /* '!' */ {0x00,0x17,0x00},
@@ -182,20 +176,34 @@ static int boot_char_idx(char c) {
     return 0;
 }
 
+/* Boot screen uses RGB565 mode with 96×64 viewport */
+static void boot_pixel(int x, int y, uint16_t color) {
+    if ((unsigned)x >= 96 || (unsigned)y >= 64) return;
+    int hw_addr = (y << 7) + x;  /* stride=128 */
+    int word_idx = hw_addr >> 1;
+    if (x & 1)
+        OLED_FB[word_idx] = (OLED_FB[word_idx] & 0x0000FFFF) | ((unsigned int)color << 16);
+    else
+        OLED_FB[word_idx] = (OLED_FB[word_idx] & 0xFFFF0000) | color;
+}
+
+static void boot_rect(int x0, int y0, int w, int h, uint16_t color) {
+    for (int y = y0; y < y0+h && y < 64; y++)
+        for (int x = x0; x < x0+w && x < 96; x++)
+            boot_pixel(x, y, color);
+}
+
 static void boot_putchar(int x, int y, char c, uint16_t fg, uint16_t bg) {
     int idx = boot_char_idx(c);
     for (int col = 0; col < 3; col++) {
         uint8_t bits = boot_font[idx][col];
         for (int row = 0; row < 5; row++) {
-            if (x+col >= 0 && x+col < OLED_W && y+row >= 0 && y+row < OLED_H)
-                oled_fb[(y+row)*OLED_W + x+col] = (bits & 1) ? fg : bg;
+            boot_pixel(x+col, y+row, (bits & 1) ? fg : bg);
             bits >>= 1;
         }
     }
-    /* 1px gap */
     for (int row = 0; row < 5; row++)
-        if (x+3 >= 0 && x+3 < OLED_W && y+row >= 0 && y+row < OLED_H)
-            oled_fb[(y+row)*OLED_W + x+3] = bg;
+        boot_pixel(x+3, y+row, bg);
 }
 
 static void boot_print(int x, int y, const char *s, uint16_t fg, uint16_t bg) {
@@ -206,88 +214,49 @@ static void boot_print(int x, int y, const char *s, uint16_t fg, uint16_t bg) {
 }
 
 static void boot_flush(void) {
-    oled_cmd(0x15); oled_cmd(0x00); oled_cmd(0x5F);
-    oled_cmd(0x75); oled_cmd(0x00); oled_cmd(0x3F);
-    for (int i = 0; i < OLED_W * OLED_H; i++) {
-        oled_data((oled_fb[i] >> 8) & 0xFF);
-        oled_data(oled_fb[i] & 0xFF);
-    }
+    /* RGB565 mode, flush */
+    OLED_CONTROL = 0x01;
 }
 
-static void boot_rect(int x0, int y0, int w, int h, uint16_t color) {
-    for (int y = y0; y < y0+h && y < OLED_H; y++)
-        for (int x = x0; x < x0+w && x < OLED_W; x++)
-            oled_fb[y*OLED_W + x] = color;
-}
-
-/* RGB565 helpers */
-#define RGB565(r,g,b) ((uint16_t)(((r)<<11)|((g)<<5)|(b)))
 #define C_BLACK   0x0000
-#define C_RED     RGB565(31,0,0)
-#define C_DKRED   RGB565(16,0,0)
-#define C_GREEN   RGB565(0,50,0)
-#define C_GREY    RGB565(10,20,10)
-#define C_WHITE   RGB565(31,63,31)
-#define C_YELLOW  RGB565(31,63,0)
+#define C_RED     0xF800
+#define C_DKRED   0x8000
+#define C_GREEN   0x0560
+#define C_GREY    0x4A49
+#define C_WHITE   0xFFFF
+#define C_YELLOW  0xFFE0
 
 void boot_oled_init(void)
 {
-    OLED_DIVIDER_REG = 7;
+    /* Init OLED_FB_DEVICE: 96×64 RGB565 */
+    oled_sync();
+    OLED_VP_WIDTH  = 96;
+    OLED_VP_HEIGHT = 64;
 
-    OLED_CONTROL_REG = CTL_PMODEN;
-    delay(DELAY_20MS);
-    OLED_CONTROL_REG = CTL_PMODEN | CTL_RES;
-    delay(DELAY_1MS);
-    OLED_CONTROL_REG = CTL_PMODEN;
-    delay(DELAY_1MS);
+    /* Clear framebuffer */
+    for (int i = 0; i < (64 * 128) / 2; i++)
+        OLED_FB[i] = 0;
 
-    oled_cmd(0xAE);
-    oled_cmd(0xA0); oled_cmd(0x72);
-    oled_cmd(0xA1); oled_cmd(0x00);
-    oled_cmd(0xA2); oled_cmd(0x00);
-    oled_cmd(0xA4);
-    oled_cmd(0xA8); oled_cmd(0x3F);
-    oled_cmd(0xAD); oled_cmd(0x8E);
-    oled_cmd(0xB0); oled_cmd(0x0B);
-    oled_cmd(0xB1); oled_cmd(0x31);
-    oled_cmd(0xB3); oled_cmd(0xF0);
-    oled_cmd(0xBB); oled_cmd(0x3A);
-    oled_cmd(0xBE); oled_cmd(0x3E);
-    oled_cmd(0x87); oled_cmd(0x06);
-    oled_cmd(0x81); oled_cmd(0x91);
-    oled_cmd(0x82); oled_cmd(0x50);
-    oled_cmd(0x83); oled_cmd(0x7D);
-
-    OLED_CONTROL_REG = CTL_PMODEN | CTL_VCCEN | CTL_CS;
-    delay(DELAY_100MS);
-    oled_cmd(0xAF);
-    delay(DELAY_20MS);
-
-    /* Black screen */
-    memset(oled_fb, 0, sizeof(oled_fb));
-
-    /* === DOOM boot screen === */
-
-    /* Red border frame */
-    boot_rect(0, 0, OLED_W, 1, C_DKRED);
-    boot_rect(0, OLED_H-1, OLED_W, 1, C_DKRED);
-    boot_rect(0, 0, 1, OLED_H, C_DKRED);
-    boot_rect(OLED_W-1, 0, 1, OLED_H, C_DKRED);
+    /* Red border */
+    boot_rect(0, 0, 96, 1, C_DKRED);
+    boot_rect(0, 63, 96, 1, C_DKRED);
+    boot_rect(0, 0, 1, 64, C_DKRED);
+    boot_rect(95, 0, 1, 64, C_DKRED);
 
     /* Title */
     boot_print(22, 4, "DOOM", C_RED, C_BLACK);
     boot_print(10, 12, "ARTY A7", C_YELLOW, C_BLACK);
 
     /* Separator */
-    boot_rect(4, 20, OLED_W-8, 1, C_GREY);
+    boot_rect(4, 20, 88, 1, C_GREY);
 
-    /* Status lines */
+    /* Info */
     boot_print(4, 24, "RISC V  RV32IM", C_GREEN, C_BLACK);
     boot_print(4, 32, "OLED 96X64", C_GREEN, C_BLACK);
 
     /* Progress bar outline */
-    boot_rect(4, 50, OLED_W-8, 7, C_GREY);
-    boot_rect(5, 51, OLED_W-10, 5, C_BLACK);
+    boot_rect(4, 50, 88, 7, C_GREY);
+    boot_rect(5, 51, 86, 5, C_BLACK);
 
     boot_print(4, 42, "LOADING...", C_WHITE, C_BLACK);
 
@@ -297,31 +266,16 @@ void boot_oled_init(void)
 void boot_oled_progress(int percent)
 {
     if (percent > 100) percent = 100;
-    int bar_w = (OLED_W - 12) * percent / 100;
-
-    /* Fill progress bar */
+    int bar_w = 84 * percent / 100;
+    oled_sync();
     boot_rect(6, 52, bar_w, 3, C_RED);
-
-    /* Percent text */
-    char buf[8];
-    buf[0] = '0' + (percent / 100) % 10;
-    buf[1] = '0' + (percent / 10) % 10;
-    buf[2] = '0' + percent % 10;
-    buf[3] = 0;
-    /* Skip leading zeros */
-    char *p = buf;
-    if (*p == '0') p++;
-    if (*p == '0' && percent >= 10) p++;
-
-    boot_print(OLED_W - 20, 42, p, C_WHITE, C_BLACK);
-
     boot_flush();
 }
 
 void boot_oled_status(const char *msg)
 {
-    /* Clear status area */
-    boot_rect(4, 42, OLED_W-8, 5, C_BLACK);
+    oled_sync();
+    boot_rect(4, 42, 88, 5, C_BLACK);
     boot_print(4, 42, msg, C_WHITE, C_BLACK);
     boot_flush();
 }

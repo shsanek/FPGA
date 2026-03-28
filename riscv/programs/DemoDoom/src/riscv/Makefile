@@ -6,7 +6,7 @@ SIZE = $(CROSS)size
 ICEPROG = iceprog
 
 COMMON=../../../common
-CFLAGS=-Wall -O2 -std=gnu11 -march=rv32im -mabi=ilp32 -ffreestanding -flto -nostartfiles -nostdlib -fomit-frame-pointer -Wl,--gc-section -isystem include -I.. -I$(COMMON)
+CFLAGS=-Wall -O3 -std=gnu11 -march=rv32im -mabi=ilp32 -ffreestanding -flto -nostartfiles -nostdlib -fomit-frame-pointer -ffast-math -finline-functions -funroll-loops -fno-common -Wl,--gc-sections -isystem include -I.. -I$(COMMON)
 
 CFLAGS += \
 	-DNORMALUNIX \
