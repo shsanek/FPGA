@@ -7,7 +7,7 @@ set src_dir  "C:/Users/ssane/Documents/FPGA/riscv"
 open_project ${proj_dir}/project_1.xpr
 
 # Add peripheral source files (catch if already added)
-foreach f {rtl/peripheral/SPI_MASTER.sv rtl/peripheral/OLED_IO_DEVICE.sv rtl/peripheral/SD_IO_DEVICE.sv rtl/peripheral/FLASH_LOADER.sv rtl/core/MULDIV_UNIT.sv rtl/peripheral/TIMER_DEVICE.sv} {
+foreach f {rtl/peripheral/SPI_MASTER.sv rtl/peripheral/OLED_IO_DEVICE.sv rtl/peripheral/SD_IO_DEVICE.sv rtl/peripheral/FLASH_LOADER.sv rtl/core/MULDIV_UNIT.sv rtl/peripheral/TIMER_DEVICE.sv rtl/memory/STREAM_CACHE.sv rtl/memory/SCRATCHPAD.sv} {
     set fpath "${src_dir}/${f}"
     catch {add_files -norecurse -fileset [get_filesets sources_1] $fpath}
     catch {set_property file_type SystemVerilog [get_files $fpath]}
