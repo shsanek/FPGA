@@ -74,7 +74,8 @@ FPGA/
 │   │   ├── peripheral/                 # Периферия + шина
 │   │   │   ├── PERIPHERAL_BUS.sv       # Address decoder
 │   │   │   ├── UART_IO_DEVICE.sv       # Memory-mapped UART
-│   │   │   ├── OLED_IO_DEVICE.sv       # PmodOLEDrgb (SSD1331)
+│   │   │   ├── OLED_IO_DEVICE.sv       # PmodOLEDrgb raw SPI (legacy)
+│   │   │   ├── OLED_FB_DEVICE.sv      # PmodOLEDrgb BRAM framebuffer + SPI renderer
 │   │   │   ├── SD_IO_DEVICE.sv         # PmodMicroSD (SPI)
 │   │   │   ├── SPI_MASTER.sv           # Full-duplex SPI
 │   │   │   └── FLASH_LOADER.sv         # QSPI flash boot loader
@@ -177,11 +178,13 @@ MEMORY_CONTROLLER
   0x1000_0000 : TX_DATA   (W/R)
   0x1000_0004 : RX_DATA   (R)
   0x1000_0008 : STATUS    (R) {tx_ready, rx_avail}
-0x1001_0000 – 0x1001_FFFF  →  OLED_IO_DEVICE (PmodOLEDrgb SSD1331, JA)
-  0x1001_0000 : DATA      (W)   — SPI byte
-  0x1001_0004 : CONTROL   (W/R) — {PMODEN, VCCEN, RES, DC, CS}
-  0x1001_0008 : STATUS    (R)   — {spi_busy}
-  0x1001_000C : DIVIDER   (W/R) — SPI clock divider
+0x1001_0000 – 0x1001_FFFF  →  OLED_FB_DEVICE (PmodOLEDrgb SSD1331, JA)
+  0x1001_0000 : CONTROL   (W)   — bit0: flush, bit1: mode (0=RGB565, 1=PAL256)
+  0x1001_0004 : STATUS    (R)   — bit0: busy
+  0x1001_0008 : VP_WIDTH  (W/R) — ширина viewport (96–256)
+  0x1001_000C : VP_HEIGHT (W/R) — высота viewport (64–256)
+  0x1001_0010 : PALETTE   (W/R) — 256×16 бит RGB565 (halfword, 512 байт)
+  0x1001_4000 : FRAMEBUF  (W/R) — пиксели, stride=power-of-2
 0x1002_0000 – 0x1002_FFFF  →  SD_IO_DEVICE (PmodMicroSD, JC)
   0x1002_0000 : DATA      (W/R) — SPI full-duplex TX/RX
   0x1002_0004 : CONTROL   (W/R) — {CS}

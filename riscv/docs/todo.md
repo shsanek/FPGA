@@ -1,8 +1,15 @@
 # RISC-V Processor TODO
 
+## Сделано
+
+- [x] RV32M (MUL/DIV/REM) — MULDIV_UNIT, многотактовый
+- [x] OLED framebuffer (OLED_FB_DEVICE) — BRAM 48KB + аппаратный SPI рендер
+- [x] TIMER_DEVICE — счётчик тактов, ms, us
+- [x] Boot анимация (stage1) — PS1-style на OLED
+
 ## Отложено (v2)
 
-- [ ] RV32M (MUL/DIV/REM)
+- [ ] OLED_FB_DEVICE_V2 — native 96×64 буфер, coord transform на write path, раздельные модули
 - [ ] EXEC_INSTR (инъекция инструкции через отладчик)
 - [ ] READ_REG по номеру через отладчик
 

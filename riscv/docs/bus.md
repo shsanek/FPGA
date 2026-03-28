@@ -9,8 +9,9 @@ DEBUG_CTRL ────┤   BUS MUX      PERIPHERAL_BUS       MEMORY_CONTROLLER
                ├──→ (TOP.sv) ──→ (addr decode) ──┬──→ (cache + DDR)
 CPU_PIPELINE ──┘                                 │
                                                  ├──→ UART_IO_DEVICE
-                                                 ├──→ OLED_IO_DEVICE
-                                                 └──→ SD_IO_DEVICE
+                                                 ├──→ OLED_FB_DEVICE
+                                                 ├──→ SD_IO_DEVICE
+                                                 └──→ TIMER_DEVICE
 ```
 
 Три мастера конкурируют за одну шину. Арбитраж — комбинационный mux в TOP.sv.
@@ -76,7 +77,7 @@ addr[28] = 1  →  I/O, подразбивка по addr[17:16]:
 | addr[17:16] | Базовый адрес | Устройство | Регистры |
 |-------------|---------------|------------|----------|
 | 00 | 0x1000_0000 | UART_IO_DEVICE | TX, RX, STATUS |
-| 01 | 0x1001_0000 | OLED_IO_DEVICE | DATA, CONTROL, STATUS, DIVIDER |
+| 01 | 0x1001_0000 | OLED_FB_DEVICE | CONTROL, STATUS, VP_W/H, PALETTE, FB |
 | 10 | 0x1002_0000 | SD_IO_DEVICE | DATA, CONTROL, STATUS, DIVIDER |
 | 11 | 0x1003_0000 | TIMER_DEVICE | CYCLE_LO, CYCLE_HI, TIME_MS, TIME_US |
 
@@ -133,7 +134,8 @@ MIG7 → DDR3 SDRAM
 | Cache miss (clean) | ~10-20 (DDR fetch) |
 | Cache miss (dirty) | ~20-40 (evict + fetch) |
 | I/O register read/write | 1 (combinational ready) |
-| SPI transfer (OLED/SD) | N (busy пока SPI не завершит) |
+| SPI transfer (SD) | N (busy пока SPI не завершит) |
+| OLED FB read/write | 1 (controller_ready=1 всегда, dual-port BRAM) |
 
 ---
 
