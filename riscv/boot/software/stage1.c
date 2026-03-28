@@ -90,21 +90,9 @@ static void fb_fill(unsigned short color) {
 }
 
 static void fb_rect(int x0, int y0, int x1, int y1, unsigned short color) {
-    unsigned int dword = ((unsigned int)color << 16) | color;
-    for (int y = y0; y <= y1; y++) {
-        int base = (y << STRIDE_SHIFT) >> 1;
-        /* Заполняем парами пикселей */
-        int xa = (x0 + 1) & ~1; /* первый чётный >= x0 */
-        int xb = x1 & ~1;       /* последний чётный <= x1 */
-        /* Одиночные пиксели на краях */
-        if (x0 & 1) fb_pixel(x0, y, color);
-        /* Пары */
-        for (int x = xa; x < xb; x += 2)
-            OLED_FB[base + (x >> 1)] = dword;
-        /* Правый край */
-        if (!(x1 & 1)) fb_pixel(x1, y, color);
-        else if (xb <= x1) fb_pixel(x1, y, color);
-    }
+    for (int y = y0; y <= y1; y++)
+        for (int x = x0; x <= x1; x++)
+            fb_pixel(x, y, color);
 }
 
 static void fb_hline(int y, unsigned short color) {

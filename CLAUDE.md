@@ -14,9 +14,9 @@ FPGA hardware design project implementing two subsystems in SystemVerilog:
 ## Technology Stack
 
 - **Language:** SystemVerilog (IEEE 1800-2012)
-- **Simulator:** `iverilog` + `vvp`
-- **Synthesis:** Vivado 2025.2
-- **RISC-V GCC:** xpack riscv-none-elf-gcc 14.2.0
+- **Simulator:** `iverilog` + `vvp` (`C:\iverilog\bin\iverilog.exe`, version s20150603 — ограниченная поддержка SV)
+- **Synthesis:** Vivado 2025.2 (`C:\AMDDesignTools\2025.2\Vivado\bin\vivado.bat`)
+- **RISC-V GCC:** xpack riscv-none-elf-gcc 14.2.0 (`C:\riscv-gcc\xpack-riscv-none-elf-gcc-14.2.0-3\bin\`)
 - **Waveforms:** VCD files (excluded from git)
 - **Board:** Arty A7-100T, UART на COM4 (115200 baud)
 

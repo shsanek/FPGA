@@ -12,7 +12,7 @@
 #define OLED_VP_WIDTH  (*(volatile unsigned int *)0x10010008U)
 #define OLED_VP_HEIGHT (*(volatile unsigned int *)0x1001000CU)
 
-/* Палитра: 256 × 16 бит, base 0x10010010 */
+/* Палитра: 256 × 16 бит, base 0x10010010, halfword доступ (sh/lhu) */
 #define OLED_PALETTE   ((volatile unsigned short *)0x10010010U)
 
 /* Framebuffer: base 0x10014000, 32-бит доступ */
@@ -65,11 +65,10 @@ void oled_set_palette(int idx, unsigned short color) {
         OLED_PALETTE[idx] = color;
 }
 
-/* ---- Flush (неблокирующий — только выставляет флаг) ---- */
+/* ---- Flush ---- */
 void oled_flush(void) {
-    /* CONTROL доступен только когда !busy (controller_ready=0 для регистров).
-     * Если предыдущий рендер ещё идёт — CPU stall аппаратно на записи в CONTROL.
-     * Поэтому явный wait не нужен. */
+    /* Регистры игнорируются аппаратно пока рендерер busy — ждём. */
+    while (OLED_STATUS & 1) ;
     OLED_CONTROL = (cur_mode ? 2 : 0) | 1;  /* bit1=mode, bit0=flush */
     /* Возврат сразу. CPU может писать в FB или делать другое.
      * Для ожидания — вызвать oled_sync(). */

@@ -8,10 +8,10 @@
 //   0x0004  STATUS     (R)   bit 0: busy (flush в процессе)
 //   0x0008  VP_WIDTH   (W/R) ширина viewport (96–256)
 //   0x000C  VP_HEIGHT  (W/R) высота viewport (64–256)
-//   0x0010–0x020F  PALETTE  (W/R) 256×16 бит RGB565
+//   0x0010–0x020F  PALETTE  (W/R) 256×16 бит RGB565 (halfword доступ через sh/lhu)
 //   0x4000–0xFFFF  FRAMEBUFFER (W/R) пиксели
 //
-// Во время flush: controller_ready=0, CPU stall на любом обращении.
+// Во время flush: регистры и палитра игнорируют запись (защита от mid-frame corruption).
 module OLED_FB_DEVICE (
     input  wire        clk,
     input  wire        reset,
@@ -40,7 +40,7 @@ module OLED_FB_DEVICE (
     // =========================================================
     localparam FB_ADDR_START = 16'h4000;  // начало FB в адресном пространстве
     localparam PAL_ADDR_START = 16'h0010; // начало палитры
-    localparam PAL_ADDR_END   = 16'h0210; // конец палитры (512 байт)
+    localparam PAL_ADDR_END   = 16'h0210; // конец палитры (256 записей × 2 байта)
 
     localparam SCREEN_W = 96;
     localparam SCREEN_H = 64;
@@ -74,8 +74,8 @@ module OLED_FB_DEVICE (
     logic [31:0]             bram_dout_a;
     logic [3:0]              bram_we_a;
 
-    logic [BRAM_ADDR_W-1:0] bram_addr_b;
-    logic [31:0]             bram_dout_b;
+    wire [BRAM_ADDR_W-1:0] bram_addr_b;   // комбинаторный — от pixel_addr_r
+    logic [31:0]            bram_dout_b;
 
     // Port A: CPU (read/write with byte mask)
     always_ff @(posedge clk) begin
@@ -87,6 +87,10 @@ module OLED_FB_DEVICE (
     end
 
     // Port B: Renderer (read-only)
+    // bram_addr_b — комбинаторный от pixel_addr_r (убирает лишний такт задержки)
+    assign bram_addr_b = mode_r ? pixel_addr_r[BRAM_ADDR_W+1:2]   // PAL256: byte >> 2
+                                : pixel_addr_r[BRAM_ADDR_W:1];     // RGB565: halfword >> 1
+
     always_ff @(posedge clk) begin
         bram_dout_b <= bram[bram_addr_b];
     end
@@ -106,7 +110,7 @@ module OLED_FB_DEVICE (
     wire is_reg     = (local_addr < PAL_ADDR_START);
 
     wire [1:0]  reg_sel = local_addr[3:2];
-    wire [7:0]  pal_idx = local_addr[8:1]; // 16-бит записи, 512 байт / 2
+    wire [7:0]  pal_idx = local_addr[8:1] - PAL_ADDR_START[8:1]; // 16-бит записи, halfword aligned
     wire [15:0] fb_offset = local_addr - FB_ADDR_START[15:0];
     wire [BRAM_ADDR_W-1:0] fb_word_addr = fb_offset[BRAM_ADDR_W+1:2]; // /4 для 32-бит слов
 
@@ -332,14 +336,13 @@ module OLED_FB_DEVICE (
             init_cmd_idx     <= 0;
             delay_cnt        <= 0;
             cur_pixel        <= 16'h0;
-            bram_addr_b      <= 0;
             pixel_addr_r     <= 0;
         end else begin
             spi_trigger <= 1'b0;
             flush_trigger <= 1'b0;
 
-            // --- Register writes (only when not busy) ---
-            if (write_trigger && is_reg) begin
+            // --- Register writes (blocked during render to prevent mid-frame corruption) ---
+            if (write_trigger && is_reg && !rend_busy) begin
                 case (reg_sel)
                     2'd0: begin
                         if (write_value[0]) flush_trigger <= 1'b1;
@@ -350,8 +353,8 @@ module OLED_FB_DEVICE (
                 endcase
             end
 
-            // --- Palette writes (only when not busy) ---
-            if (write_trigger && is_palette)
+            // --- Palette writes (blocked during render) ---
+            if (write_trigger && is_palette && !rend_busy)
                 palette[pal_idx] <= write_value[15:0];
 
             // --- Renderer FSM ---
@@ -470,7 +473,7 @@ module OLED_FB_DEVICE (
                             // PAL256: 1 byte per pixel
                             // byte_addr = pixel_linear
                             // word_addr = byte_addr >> 2
-                            // Сохраняем byte_addr в pixel_addr_r, word_addr в bram_addr_b
+                            // Сохраняем byte_addr в pixel_addr_r
                             pixel_addr_r <=
                                 (((scr_y - offset_y) << scale_shift) << stride_shift) +
                                 ((scr_x - offset_x) << scale_shift);
@@ -487,11 +490,8 @@ module OLED_FB_DEVICE (
                 end
 
                 R_PIXEL_READ: begin
-                    // Set BRAM address based on mode (1 cycle for address, 1 for data)
-                    if (mode_r)
-                        bram_addr_b <= pixel_addr_r[BRAM_ADDR_W+1:2]; // byte addr >> 2
-                    else
-                        bram_addr_b <= pixel_addr_r[BRAM_ADDR_W:1];   // halfword addr >> 1
+                    // bram_addr_b уже выставлен комбинаторно от pixel_addr_r.
+                    // Ждём 1 такт на BRAM read latency → данные в bram_dout_b.
                     rstate <= R_PIXEL_LOOKUP;
                 end
 
