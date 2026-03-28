@@ -234,6 +234,7 @@ module TOP #(
     // ---------------------------------------------------------------
     wire        flash_bus_request;
     wire        flash_active;
+    wire        flash_error;
     wire [ADDRESS_SIZE-1:0] mc_flash_addr;
     wire        mc_flash_wr;
     wire [31:0] mc_flash_wr_data;
@@ -726,7 +727,6 @@ module TOP #(
         .mig_init_calib_complete(mig_init_calib_complete)
     );
 
-    wire flash_error;
     assign boot_active = flash_active;
     assign boot_error  = flash_error;
     assign sd_bus_read  = sd_rd;

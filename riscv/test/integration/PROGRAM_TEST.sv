@@ -335,16 +335,35 @@ module PROGRAM_TEST ();
                  dut.bus_ready, dut.mc_ready, dut.pipeline.state);
 
         // --- RESUME CPU ---
+        $display("DEBUG pre-RESUME: flash_active=%b blitter_active=%b pipeline_paused=%b",
+                 dut.flash_active, dut.blitter_active, dut.pipeline_paused);
+        $display("DEBUG pre-RESUME: bus_addr=0x%08X bus_rd=%b bus_wr=%b bus_ready=%b",
+                 dut.bus_addr, dut.bus_rd, dut.bus_wr, dut.bus_ready);
+
         dbg_resume();
 
-        // --- Debug: покажем состояние после resume ---
-        repeat(100) @(posedge clk);
-        $display("DEBUG: PC=0x%08X instr=0x%08X halted=%b pipeline_state=%0d",
-                 dut.cpu.pc, dut.pipeline.instr_reg,
-                 dut.dbg_is_halted, dut.pipeline.state);
-        $display("DEBUG: mc_ready=%b mc_addr=0x%07X mc_rd=%b mc_wr=%b",
-                 dut.pbus.controller_ready, dut.pipeline.mc_address,
-                 dut.pipeline.mc_read_trigger, dut.pipeline.mc_write_trigger);
+        // --- Trace executed instructions ---
+        begin
+            integer exec_count;
+            exec_count = 0;
+            fork
+                begin
+                    while (exec_count < 50) begin
+                        @(posedge clk); #1;
+                        if (dut.pipeline.state == 2) begin // S_EXECUTE
+                            $display("EXEC[%0d]: PC=0x%08X instr=0x%08X halted=%b",
+                                     exec_count, dut.cpu.pc, dut.pipeline.instr_reg,
+                                     dut.dbg_is_halted);
+                            exec_count = exec_count + 1;
+                        end
+                    end
+                end
+                begin
+                    #2000000; // timeout
+                end
+            join_any
+            disable fork;
+        end
 
         // --- Watch first fetches + EBREAK state ---
         for (int fi = 0; fi < 3; fi++) begin

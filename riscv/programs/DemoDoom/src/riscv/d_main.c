@@ -42,6 +42,8 @@ rcsid[] = "$Id: d_main.c,v 1.8 1997/02/03 22:45:09 b1 Exp $";
 #include <fcntl.h>
 #endif
 
+#include "config.h"
+
 
 #include "doomdef.h"
 #include "doomstat.h"
@@ -338,12 +340,26 @@ void D_DoomLoop (void)
 
     while (1)
     {
+        uint32_t ft0 = TIMER_TIME_US;
 
         I_StartFrame ();
+        uint32_t ft1 = TIMER_TIME_US;
+
         TryRunTics ();
+        uint32_t ft2 = TIMER_TIME_US;
 
         D_Display ();
+        uint32_t ft3 = TIMER_TIME_US;
 
+        static int fc = 0;
+        static uint32_t last_log_ms = 0;
+        fc++;
+        uint32_t now_ms = TIMER_TIME_MS;
+        if (fc == 1 || (now_ms - last_log_ms) >= 3000) {
+            printf("[FRAME %d] total=%d tics=%d display=%d us\n",
+                   fc, ft3 - ft0, ft2 - ft1, ft3 - ft2);
+            last_log_ms = now_ms;
+        }
     }
 }
 
@@ -557,6 +573,12 @@ void D_DoomMain (void)
     printf ("V_Init: allocate screens.\n");
     V_Init ();
 
+    // Move screen buffer to scratchpad BRAM (1-cycle access)
+    printf ("Scratchpad: screens[0] -> BRAM\n");
+    extern byte *screens[5];
+    screens[0] = (byte *)SCRATCH_SCREEN;
+    memset(screens[0], 0, SCREENWIDTH * SCREENHEIGHT);
+
     printf ("M_LoadDefaults: Load system defaults.\n");
     M_LoadDefaults ();              // load before initing other systems
 
@@ -572,7 +594,16 @@ void D_DoomMain (void)
     printf ("R_Init: Init DOOM refresh daemon - ");
     R_Init ();
 
-    printf ("\nP_Init: Init Playloop state.\n");
+    // Copy colormaps to scratchpad BRAM (1-cycle lookup)
+    {
+        extern lighttable_t *colormaps;
+        int cmap_size = 34 * 256;  // 8704 bytes
+        printf ("\nScratchpad: colormaps (%d bytes) -> BRAM\n", cmap_size);
+        memcpy(SCRATCH_COLORMAPS, colormaps, cmap_size);
+        colormaps = (lighttable_t *)SCRATCH_COLORMAPS;
+    }
+
+    printf ("P_Init: Init Playloop state.\n");
     P_Init ();
 
     printf ("I_Init: Setting up machine state.\n");

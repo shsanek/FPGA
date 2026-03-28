@@ -867,32 +867,49 @@ void R_SetupFrame (player_t* player)
 //
 // R_RenderView
 //
+/* Timer for profiling */
+#define PROF_TIMER_US (*(volatile unsigned int *)0x1003000CU)
+
 void R_RenderPlayerView (player_t* player)
 {
-    R_SetupFrame (player);
+    static int rframe = 0;
+    static unsigned int last_prof_ms = 0;
 
-    // Clear buffers.
+    unsigned int rt0 = PROF_TIMER_US;
+
+    R_SetupFrame (player);
     R_ClearClipSegs ();
     R_ClearDrawSegs ();
     R_ClearPlanes ();
     R_ClearSprites ();
 
-    // check for new console commands.
+    unsigned int rt1 = PROF_TIMER_US;
+
     NetUpdate ();
 
-    // The head node is the last node output.
     R_RenderBSPNode (numnodes-1);
 
-    // Check for new console commands.
+    unsigned int rt2 = PROF_TIMER_US;
+
     NetUpdate ();
 
     R_DrawPlanes ();
 
-    // Check for new console commands.
+    unsigned int rt3 = PROF_TIMER_US;
+
     NetUpdate ();
 
     R_DrawMasked ();
 
-    // Check for new console commands.
+    unsigned int rt4 = PROF_TIMER_US;
+
     NetUpdate ();
+
+    rframe++;
+    unsigned int now_ms = *(volatile unsigned int *)0x10030008U;
+    if (rframe == 1 || (now_ms - last_prof_ms) >= 3000) {
+        printf("[RENDER F%d] setup=%d bsp=%d planes=%d masked=%d total=%d us\n",
+               rframe, rt1-rt0, rt2-rt1, rt3-rt2, rt4-rt3, rt4-rt0);
+        last_prof_ms = now_ms;
+    }
 }

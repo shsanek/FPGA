@@ -82,10 +82,14 @@ void I_UpdateNoBlit(void) {}
 
 void I_FinishUpdate(void)
 {
+    static int frame_num = 0;
     byte *src = screens[0]; /* 320×200, 8-bit indexed */
+
+    uint32_t t0 = TIMER_TIME_US;
 
     /* Wait for previous render before writing to FB */
     oled_sync();
+    uint32_t t1 = TIMER_TIME_US;
 
     /* Write palette indices directly — hardware does the rest */
     for (int oy = 0; oy < VP_H; oy++) {
@@ -108,8 +112,23 @@ void I_FinishUpdate(void)
         }
     }
 
+    uint32_t t2 = TIMER_TIME_US;
+
     /* Kick hardware render (non-blocking): mode=PAL256 (bit1), flush (bit0) */
     OLED_CONTROL = 0x03;
+
+    uint32_t t3 = TIMER_TIME_US;
+
+    frame_num++;
+    {
+        static uint32_t last_oled_log_ms = 0;
+        uint32_t now_ms = TIMER_TIME_MS;
+        if (frame_num <= 3 || (now_ms - last_oled_log_ms) >= 3000) {
+            printf("[OLED F%d] sync=%d scale=%d flush=%d us\n",
+                   frame_num, t1 - t0, t2 - t1, t3 - t2);
+            last_oled_log_ms = now_ms;
+        }
+    }
 }
 
 void I_WaitVBL(int count) { (void)count; }
