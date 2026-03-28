@@ -122,7 +122,7 @@ void R_DrawColumn (void)
     BLIT_DST_OFFSET = (viewwindowy + dc_yl) * SCREENWIDTH + (viewwindowx + dc_x);
     BLIT_DST_STEP   = SCREENWIDTH;
     BLIT_COUNT      = count + 1;
-    BLIT_CMAP_OFFSET = (uint32_t)dc_colormap - SCRATCH_BASE;
+    BLIT_CMAP_OFFSET = (uint32_t)dc_colormap;
     BLIT_CMD        = 1;
 }
 
@@ -465,7 +465,7 @@ void R_DrawSpan (void)
     BLIT_DST_OFFSET  = (viewwindowy + ds_y) * SCREENWIDTH + (viewwindowx + ds_x1);
     BLIT_DST_STEP    = 1;
     BLIT_COUNT       = count + 1;
-    BLIT_CMAP_OFFSET = (uint32_t)ds_colormap - SCRATCH_BASE;
+    BLIT_CMAP_OFFSET = (uint32_t)ds_colormap;
     BLIT_CMD         = 2;  // CMD_SPAN → blitter_active, CPU stall
 }
 

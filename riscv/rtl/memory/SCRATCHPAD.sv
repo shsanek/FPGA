@@ -154,10 +154,10 @@ module SCRATCHPAD #(
     wire [29:0] tex_bus_addr = {reg_src_addr[29:28], tex_ddr_byte[27:2], 2'b0};
     wire [1:0]  tex_byte_lane = tex_ddr_byte[1:0];
 
-    // Scratchpad colormap address (30-bit bus addr)
-    wire [31:0] cmap_byte_off = reg_cmap_offset + {24'b0, w_texel};
-    wire [29:0] cmap_bus_addr = SP_BASE + {12'b0, cmap_byte_off[17:2], 2'b0};
-    wire [1:0]  cmap_byte_lane = cmap_byte_off[1:0];
+    // Colormap address (full 30-bit bus addr, can be DDR or scratchpad)
+    wire [31:0] cmap_byte_addr = reg_cmap_offset + {24'b0, w_texel};
+    wire [29:0] cmap_bus_addr  = {cmap_byte_addr[29:2], 2'b0};
+    wire [1:0]  cmap_byte_lane = cmap_byte_addr[1:0];
 
     // Scratchpad destination address (30-bit bus addr)
     wire [29:0] dst_bus_addr = SP_BASE + {12'b0, w_dst_offset[17:2], 2'b0};
