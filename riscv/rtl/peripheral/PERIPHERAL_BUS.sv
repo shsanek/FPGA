@@ -1,14 +1,17 @@
 // Шина периферийных устройств.
 //
-// Маршрутизация по биту 28 адреса (29-битная шина):
-//   address[28] == 0  →  MEMORY_CONTROLLER  (DDR3 256 MB)
-//   address[28] == 1  →  I/O устройства
+// Маршрутизация по битам адреса (29-битная шина):
+//   address[28] == 0                →  MEMORY_CONTROLLER  (DDR3 256 MB)
+//   address[28] == 1, [18] == 0     →  I/O устройства (по addr[17:16])
+//   address[28] == 1, [18] == 1     →  SCRATCHPAD (BRAM 128 KB)
 //
 // I/O подразбивка по битам [17:16]:
 //   00 → UART_IO_DEVICE   (0x10000000)
-//   01 → OLED_IO_DEVICE   (0x10010000)
+//   01 → OLED_FB_DEVICE   (0x10010000)
 //   10 → SD_IO_DEVICE     (0x10020000)
 //   11 → TIMER_DEVICE     (0x10030000)
+//
+// SCRATCHPAD:               (0x10040000)
 module PERIPHERAL_BUS (
     // Интерфейс с CPU (upstream) — 29-битная шина
     input  wire [28:0] address,
@@ -37,7 +40,7 @@ module PERIPHERAL_BUS (
     input  wire [31:0] io_read_value,
     input  wire        io_controller_ready,
 
-    // OLED_IO_DEVICE (downstream)
+    // OLED_FB_DEVICE (downstream)
     output wire [27:0] oled_address,
     output wire        oled_read_trigger,
     output wire        oled_write_trigger,
@@ -59,15 +62,27 @@ module PERIPHERAL_BUS (
     output wire [27:0] timer_address,
     output wire        timer_read_trigger,
     input  wire [31:0] timer_read_value,
-    input  wire        timer_controller_ready
+    input  wire        timer_controller_ready,
+
+    // SCRATCHPAD (downstream)
+    output wire [27:0] sp_address,
+    output wire        sp_read_trigger,
+    output wire        sp_write_trigger,
+    output wire [31:0] sp_write_value,
+    output wire [3:0]  sp_mask,
+    input  wire [31:0] sp_read_value,
+    input  wire        sp_controller_ready
 );
-    wire io_sel   = address[28];
+    // --- Decode ---
+    wire io_sel    = address[28];
+    wire sp_sel    = io_sel & address[18];           // 0x1004_0000+
+    wire dev_sel   = io_sel & ~address[18];          // 0x1000_0000–0x1003_FFFF
     wire [1:0] io_dev = address[17:16];
 
-    wire uart_sel  = io_sel & (io_dev == 2'b00);
-    wire oled_sel  = io_sel & (io_dev == 2'b01);
-    wire sd_sel    = io_sel & (io_dev == 2'b10);
-    wire timer_sel = io_sel & (io_dev == 2'b11);
+    wire uart_sel  = dev_sel & (io_dev == 2'b00);
+    wire oled_sel  = dev_sel & (io_dev == 2'b01);
+    wire sd_sel    = dev_sel & (io_dev == 2'b10);
+    wire timer_sel = dev_sel & (io_dev == 2'b11);
 
     // --- MEMORY_CONTROLLER ---
     assign mc_address       = address[27:0];
@@ -101,14 +116,23 @@ module PERIPHERAL_BUS (
     assign timer_address      = address[27:0];
     assign timer_read_trigger = timer_sel ? read_trigger : 1'b0;
 
+    // --- SCRATCHPAD ---
+    assign sp_address       = address[27:0];
+    assign sp_read_trigger  = sp_sel ? read_trigger  : 1'b0;
+    assign sp_write_trigger = sp_sel ? write_trigger : 1'b0;
+    assign sp_write_value   = write_value;
+    assign sp_mask          = mask;
+
     // --- Мультиплексирование ответа ---
-    assign read_value       = timer_sel ? timer_read_value :
+    assign read_value       = sp_sel    ? sp_read_value    :
+                              timer_sel ? timer_read_value :
                               sd_sel    ? sd_read_value    :
                               oled_sel  ? oled_read_value  :
                               uart_sel  ? io_read_value    :
                                           mc_read_value;
 
-    assign controller_ready = timer_sel ? timer_controller_ready :
+    assign controller_ready = sp_sel    ? sp_controller_ready    :
+                              timer_sel ? timer_controller_ready :
                               sd_sel    ? sd_controller_ready    :
                               oled_sel  ? oled_controller_ready  :
                               uart_sel  ? io_controller_ready    :

@@ -175,6 +175,15 @@ module TOP #(
     wire        timer_ready;
 
     // ---------------------------------------------------------------
+    // PERIPHERAL_BUS ↔ SCRATCHPAD
+    // ---------------------------------------------------------------
+    wire [27:0] sp_addr;
+    wire        sp_rd, sp_wr;
+    wire [31:0] sp_wr_data, sp_rd_data;
+    wire [3:0]  sp_mask_w;
+    wire        sp_ready;
+
+    // ---------------------------------------------------------------
     // MEMORY_CONTROLLER ↔ RAM_CONTROLLER
     // ---------------------------------------------------------------
     wire        ram_ready;
@@ -509,7 +518,15 @@ module TOP #(
         .timer_address          (timer_addr),
         .timer_read_trigger     (timer_rd),
         .timer_read_value       (timer_rd_data),
-        .timer_controller_ready (timer_ready)
+        .timer_controller_ready (timer_ready),
+
+        .sp_address             (sp_addr),
+        .sp_read_trigger        (sp_rd),
+        .sp_write_trigger       (sp_wr),
+        .sp_write_value         (sp_wr_data),
+        .sp_mask                (sp_mask_w),
+        .sp_read_value          (sp_rd_data),
+        .sp_controller_ready    (sp_ready)
     );
 
     // --- UART_IO_DEVICE ---
@@ -580,6 +597,19 @@ module TOP #(
         .read_trigger     (timer_rd),
         .read_value       (timer_rd_data),
         .controller_ready (timer_ready)
+    );
+
+    // --- SCRATCHPAD (128 KB BRAM) ---
+    SCRATCHPAD scratchpad (
+        .clk              (clk),
+        .reset            (reset),
+        .address          (sp_addr),
+        .read_trigger     (sp_rd),
+        .write_trigger    (sp_wr),
+        .write_value      (sp_wr_data),
+        .mask             (sp_mask_w),
+        .read_value       (sp_rd_data),
+        .controller_ready (sp_ready)
     );
 
     // --- FLASH_LOADER (boot from QSPI flash) ---
