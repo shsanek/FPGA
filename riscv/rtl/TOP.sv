@@ -188,7 +188,7 @@ module TOP #(
     // Blitter (inside SCRATCHPAD) ↔ external bus
     // ---------------------------------------------------------------
     wire        blitter_active;
-    wire [28:0] blitter_bus_addr;
+    wire [29:0] blitter_bus_addr;
     wire        blitter_bus_rd;
     wire [31:0] blitter_bus_data;
     wire        blitter_bus_ready;
@@ -484,7 +484,7 @@ module TOP #(
                                   pipeline_paused ? {MASK_SIZE{1'b1}}     : pipe_mask;
 
     // Blitter mux — final output to PERIPHERAL_BUS
-    assign bus_addr    = blitter_active ? {1'b0, blitter_bus_addr} : pre_bus_addr;
+    assign bus_addr    = blitter_active ? blitter_bus_addr : pre_bus_addr;
     assign bus_rd      = blitter_active ? blitter_bus_rd   : pre_bus_rd;
     assign bus_wr      = blitter_active ? 1'b0             : pre_bus_wr;
     assign bus_wr_data = blitter_active ? 32'b0            : pre_bus_wr_data;

@@ -76,7 +76,7 @@ module PERIPHERAL_BUS (
 
     // Blitter signals (from SCRATCHPAD, passed through to TOP)
     input  wire        blitter_active,
-    input  wire [28:0] blitter_bus_addr,
+    input  wire [29:0] blitter_bus_addr,
     input  wire        blitter_bus_rd,
     output wire [31:0] blitter_bus_data,
     output wire        blitter_bus_ready

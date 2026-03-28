@@ -28,7 +28,7 @@ module SCRATCHPAD #(
 
     // Blitter → external bus (для чтения текстур из DDR)
     output wire        blitter_active,
-    output wire [28:0] blitter_bus_addr,
+    output wire [29:0] blitter_bus_addr,
     output wire        blitter_bus_rd,
     input  wire [31:0] blitter_bus_data,
     input  wire        blitter_bus_ready
@@ -93,7 +93,7 @@ module SCRATCHPAD #(
     // 0x30 SRC_SHIFT    (W)  log2(texture width) — span only
 
     logic [1:0]  reg_cmd;
-    logic [27:0] reg_src_addr;
+    logic [29:0] reg_src_addr;
     logic [31:0] reg_src_frac;
     logic [31:0] reg_src_step;
     logic [31:0] reg_src_mask;
@@ -127,7 +127,7 @@ module SCRATCHPAD #(
         case (address[5:2])
             4'h0: mmio_rd_data = {30'b0, reg_cmd};
             4'h1: mmio_rd_data = {31'b0, blit_busy};
-            4'h2: mmio_rd_data = {4'b0, reg_src_addr};
+            4'h2: mmio_rd_data = {2'b0, reg_src_addr};
             4'h3: mmio_rd_data = reg_src_frac;
             4'h4: mmio_rd_data = reg_src_step;
             4'h5: mmio_rd_data = reg_src_mask;
@@ -155,7 +155,7 @@ module SCRATCHPAD #(
 
     // Blitter bus outputs
     logic        blit_rd;
-    logic [28:0] blit_addr;
+    logic [29:0] blit_addr;
 
     assign blitter_active   = blit_busy;
     assign blitter_bus_rd   = blit_rd;
@@ -170,7 +170,7 @@ module SCRATCHPAD #(
     wire [31:0] tex_idx_span = span_y_part + span_x_part;
 
     wire [31:0] tex_idx = (reg_cmd == 2'd2) ? tex_idx_span : tex_idx_col;
-    wire [27:0] tex_ddr_addr = reg_src_addr + tex_idx[27:0];
+    wire [27:0] tex_ddr_addr = reg_src_addr[27:0] + tex_idx[27:0];
     wire [1:0]  tex_byte_lane = tex_ddr_addr[1:0];
 
     // Colormap address in BRAM (byte → word)
@@ -187,12 +187,12 @@ module SCRATCHPAD #(
         if (reset) begin
             blit_state     <= S_IDLE;
             blit_rd        <= 1'b0;
-            blit_addr      <= 29'b0;
+            blit_addr      <= 30'b0;
             bram_b_we      <= 4'b0;
             bram_b_addr    <= {ADDR_W{1'b0}};
             bram_b_din     <= 32'b0;
             reg_cmd        <= 2'b0;
-            reg_src_addr   <= 28'b0;
+            reg_src_addr   <= 30'b0;
             reg_src_frac   <= 32'b0;
             reg_src_step   <= 32'b0;
             reg_src_mask   <= 32'b0;
@@ -217,7 +217,7 @@ module SCRATCHPAD #(
                 case (address[5:2])
                     4'h0: reg_cmd        <= write_value[1:0];
                     // 4'h1: STATUS is read-only
-                    4'h2: reg_src_addr   <= write_value[27:0];
+                    4'h2: reg_src_addr   <= write_value[29:0];
                     4'h3: reg_src_frac   <= write_value;
                     4'h4: reg_src_step   <= write_value;
                     4'h5: reg_src_mask   <= write_value;
@@ -250,7 +250,7 @@ module SCRATCHPAD #(
                 S_FETCH_TEX: begin
                     // Issue DDR read for texture byte
                     // Address is word-aligned (drop low 2 bits for bus)
-                    blit_addr <= {1'b0, tex_ddr_addr[27:2], 2'b0};
+                    blit_addr <= {reg_src_addr[29:28], tex_ddr_addr[27:2], 2'b0};
                     blit_rd   <= 1'b1;
                     blit_state <= S_WAIT_TEX;
                 end
