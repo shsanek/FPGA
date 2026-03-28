@@ -20,7 +20,7 @@ module CPU_DATA_ADAPTER (
     output wire        stall,
 
     // Интерфейс с MEMORY_CONTROLLER
-    output logic [28:0] mc_address,
+    output logic [29:0] mc_address,
     output logic        mc_read_trigger,
     output logic        mc_write_trigger,
     output logic [31:0] mc_write_value,
@@ -43,7 +43,7 @@ module CPU_DATA_ADAPTER (
     // Адрес и данные для MEMORY_CONTROLLER
     // ---------------------------------------------------------------
     always_comb begin
-        mc_address     = mem_addr[28:0];
+        mc_address     = mem_addr[29:0];
         mc_write_value = mem_write_data;
         mc_mask        = mem_byte_mask;
         mc_read_trigger  = (state == S_TRIG && is_read);

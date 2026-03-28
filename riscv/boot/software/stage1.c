@@ -219,6 +219,34 @@ int main(void) {
     boot_animation();
     boot_puts("[OLED] init OK");
 
+    /* ---- Stream cache test ---- */
+    {
+        #define STREAM_BIT 0x20000000U
+        #define TEST_ADDR  0x00010000U  /* свободная DDR область */
+
+        volatile unsigned int *p = (volatile unsigned int *)TEST_ADDR;
+
+        /* Шаг 1: обычная запись в DDR (через кэш) */
+        boot_print("[STREAM] write..");
+        p[0] = 0xDEADBEEF;
+        p[1] = 0x12345678;
+        p[2] = 0xCAFEBABE;
+        p[3] = 0xA5A5A5A5;
+        boot_puts("ok");
+
+        /* Шаг 2: обычное чтение (cache hit) */
+        boot_print("[STREAM] cache: ");
+        boot_hex(p[0]); boot_putc(' '); boot_hex(p[1]);
+        boot_puts("");
+
+        /* Шаг 3: просто прочитать с bit 29 */
+        boot_puts("[STREAM] try read...");
+        volatile unsigned int *s = (volatile unsigned int *)(TEST_ADDR | STREAM_BIT);
+        unsigned int s0 = s[0];
+        boot_print("[STREAM] s0="); boot_hex(s0); boot_puts("");
+        boot_puts("[STREAM] done");
+    }
+
     /* Прогресс-бар */
     draw_progress_bar(0);
 
