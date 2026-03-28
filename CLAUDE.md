@@ -66,9 +66,10 @@ FPGA/
 │   │   │   ├── LOAD_UNIT.sv            # Load alignment + sign extension
 │   │   │   └── STORE_UNIT.sv           # Store byte mask
 │   │   ├── memory/                     # Cache + DDR
-│   │   │   ├── MEMORY_CONTROLLER.sv    # 4-pool write-back cache
+│   │   │   ├── MEMORY_CONTROLLER.sv    # Cache controller (D-cache + stream + I-cache)
 │   │   │   ├── CHUNK_STORAGE.sv        # Single cache line
-│   │   │   ├── CHUNK_STORAGE_4_POOL.sv # 4-entry cache pool (LRU)
+│   │   │   ├── CHUNK_STORAGE_4_POOL.sv # 4-entry D-cache pool (LRU)
+│   │   │   ├── I_CACHE.sv             # Direct-mapped I-cache (256×16B = 4KB, read-only)
 │   │   │   ├── RAM_CONTROLLER.sv       # MIG DDR controller
 │   │   │   ├── MIG_MODEL.sv            # Simulation-only MIG mock
 │   │   │   ├── SCRATCHPAD.sv           # 128 KB BRAM + Hardware Blitter
@@ -132,7 +133,7 @@ FPGA/
 ## Key Components
 
 ### `riscv/BASE_TYPE.sv`
-Defines shared types: `R_TYPE` instruction fields, `R_TYPE_ALU32_INPUT`, and `PROCESSOR_STATE` enum (`READ_COMMAND`, `READ_REGISTER`, `RUN_COMMAND`, `WATING_MEMORY`, `SAVE_IN_REGISTER`, `ERROR`).
+Defines shared types: `R_TYPE` instruction fields, `R_TYPE_ALU32_INPUT`, `PROCESSOR_STATE` enum (`READ_COMMAND`, `READ_REGISTER`, `RUN_COMMAND`, `WATING_MEMORY`, `SAVE_IN_REGISTER`, `ERROR`), and `BUS_MEM_TYPE` enum for memory bus routing (`BUS_BASE_MEM=00`, `BUS_STREAM=01`, `BUS_CODE_CACHE_CORE1=10`).
 
 ### `riscv/ALU/OP_0110011/OP_0110011.sv`
 Implements all 8 RISC-V R-type operations. Dispatch is based on `funct3`; `funct7` distinguishes SUB from ADD and SRA from SRL.
@@ -151,11 +152,20 @@ Implements all 8 RISC-V R-type operations. Dispatch is based on `funct3`; `funct
 Cache hierarchy between the processor and DDR RAM:
 
 ```
-MEMORY_CONTROLLER
-├── CHUNK_STORAGE_4_POOL   # 4-entry write-back cache (128-bit chunks, 16-byte aligned)
+MEMORY_CONTROLLER (bus_type[1:0] selects cache path)
+├── CHUNK_STORAGE_4_POOL   # D-cache: 4-entry write-back (128-bit chunks) ← bus_type=00
 │   └── CHUNK_STORAGE ×4  # Individual cache line with mask-based writes
+├── STREAM_CACHE           # 1-entry read-only bypass cache              ← bus_type=01
+├── I_CACHE                # I-cache: 256-entry direct-mapped (4 KB)     ← bus_type=10
 └── RAM_CONTROLLER         # MIG DDR controller with dual-clock sync (clk / mig_ui_clk)
 ```
+
+**I_CACHE** (instruction cache):
+- Direct-mapped, 256 lines × 16 bytes = 4 KB, read-only
+- Address: `[tag 16b | index 8b | offset 4b]` (28-bit)
+- Combinational hit check (distributed RAM for tags + data)
+- CPU_PIPELINE_ADAPTER prefixes IF address with `2'b11` → routes through I-cache
+- Eliminates instruction/data cache thrashing in DOOM BSP traversal
 
 **MEMORY_CONTROLLER states:** `NORMAL` → `WATING` → `SAVE_DATA` → `WRITE_DATA` → `NORMAL`
 - On cache miss: optionally evicts dirty line to RAM, then fetches new chunk
@@ -175,10 +185,15 @@ MEMORY_CONTROLLER
 - Stores writes when `wdf_wren = 1`, returns reads with 1-cycle latency
 - `mig_app_rdy` and `mig_app_wdf_rdy` always `1` (no back-pressure)
 
-### Peripheral Bus — адресная карта (29-bit, addr[28] = I/O select)
+### Peripheral Bus — адресная карта (30-bit, addr[29:28] = bus type)
 
 ```
-0x0000_0000 – 0x0FFF_FFFF  →  MEMORY_CONTROLLER (DDR3 256 MB через кеш)
+addr[29:28]=00: DDR D-cache (MEMORY_CONTROLLER, bus_type=00)
+addr[29:28]=01: I/O устройства + SCRATCHPAD
+addr[29:28]=10: DDR stream  (MEMORY_CONTROLLER, bus_type=01)
+addr[29:28]=11: DDR I-cache (MEMORY_CONTROLLER, bus_type=10)
+
+0x0000_0000 – 0x0FFF_FFFF  →  MEMORY_CONTROLLER (DDR3 256 MB, D-cache)
 0x1000_0000 – 0x1000_FFFF  →  UART_IO_DEVICE
   0x1000_0000 : TX_DATA   (W/R)
   0x1000_0004 : RX_DATA   (R)
@@ -210,9 +225,11 @@ MEMORY_CONTROLLER
 ```
 
 Декодирование:
-- `addr[28]=0` → DDR (MEMORY_CONTROLLER, 256 MB)
-- `addr[28]=1, addr[18]=0` → I/O, `addr[17:16]` → устройство (00=UART, 01=OLED, 10=SD, 11=TIMER)
-- `addr[28]=1, addr[18]=1` → SCRATCHPAD (128 KB BRAM)
+- `addr[29:28]=00` → DDR D-cache (MEMORY_CONTROLLER, `bus_type=00`)
+- `addr[29:28]=01, addr[18]=0` → I/O, `addr[17:16]` → устройство (00=UART, 01=OLED, 10=SD, 11=TIMER)
+- `addr[29:28]=01, addr[18]=1` → SCRATCHPAD (128 KB BRAM)
+- `addr[29:28]=10` → DDR stream (MEMORY_CONTROLLER, `bus_type=01`)
+- `addr[29:28]=11` → DDR I-cache (MEMORY_CONTROLLER, `bus_type=10`)
 
 ### `riscv/CPU/SPI_MASTER.sv`
 Full-duplex SPI Mode 0 (CPOL=0, CPHA=0), MSB first. Настраиваемый делитель тактовой.

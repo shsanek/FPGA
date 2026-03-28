@@ -31,8 +31,8 @@ module MEMORY_CONTROLLER#(
     output wire[DATA_SIZE-1: 0] read_value,
     output wire contains_address,
 
-    // Stream bit: 1 = use stream line instead of cache
-    input wire stream
+    // Bus type: BUS_BASE_MEM=00, BUS_STREAM=01, BUS_CODE_CACHE_CORE1=10
+    input wire[1:0] bus_type
 );
 
     // =========================================================
@@ -51,19 +51,28 @@ module MEMORY_CONTROLLER#(
     wire[DATA_SIZE - 1:0]    stream_read_value;
 
     // =========================================================
-    // Mux: contains_address и read_value по stream биту
+    // I-cache wires
     // =========================================================
-    wire internal_contains_address = stream ? stream_contains_address
-                                            : cache_contains_address;
+    wire                     icache_contains_address;
+    wire[DATA_SIZE - 1:0]    icache_read_value;
+
+    // =========================================================
+    // Decode bus_type
+    // =========================================================
+    wire is_stream = (bus_type == 2'b01);  // BUS_STREAM
+    wire is_icache = (bus_type == 2'b10);  // BUS_CODE_CACHE_CORE1
+
+    // =========================================================
+    // Mux: contains_address и read_value по bus_type
+    // =========================================================
+    wire internal_contains_address = is_icache ? icache_contains_address :
+                                     is_stream ? stream_contains_address :
+                                                 cache_contains_address;
 
     assign contains_address = internal_contains_address;
-    assign read_value       = stream ? stream_read_value
-                                     : cache_read_value;
-
-    // save_need_flag: stream read-only, never dirty
-    wire save_need_flag = stream_latched ? 1'b0 : cache_save_need_flag;
-    wire[ADDRESS_SIZE - 1:0] save_address = cache_save_address;
-    wire[CHUNK_PART - 1: 0]  save_data    = cache_save_data;
+    assign read_value       = is_icache ? icache_read_value :
+                              is_stream ? stream_read_value :
+                                          cache_read_value;
 
     // =========================================================
     // Shared FSM state
@@ -78,7 +87,15 @@ module MEMORY_CONTROLLER#(
     logic[DATA_SIZE - 1:0]    internal_write_data;
 
     logic had_dirty_evict;
-    logic stream_latched;  // stream bit, защёлкнутый при начале miss
+    logic[1:0] bus_type_latched;  // bus_type, защёлкнутый при начале miss
+
+    wire latched_stream = (bus_type_latched == 2'b01);
+    wire latched_icache = (bus_type_latched == 2'b10);
+
+    // save_need_flag: stream/icache read-only, never dirty
+    wire save_need_flag = (bus_type_latched != 2'b00) ? 1'b0 : cache_save_need_flag;
+    wire[ADDRESS_SIZE - 1:0] save_address = cache_save_address;
+    wire[CHUNK_PART - 1: 0]  save_data    = cache_save_data;
 
     typedef enum logic [2:0] {
         MEMORY_CONTROLLER_STATE_NORMAL,
@@ -118,7 +135,7 @@ module MEMORY_CONTROLLER#(
             ram_write_trigger      <= 0;
             ram_read_trigger       <= 0;
             had_dirty_evict        <= 0;
-            stream_latched         <= 0;
+            bus_type_latched       <= 2'b00;
         end else begin
 
             if (internal_state == MEMORY_CONTROLLER_STATE_SAVE_DATA) begin
@@ -150,7 +167,7 @@ module MEMORY_CONTROLLER#(
                     internal_address       <= address;
                     internal_mask          <= mask;
                     internal_write_data    <= write_value;
-                    stream_latched         <= stream;
+                    bus_type_latched       <= bus_type;
 
                     ram_read_trigger  <= 1;
                     ram_read_address  <= { address[ADDRESS_SIZE-1:4], 4'b0000 };
@@ -176,7 +193,7 @@ module MEMORY_CONTROLLER#(
     end
 
     // =========================================================
-    // CHUNK_STORAGE_4_POOL (main cache)
+    // CHUNK_STORAGE_4_POOL (main D-cache)
     // =========================================================
     CHUNK_STORAGE_4_POOL #(
         .CHUNK_PART(CHUNK_PART),
@@ -199,7 +216,7 @@ module MEMORY_CONTROLLER#(
         .order_tick            (order_tick),
         .new_data              (new_data),
         .new_address           (new_address),
-        .new_data_save         (new_data_save && !stream_latched)
+        .new_data_save         (new_data_save && !latched_stream && !latched_icache)
     );
 
     // =========================================================
@@ -226,7 +243,35 @@ module MEMORY_CONTROLLER#(
         .order_tick            (order_tick),
         .new_data              (new_data),
         .new_address           (new_address),
-        .new_data_save         (new_data_save && stream_latched)
+        .new_data_save         (new_data_save && latched_stream)
+    );
+
+    // =========================================================
+    // I_CACHE (direct-mapped read-only, 256 lines = 4 KB)
+    // =========================================================
+    I_CACHE #(
+        .DEPTH(256),
+        .CHUNK_PART(CHUNK_PART),
+        .DATA_SIZE(DATA_SIZE),
+        .MASK_SIZE(MASK_SIZE),
+        .ADDRESS_SIZE(ADDRESS_SIZE)
+    ) icache_inst (
+        .clk                   (clk),
+        .reset                 (reset),
+        .address               (output_address),
+        .mask                  (output_mask),
+        .write_trigger         (1'b0),
+        .write_value           ('0),
+        .read_trigger          (read_trigger),
+        .read_value            (icache_read_value),
+        .contains_address      (icache_contains_address),
+        .save_address          (),
+        .save_data             (),
+        .save_need_flag        (),
+        .order_tick            (order_tick),
+        .new_data              (new_data),
+        .new_address           (new_address),
+        .new_data_save         (new_data_save && latched_icache)
     );
 
 endmodule

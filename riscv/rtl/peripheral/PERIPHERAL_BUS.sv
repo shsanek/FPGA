@@ -1,11 +1,16 @@
 // Шина периферийных устройств.
 //
-// Маршрутизация по битам адреса (29-битная шина):
-//   address[28] == 0                →  MEMORY_CONTROLLER  (DDR3 256 MB)
-//   address[28] == 1, [18] == 0     →  I/O устройства (по addr[17:16])
-//   address[28] == 1, [18] == 1     →  SCRATCHPAD (BRAM 128 KB)
+// Маршрутизация по битам адреса (30-битная шина, addr[29:28]):
+//   00 → MEMORY_CONTROLLER  (DDR3 256 MB, D-cache)
+//   01 → I/O                (UART, OLED, SD, TIMER, SCRATCHPAD)
+//   10 → MEMORY_CONTROLLER  (DDR3 stream, 1-entry bypass cache)
+//   11 → MEMORY_CONTROLLER  (DDR3 I-cache, read-only BRAM cache)
 //
-// I/O подразбивка по битам [17:16]:
+// I/O подразбивка (addr[29:28]=01):
+//   addr[18] == 0 → I/O устройства (по addr[17:16])
+//   addr[18] == 1 → SCRATCHPAD (BRAM 128 KB)
+//
+// I/O устройства по битам [17:16]:
 //   00 → UART_IO_DEVICE   (0x10000000)
 //   01 → OLED_FB_DEVICE   (0x10010000)
 //   10 → SD_IO_DEVICE     (0x10020000)
@@ -30,7 +35,7 @@ module PERIPHERAL_BUS (
     output wire [3:0]  mc_mask,
     input  wire [31:0] mc_read_value,
     input  wire        mc_controller_ready,
-    output wire        mc_stream,          // 1 = stream access (bypass cache)
+    output wire [1:0]  mc_bus_type,         // BUS_BASE_MEM=00, BUS_STREAM=01, BUS_CODE_CACHE_CORE1=10
 
     // UART_IO_DEVICE (downstream)
     output wire [27:0] io_address,
@@ -74,12 +79,11 @@ module PERIPHERAL_BUS (
     input  wire [31:0] sp_read_value,
     input  wire        sp_controller_ready
 );
-    // --- Decode ---
-    // addr[29] = stream bit (bypass cache, read-only)
-    // addr[28] = I/O select
-    wire stream_sel = address[29] & ~address[28];    // stream DDR read
-    wire io_sel     = address[28];
-    wire mem_sel    = ~address[28] & ~address[29];   // normal DDR (cached)
+    // --- Decode addr[29:28] ---
+    wire mem_sel    = ~address[29] & ~address[28];   // 00 — normal DDR (D-cache)
+    wire io_sel     = ~address[29] &  address[28];   // 01 — I/O + SCRATCHPAD
+    wire stream_sel =  address[29] & ~address[28];   // 10 — stream DDR read
+    wire icache_sel =  address[29] &  address[28];   // 11 — I-cache (read-only)
     wire sp_sel     = io_sel & address[18];          // 0x1004_0000+
     wire dev_sel    = io_sel & ~address[18];         // 0x1000_0000–0x1003_FFFF
     wire [1:0] io_dev = address[17:16];
@@ -89,14 +93,16 @@ module PERIPHERAL_BUS (
     wire sd_sel    = dev_sel & (io_dev == 2'b10);
     wire timer_sel = dev_sel & (io_dev == 2'b11);
 
-    // --- MEMORY_CONTROLLER (cached + stream через один порт) ---
-    wire mc_sel = mem_sel | stream_sel;
+    // --- MEMORY_CONTROLLER (cached + stream + icache через один порт) ---
+    wire mc_sel = mem_sel | stream_sel | icache_sel;
     assign mc_address       = address[27:0];
     assign mc_read_trigger  = mc_sel ? read_trigger  : 1'b0;
-    assign mc_write_trigger = mem_sel ? write_trigger : 1'b0;  // stream = read-only
+    assign mc_write_trigger = mem_sel ? write_trigger : 1'b0;  // stream & icache = read-only
     assign mc_write_value   = write_value;
     assign mc_mask          = mask;
-    assign mc_stream        = stream_sel;
+    assign mc_bus_type      = icache_sel ? 2'b10 :   // BUS_CODE_CACHE_CORE1
+                              stream_sel ? 2'b01 :   // BUS_STREAM
+                                           2'b00;    // BUS_BASE_MEM
 
     // --- UART ---
     assign io_address       = address[27:0];

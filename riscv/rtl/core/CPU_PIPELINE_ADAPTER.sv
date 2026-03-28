@@ -100,7 +100,7 @@ module CPU_PIPELINE_ADAPTER (
 
         case (state)
             S_FETCH_TRIG: begin
-                mc_address      = instr_addr[29:0];
+                mc_address      = {2'b11, instr_addr[27:0]};  // route through I-cache
                 mc_read_trigger = mc_controller_ready;
             end
 

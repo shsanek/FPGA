@@ -138,7 +138,7 @@ module TOP #(
     wire [3:0]  mc_mask;
     wire        mc_ready;
     wire        mc_contains_addr;  // не используется снаружи
-    wire        mc_stream;
+    wire [1:0]  mc_bus_type;
 
     // ---------------------------------------------------------------
     // PERIPHERAL_BUS ↔ UART_IO_DEVICE
@@ -512,7 +512,7 @@ module TOP #(
         .mc_mask           (mc_mask),
         .mc_read_value     (mc_rd_data),
         .mc_controller_ready(mc_ready),
-        .mc_stream          (mc_stream),
+        .mc_bus_type        (mc_bus_type),
 
         .io_address        (io_addr),
         .io_read_trigger   (io_rd),
@@ -692,7 +692,7 @@ module TOP #(
         .read_trigger        (mc_rd),
         .read_value          (mc_rd_data),
         .contains_address    (mc_contains_addr),
-        .stream              (mc_stream)
+        .bus_type            (mc_bus_type)
     );
 
     // --- RAM_CONTROLLER ---

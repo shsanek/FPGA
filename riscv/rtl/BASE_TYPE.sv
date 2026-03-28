@@ -26,4 +26,12 @@ typedef enum logic [2:0] {
     ERROR
 } PROCESSOR_STATE;
 
+// Тип доступа к памяти через MEMORY_CONTROLLER
+typedef enum logic [1:0] {
+    BUS_BASE_MEM         = 2'b00,  // DDR через 4-pool D-cache
+    BUS_STREAM           = 2'b01,  // DDR через 1-entry stream cache (блиттер)
+    BUS_CODE_CACHE_CORE1 = 2'b10   // DDR через I-cache (read-only BRAM)
+    // 2'b11 — зарезервировано
+} BUS_MEM_TYPE;
+
 endpackage;
