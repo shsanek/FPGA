@@ -123,7 +123,7 @@ void R_DrawColumn (void)
     BLIT_DST_STEP   = SCREENWIDTH;
     BLIT_COUNT      = count + 1;
     BLIT_CMAP_OFFSET = (uint32_t)dc_colormap - SCRATCH_BASE;
-    BLIT_CMD        = 1;  // CMD_COLUMN → blitter_active, CPU stall
+    BLIT_CMD        = 1;
 }
 
 

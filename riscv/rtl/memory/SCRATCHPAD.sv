@@ -144,8 +144,8 @@ module SCRATCHPAD #(
     // Texture index
     wire [31:0] tex_idx_col = (w_src_frac >> 16) & reg_src_mask;
     wire [31:0] span_mask   = (32'd1 << reg_src_shift) - 32'd1;
-    wire [31:0] span_y_part = (w_src_yfrac >> (5'd16 - reg_src_shift)) & (span_mask << reg_src_shift);
-    wire [31:0] span_x_part = (w_src_frac >> 16) & span_mask;
+    wire [31:0] span_y_part = ($signed(w_src_yfrac) >>> (5'd16 - reg_src_shift)) & (span_mask << reg_src_shift);
+    wire [31:0] span_x_part = ($signed(w_src_frac) >>> 16) & span_mask;
     wire [31:0] tex_idx_span = span_y_part + span_x_part;
     wire [31:0] tex_idx = (reg_cmd == 2'd2) ? tex_idx_span : tex_idx_col;
 
