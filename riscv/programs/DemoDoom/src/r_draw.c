@@ -42,6 +42,8 @@ rcsid[] = "$Id: r_draw.c,v 1.4 1997/02/03 16:47:55 b1 Exp $";
 // State.
 #include "doomstat.h"
 
+#include "riscv/config.h"
+
 
 // ?
 #define MAXWIDTH                        1120
@@ -102,14 +104,7 @@ int                     dccount;
 //
 void R_DrawColumn (void)
 {
-    int                 count;
-    byte*               dest;
-    fixed_t             frac;
-    fixed_t             fracstep;
-
-    count = dc_yh - dc_yl;
-
-    // Zero length, column does not exceed a pixel.
+    int count = dc_yh - dc_yl;
     if (count < 0)
         return;
 
@@ -120,27 +115,15 @@ void R_DrawColumn (void)
         I_Error ("R_DrawColumn: %i to %i at %i", dc_yl, dc_yh, dc_x);
 #endif
 
-    // Framebuffer destination address.
-    dest = screens[0] + (viewwindowy + dc_yl) * SCREENWIDTH + (viewwindowx + dc_x);
-
-    // Determine scaling,
-    //  which is the only mapping to be done.
-    fracstep = dc_iscale;
-    frac = dc_texturemid + (dc_yl-centery)*fracstep;
-
-    // Inner loop that does the actual texture mapping,
-    //  e.g. a DDA-lile scaling.
-    // This is as fast as it gets.
-    do
-    {
-        // Re-map color indices from wall texture column
-        //  using a lighting/special effects LUT.
-        *dest = dc_colormap[dc_source[(frac>>FRACBITS)&127]];
-
-        dest += SCREENWIDTH;
-        frac += fracstep;
-
-    } while (count--);
+    BLIT_SRC_ADDR   = (uint32_t)dc_source;
+    BLIT_SRC_FRAC   = dc_texturemid + (dc_yl - centery) * dc_iscale;
+    BLIT_SRC_STEP   = dc_iscale;
+    BLIT_SRC_MASK   = 127;
+    BLIT_DST_OFFSET = (viewwindowy + dc_yl) * SCREENWIDTH + (viewwindowx + dc_x);
+    BLIT_DST_STEP   = SCREENWIDTH;
+    BLIT_COUNT      = count + 1;
+    BLIT_CMAP_OFFSET = (uint32_t)dc_colormap - SCRATCH_BASE;
+    BLIT_CMD        = 1;  // CMD_COLUMN → blitter_active, CPU stall
 }
 
 
@@ -456,11 +439,7 @@ int                     dscount;
 // Draws the actual span.
 void R_DrawSpan (void)
 {
-    fixed_t             xfrac;
-    fixed_t             yfrac;
-    byte*               dest;
-    int                 count;
-    int                 spot;
+    int count = ds_x2 - ds_x1;
 
 #ifdef RANGECHECK
     if (ds_x2 < ds_x1
@@ -471,32 +450,23 @@ void R_DrawSpan (void)
         I_Error( "R_DrawSpan: %i to %i at %i",
                  ds_x1,ds_x2,ds_y);
     }
-//      dscount++;
 #endif
 
+    if (count < 0)
+        return;
 
-    xfrac = ds_xfrac;
-    yfrac = ds_yfrac;
-
-    dest = screens[0] + (viewwindowy + ds_y) * SCREENWIDTH + (viewwindowx + ds_x1);
-
-    // We do not check for zero spans here?
-    count = ds_x2 - ds_x1;
-
-    do
-    {
-        // Current texture index in u,v.
-        spot = ((yfrac>>(16-6))&(63*64)) + ((xfrac>>16)&63);
-
-        // Lookup pixel from flat texture tile,
-        //  re-index using light/colormap.
-        *dest++ = ds_colormap[ds_source[spot]];
-
-        // Next step in u,v.
-        xfrac += ds_xstep;
-        yfrac += ds_ystep;
-
-    } while (count--);
+    BLIT_SRC_ADDR    = (uint32_t)ds_source;
+    BLIT_SRC_FRAC    = ds_xfrac;
+    BLIT_SRC_STEP    = ds_xstep;
+    BLIT_SRC_MASK    = 63;
+    BLIT_SRC_YFRAC   = ds_yfrac;
+    BLIT_SRC_YSTEP   = ds_ystep;
+    BLIT_SRC_SHIFT   = 6;
+    BLIT_DST_OFFSET  = (viewwindowy + ds_y) * SCREENWIDTH + (viewwindowx + ds_x1);
+    BLIT_DST_STEP    = 1;
+    BLIT_COUNT       = count + 1;
+    BLIT_CMAP_OFFSET = (uint32_t)ds_colormap - SCRATCH_BASE;
+    BLIT_CMD         = 2;  // CMD_SPAN → blitter_active, CPU stall
 }
 
 
