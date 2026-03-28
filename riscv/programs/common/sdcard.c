@@ -83,7 +83,7 @@ int sd_read_block(unsigned int block, unsigned char *buf) {
     unsigned int addr = is_sdhc ? block : (block * 512);
     if (sd_cmd(17, addr, 0xFF) != 0x00) return -1;
     unsigned char r;
-    for (int i = 0; i < 10000; i++) {
+    for (int i = 0; i < 100000; i++) {
         r = spi_xfer(0xFF);
         if (r == 0xFE) break;
     }
@@ -226,7 +226,16 @@ int fat32_read(int handle, unsigned char *buf, int count) {
         unsigned int byte_in_sector = f->cluster_offset % 512;
         unsigned int lba = cluster_to_lba(f->cur_cluster) + sec_in_cluster;
 
-        if (sd_read_block(lba, sector_buf) != 0) return -2;
+        int rc = sd_read_block(lba, sector_buf);
+        if (rc != 0) {
+            uart_puts("fat32_read: sd_read_block failed");
+            uart_write(" lba="); uart_print_hex(lba);
+            uart_write(" cluster="); uart_print_hex(f->cur_cluster);
+            uart_write(" pos="); uart_print_uint(f->position);
+            uart_write(" rc="); uart_print_int(rc);
+            uart_putc('\n');
+            return -2;
+        }
 
         /* Copy bytes from sector_buf */
         while (byte_in_sector < 512 && total < count && f->position < f->file_size) {
@@ -237,11 +246,44 @@ int fat32_read(int handle, unsigned char *buf, int count) {
 
         /* End of cluster? Follow chain */
         if (f->cluster_offset >= bytes_per_cluster) {
-            f->cur_cluster = fat_next(f->cur_cluster);
+            unsigned int next = fat_next(f->cur_cluster);
+            if (next >= 0x0FFFFFF8) {
+                uart_puts("fat32_read: chain ended early");
+                uart_write(" cluster="); uart_print_hex(f->cur_cluster);
+                uart_write(" pos="); uart_print_uint(f->position);
+                uart_putc('\n');
+                break;
+            }
+            f->cur_cluster = next;
             f->cluster_offset = 0;
         }
     }
     return total;
+}
+
+int fat32_seek(int handle, unsigned int position) {
+    if (handle < 0 || handle >= FAT32_MAX_OPEN || !files[handle].active) return -1;
+    fat32_file_t *f = &files[handle];
+
+    if (position > f->file_size) position = f->file_size;
+
+    unsigned int bytes_per_cluster = spc * 512;
+
+    /* Restart from beginning of file */
+    f->cur_cluster = f->start_cluster;
+    f->cluster_offset = 0;
+    f->position = 0;
+
+    /* Walk cluster chain to target position */
+    unsigned int clusters_to_skip = position / bytes_per_cluster;
+    for (unsigned int i = 0; i < clusters_to_skip; i++) {
+        f->cur_cluster = fat_next(f->cur_cluster);
+        if (f->cur_cluster >= 0x0FFFFFF8) return -2;
+    }
+
+    f->cluster_offset = position % bytes_per_cluster;
+    f->position = position;
+    return 0;
 }
 
 int fat32_size(int handle) {

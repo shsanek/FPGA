@@ -30,6 +30,7 @@ SECTIONS {
         _data_lma   = LOADADDR(.data);
         _data_start = .;
         *(.data*)
+        *(.sdata*)
         . = ALIGN(4);
         _data_end = .;
     } > RAM
@@ -38,6 +39,7 @@ SECTIONS {
     .bss : {
         _bss_start = .;
         *(.bss*)
+        *(.sbss*)
         *(COMMON)
         . = ALIGN(4);
         _bss_end = .;

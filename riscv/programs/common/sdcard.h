@@ -29,6 +29,7 @@ int  fat32_init(void);                  /* MBR → BPB → geometry */
 int  fat32_open(const char *name83);    /* найти файл, вернуть handle (0..3) или <0 */
 int  fat32_read(int handle, unsigned char *buf, int count);  /* прочитать count байт */
 int  fat32_size(int handle);            /* размер файла */
+int  fat32_seek(int handle, unsigned int position);  /* seek к позиции */
 void fat32_close(int handle);
 
 /* Загрузить весь файл в память (удобный wrapper) */

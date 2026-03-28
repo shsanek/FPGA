@@ -128,6 +128,11 @@ static void test_alu_imm(void) {
     chk("0<1", (unsigned)(I(0)<1), 1);
     chk("1<0", (unsigned)(I(1)<0), 0);
     chk("-1<0", (unsigned)(I(-1)<0), 1);
+
+    puts(" SLTIU:");
+    chk("0<u1", (unsigned)(U(0)<1u), 1);
+    chk("1<u0", (unsigned)(U(1)<0u), 0);
+    chk("MAX<u0", (unsigned)(U(0xFFFFFFFF)<0u), 0);
 }
 
 /* ---- MUL/DIV (M-extension) ---- */
@@ -343,40 +348,51 @@ static void test_fib(void) {
     chk("fib(20)", (unsigned)fib(20), 6765);
 }
 
+static void checkpoint(const char *name) {
+    puts(" "); puts(name);
+    puts(" t="); print_hex(total);
+    puts(" e="); print_hex(errors);
+    putchar('\n');
+}
+
 /* ---- Main ---- */
 int main(void) {
     puts("=== FULL HW TEST ===\n");
+    checkpoint("START");
 
     test_alu();
-    puts(" ALU OK\n");
+    checkpoint("ALU");
 
     test_alu_imm();
-    puts(" ALU-I OK\n");
+    checkpoint("ALU-I");
 
     test_muldiv();
-    puts(" MUL/DIV OK\n");
+    checkpoint("MUL/DIV");
 
     test_memory();
-    puts(" MEM OK\n");
+    checkpoint("MEM");
 
     test_branch();
-    puts(" BRANCH OK\n");
+    checkpoint("BRANCH");
 
     test_jump();
-    puts(" JUMP OK\n");
+    checkpoint("JUMP");
 
     test_upper();
-    puts(" UPPER OK\n");
+    checkpoint("UPPER");
 
     test_fib();
-    puts(" FIB OK\n");
+    checkpoint("FIB");
 
     putchar('\n');
-    puts("Total: "); print_int(total); puts(" tests\n");
+    puts("Total(hex): "); print_hex(total); putchar('\n');
+    puts("Total(dec): "); print_int(total); putchar('\n');
+    puts("Errors(hex): "); print_hex(errors); putchar('\n');
+    puts("Errors(dec): "); print_int(errors); putchar('\n');
     if (errors == 0) {
         puts("=== ALL PASSED ===");
     } else {
-        puts("FAILURES: "); print_int(errors); putchar('\n');
+        puts("=== FAILURES ===");
     }
     return errors;
 }
