@@ -72,14 +72,7 @@ module PERIPHERAL_BUS (
     output wire [31:0] sp_write_value,
     output wire [3:0]  sp_mask,
     input  wire [31:0] sp_read_value,
-    input  wire        sp_controller_ready,
-
-    // Blitter signals (from SCRATCHPAD, passed through to TOP)
-    input  wire        blitter_active,
-    input  wire [29:0] blitter_bus_addr,
-    input  wire        blitter_bus_rd,
-    output wire [31:0] blitter_bus_data,
-    output wire        blitter_bus_ready
+    input  wire        sp_controller_ready
 );
     // --- Decode ---
     // addr[29] = stream bit (bypass cache, read-only)
@@ -152,10 +145,5 @@ module PERIPHERAL_BUS (
                               uart_sel  ? io_controller_ready     :
                                           mc_controller_ready;
 
-    // --- Blitter passthrough ---
-    // Blitter reads from the main bus (DDR via MEMORY_CONTROLLER)
-    // These signals are passed through to TOP for bus mux
-    assign blitter_bus_data  = mc_read_value;
-    assign blitter_bus_ready = mc_controller_ready;
 
 endmodule

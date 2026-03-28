@@ -1,15 +1,13 @@
-// SCRATCHPAD — 128 KB BRAM, 1-тактовый доступ + Hardware Blitter.
+// SCRATCHPAD — 128 KB BRAM + Hardware Blitter (bus master).
 //
-// Port A: CPU read/write (через шину, как обычно)
-// Port B: Blitter read/write (внутренний, для colormap lookup + pixel write)
-//
-// Blitter MMIO регистры доступны по offset 0x20000 от базы SCRATCHPAD.
-// Blitter читает текстуру из DDR через внешнюю шину (blitter_bus_*),
-// читает colormap и пишет пиксели через BRAM port B.
+// BRAM: простой single-port, как обычно. CPU обращается через шину.
+// Blitter: FSM с MMIO регистрами. ВСЕ обращения через внешнюю шину:
+//   - Чтение текстуры → DDR (через MEMORY_CONTROLLER)
+//   - Чтение colormap → SCRATCHPAD (через PERIPHERAL_BUS → сюда же)
+//   - Запись пикселя  → SCRATCHPAD (через PERIPHERAL_BUS → сюда же)
 //
 // Адрес: 0x0800_0000 – 0x0801_FFFF (128 KB BRAM)
 //        0x0802_0000 – 0x0802_003F (Blitter MMIO)
-// 32768 слов × 32 бит = 128 KB = ~32 BRAM36
 module SCRATCHPAD #(
     parameter DEPTH   = 32768,  // 128 KB / 4
     parameter ADDR_W  = 15      // $clog2(32768)
@@ -17,7 +15,7 @@ module SCRATCHPAD #(
     input  wire        clk,
     input  wire        reset,
 
-    // CPU port (Port A)
+    // CPU / bus port (standard)
     input  wire [27:0] address,
     input  wire        read_trigger,
     input  wire        write_trigger,
@@ -26,32 +24,31 @@ module SCRATCHPAD #(
     output wire [31:0] read_value,
     output wire        controller_ready,
 
-    // Blitter → external bus (для чтения текстур из DDR)
+    // Blitter bus master interface
     output wire        blitter_active,
     output wire [29:0] blitter_bus_addr,
     output wire        blitter_bus_rd,
+    output wire        blitter_bus_wr,
+    output wire [31:0] blitter_bus_wr_data,
+    output wire [3:0]  blitter_bus_mask,
     input  wire [31:0] blitter_bus_data,
     input  wire        blitter_bus_ready
 );
 
     // ---------------------------------------------------------------
-    // Address decode: BRAM vs MMIO
+    // Address decode
     // ---------------------------------------------------------------
-    // address[17] == 0 → BRAM (0x00000–0x1FFFF = 128 KB)
-    // address[17] == 1 → MMIO regs (0x20000+)
     wire is_mmio = address[17];
-    wire [ADDR_W-1:0] word_addr = address[ADDR_W+1:2];  // byte addr → word addr
+    wire [ADDR_W-1:0] word_addr = address[ADDR_W+1:2];
 
     // ---------------------------------------------------------------
-    // Dual-port BRAM
+    // Simple single-port BRAM (original, untouched)
     // ---------------------------------------------------------------
-    // Port A: CPU (read/write)
-    // Port B: Blitter (read/write)
     (* ram_style = "block" *)
     logic [31:0] mem [0:DEPTH-1];
 
-    // Port A
-    logic [31:0] dout_a;
+    logic [31:0] dout;
+
     always_ff @(posedge clk) begin
         if (write_trigger && !is_mmio) begin
             if (mask[0]) mem[word_addr][ 7: 0] <= write_value[ 7: 0];
@@ -59,65 +56,36 @@ module SCRATCHPAD #(
             if (mask[2]) mem[word_addr][23:16] <= write_value[23:16];
             if (mask[3]) mem[word_addr][31:24] <= write_value[31:24];
         end
-        dout_a <= mem[word_addr];
-    end
-
-    // Port B
-    logic [ADDR_W-1:0] bram_b_addr;
-    logic [31:0]       bram_b_din;
-    logic [3:0]        bram_b_we;
-    logic [31:0]       dout_b;
-    always_ff @(posedge clk) begin
-        if (bram_b_we[0]) mem[bram_b_addr][ 7: 0] <= bram_b_din[ 7: 0];
-        if (bram_b_we[1]) mem[bram_b_addr][15: 8] <= bram_b_din[15: 8];
-        if (bram_b_we[2]) mem[bram_b_addr][23:16] <= bram_b_din[23:16];
-        if (bram_b_we[3]) mem[bram_b_addr][31:24] <= bram_b_din[31:24];
-        dout_b <= mem[bram_b_addr];
+        dout <= mem[word_addr];
     end
 
     // ---------------------------------------------------------------
     // Blitter MMIO registers
     // ---------------------------------------------------------------
-    // 0x00 CMD          (W)  1=column, 2=span → start
-    // 0x04 STATUS       (R)  bit0: busy
-    // 0x08 SRC_ADDR     (W)  DDR address of texture (28-bit)
-    // 0x0C SRC_FRAC     (W)  start position (fixed 16.16)
-    // 0x10 SRC_STEP     (W)  step per pixel (fixed 16.16)
-    // 0x14 SRC_MASK     (W)  wrap mask (63 or 127)
-    // 0x18 DST_OFFSET   (W)  pixel offset in scratchpad (byte addr)
-    // 0x1C DST_STEP     (W)  step: 320 for column, 1 for span
-    // 0x20 COUNT        (W)  pixel count
-    // 0x24 CMAP_OFFSET  (W)  colormap offset in scratchpad (byte addr)
-    // 0x28 SRC_YFRAC    (W)  V coordinate (fixed 16.16) — span only
-    // 0x2C SRC_YSTEP    (W)  dV/dx (fixed 16.16) — span only
-    // 0x30 SRC_SHIFT    (W)  log2(texture width) — span only
-
     logic [1:0]  reg_cmd;
     logic [29:0] reg_src_addr;
-    logic [31:0] reg_src_frac;
-    logic [31:0] reg_src_step;
-    logic [31:0] reg_src_mask;
-    logic [31:0] reg_dst_offset;
-    logic [31:0] reg_dst_step;
-    logic [31:0] reg_count;
-    logic [31:0] reg_cmap_offset;
-    logic [31:0] reg_src_yfrac;
-    logic [31:0] reg_src_ystep;
+    logic [31:0] reg_src_frac, reg_src_step, reg_src_mask;
+    logic [31:0] reg_dst_offset, reg_dst_step;
+    logic [31:0] reg_count, reg_cmap_offset;
+    logic [31:0] reg_src_yfrac, reg_src_ystep;
     logic [4:0]  reg_src_shift;
 
     // ---------------------------------------------------------------
-    // Blitter FSM state (declared early for MMIO STATUS read)
+    // Blitter FSM
     // ---------------------------------------------------------------
     localparam [3:0]
         S_IDLE        = 4'd0,
-        S_FETCH_TEX   = 4'd1,
-        S_WAIT_BUS    = 4'd2,
-        S_WAIT_TEX    = 4'd3,
-        S_LOOKUP_CMAP = 4'd4,
-        S_READ_CMAP   = 4'd5,
-        S_WRITE_PIXEL = 4'd6,
-        S_NEXT        = 4'd7,
-        S_DONE        = 4'd8;
+        S_FETCH_TEX   = 4'd1,   // set DDR addr, rd=1
+        S_SETTLE_TEX  = 4'd2,   // bus settles (registered outputs)
+        S_WAIT_TEX    = 4'd3,   // wait ready, grab texel
+        S_FETCH_CMAP  = 4'd4,   // set scratchpad cmap addr, rd=1
+        S_SETTLE_CMAP = 4'd5,
+        S_WAIT_CMAP   = 4'd6,   // wait ready, grab pixel from colormap
+        S_WRITE_PIXEL = 4'd7,   // set scratchpad dst addr, wr=1
+        S_SETTLE_WR   = 4'd8,
+        S_WAIT_WR     = 4'd9,   // wait ready (write accepted)
+        S_NEXT        = 4'd10,
+        S_DONE        = 4'd11;
 
     logic [3:0]  blit_state;
     wire         blit_busy = (blit_state != S_IDLE);
@@ -143,81 +111,83 @@ module SCRATCHPAD #(
         endcase
     end
 
-    // CPU read mux
-    assign read_value       = is_mmio ? mmio_rd_data : dout_a;
+    assign read_value       = is_mmio ? mmio_rd_data : dout;
     assign controller_ready = 1'b1;
 
-    // Working registers (updated during blit)
-    logic [31:0] w_src_frac;
-    logic [31:0] w_dst_offset;
-    logic [31:0] w_count;
-    logic [31:0] w_src_yfrac;
+    // ---------------------------------------------------------------
+    // Working registers
+    // ---------------------------------------------------------------
+    logic [31:0] w_src_frac, w_dst_offset, w_count, w_src_yfrac;
     logic [7:0]  w_texel;
+    logic [7:0]  w_pixel;
 
-    // Blitter bus outputs
-    logic        blit_rd;
+    // Bus master outputs (registered)
     logic [29:0] blit_addr;
+    logic        blit_rd, blit_wr;
+    logic [31:0] blit_wr_data;
+    logic [3:0]  blit_mask;
 
-    assign blitter_active   = blit_busy;
-    assign blitter_bus_rd   = blit_rd;
-    assign blitter_bus_addr = blit_addr;
+    assign blitter_active     = blit_busy;
+    assign blitter_bus_addr   = blit_addr;
+    assign blitter_bus_rd     = blit_rd;
+    assign blitter_bus_wr     = blit_wr;
+    assign blitter_bus_wr_data = blit_wr_data;
+    assign blitter_bus_mask   = blit_mask;
 
-    // Texture address calculation
+    // ---------------------------------------------------------------
+    // Address calculations
+    // ---------------------------------------------------------------
+    // Scratchpad base in 30-bit bus address space:
+    // addr[29]=0, addr[28]=1, addr[18]=1 → 0x10040000
+    localparam [29:0] SP_BASE = 30'h10040000;
+
+    // Texture index
     wire [31:0] tex_idx_col = (w_src_frac >> 16) & reg_src_mask;
-    // For span: spot = ((yfrac >> (16-shift)) & ((1<<shift)-1) << shift) + ((xfrac >> 16) & ((1<<shift)-1))
-    wire [31:0] span_mask = (32'd1 << reg_src_shift) - 32'd1;
+    wire [31:0] span_mask   = (32'd1 << reg_src_shift) - 32'd1;
     wire [31:0] span_y_part = (w_src_yfrac >> (5'd16 - reg_src_shift)) & (span_mask << reg_src_shift);
     wire [31:0] span_x_part = (w_src_frac >> 16) & span_mask;
     wire [31:0] tex_idx_span = span_y_part + span_x_part;
-
     wire [31:0] tex_idx = (reg_cmd == 2'd2) ? tex_idx_span : tex_idx_col;
-    wire [27:0] tex_ddr_addr = reg_src_addr[27:0] + tex_idx[27:0];
-    wire [1:0]  tex_byte_lane = tex_ddr_addr[1:0];
 
-    // Colormap address in BRAM (byte → word)
-    wire [31:0] cmap_byte_addr = reg_cmap_offset + {24'b0, w_texel};
-    wire [ADDR_W-1:0] cmap_word_addr = cmap_byte_addr[ADDR_W+1:2];
-    wire [1:0] cmap_byte_lane = cmap_byte_addr[1:0];
+    // DDR texture address (full 30-bit bus addr)
+    wire [27:0] tex_ddr_byte = reg_src_addr[27:0] + tex_idx[27:0];
+    wire [29:0] tex_bus_addr = {reg_src_addr[29:28], tex_ddr_byte[27:2], 2'b0};
+    wire [1:0]  tex_byte_lane = tex_ddr_byte[1:0];
 
-    // Destination address in BRAM (byte → word)
-    wire [ADDR_W-1:0] dst_word_addr = w_dst_offset[ADDR_W+1:2];
-    wire [1:0] dst_byte_lane = w_dst_offset[1:0];
+    // Scratchpad colormap address (30-bit bus addr)
+    wire [31:0] cmap_byte_off = reg_cmap_offset + {24'b0, w_texel};
+    wire [29:0] cmap_bus_addr = SP_BASE + {12'b0, cmap_byte_off[17:2], 2'b0};
+    wire [1:0]  cmap_byte_lane = cmap_byte_off[1:0];
 
-    // MMIO write + Blitter FSM
+    // Scratchpad destination address (30-bit bus addr)
+    wire [29:0] dst_bus_addr = SP_BASE + {12'b0, w_dst_offset[17:2], 2'b0};
+    wire [1:0]  dst_byte_lane = w_dst_offset[1:0];
+
+    // ---------------------------------------------------------------
+    // FSM
+    // ---------------------------------------------------------------
     always_ff @(posedge clk) begin
         if (reset) begin
-            blit_state     <= S_IDLE;
-            blit_rd        <= 1'b0;
-            blit_addr      <= 30'b0;
-            bram_b_we      <= 4'b0;
-            bram_b_addr    <= {ADDR_W{1'b0}};
-            bram_b_din     <= 32'b0;
-            reg_cmd        <= 2'b0;
-            reg_src_addr   <= 30'b0;
-            reg_src_frac   <= 32'b0;
-            reg_src_step   <= 32'b0;
-            reg_src_mask   <= 32'b0;
-            reg_dst_offset <= 32'b0;
-            reg_dst_step   <= 32'b0;
-            reg_count      <= 32'b0;
-            reg_cmap_offset<= 32'b0;
-            reg_src_yfrac  <= 32'b0;
-            reg_src_ystep  <= 32'b0;
-            reg_src_shift  <= 5'b0;
-            w_src_frac     <= 32'b0;
-            w_dst_offset   <= 32'b0;
-            w_count        <= 32'b0;
-            w_src_yfrac    <= 32'b0;
-            w_texel        <= 8'b0;
+            blit_state   <= S_IDLE;
+            blit_rd      <= 1'b0;
+            blit_wr      <= 1'b0;
+            blit_addr    <= 30'b0;
+            blit_wr_data <= 32'b0;
+            blit_mask    <= 4'b0;
+            reg_cmd      <= 2'b0;
+            reg_src_addr <= 30'b0;
+            reg_src_frac <= 32'b0;  reg_src_step <= 32'b0;  reg_src_mask <= 32'b0;
+            reg_dst_offset <= 32'b0; reg_dst_step <= 32'b0;
+            reg_count    <= 32'b0;  reg_cmap_offset <= 32'b0;
+            reg_src_yfrac<= 32'b0;  reg_src_ystep <= 32'b0;  reg_src_shift <= 5'b0;
+            w_src_frac   <= 32'b0;  w_dst_offset <= 32'b0;
+            w_count      <= 32'b0;  w_src_yfrac  <= 32'b0;
+            w_texel      <= 8'b0;   w_pixel      <= 8'b0;
         end else begin
-            // Default: clear port B write enable
-            bram_b_we <= 4'b0;
-
-            // MMIO register writes (only when blitter idle)
+            // MMIO writes (only when idle)
             if (write_trigger && is_mmio && !blit_busy) begin
                 case (address[5:2])
                     4'h0: reg_cmd        <= write_value[1:0];
-                    // 4'h1: STATUS is read-only
                     4'h2: reg_src_addr   <= write_value[29:0];
                     4'h3: reg_src_frac   <= write_value;
                     4'h4: reg_src_step   <= write_value;
@@ -234,9 +204,10 @@ module SCRATCHPAD #(
             end
 
             case (blit_state)
+                // ---- IDLE ----
                 S_IDLE: begin
                     blit_rd <= 1'b0;
-                    // CMD write triggers blitter start
+                    blit_wr <= 1'b0;
                     if (write_trigger && is_mmio && address[5:2] == 4'h0
                         && write_value[1:0] != 2'b0) begin
                         reg_cmd      <= write_value[1:0];
@@ -248,28 +219,21 @@ module SCRATCHPAD #(
                     end
                 end
 
+                // ---- Phase 1: Read texture byte from DDR ----
                 S_FETCH_TEX: begin
-                    // Issue DDR read for texture byte
-                    // Address is word-aligned (drop low 2 bits for bus)
-                    blit_addr <= {reg_src_addr[29:28], tex_ddr_addr[27:2], 2'b0};
-                    blit_rd   <= 1'b1;
-                    // Go to WAIT_BUS first — registered addr/rd take 1 cycle
-                    // to reach MEMORY_CONTROLLER, so we must skip the first
-                    // ready which may be stale from a previous cache hit.
-                    blit_state <= S_WAIT_BUS;
+                    blit_addr  <= tex_bus_addr;
+                    blit_rd    <= 1'b1;
+                    blit_wr    <= 1'b0;
+                    blit_state <= S_SETTLE_TEX;
                 end
 
-                S_WAIT_BUS: begin
-                    // 1-cycle settle: addr and rd are now on the bus.
-                    // MEMORY_CONTROLLER sees read_trigger and will drop
-                    // controller_ready on cache miss (or keep it on hit
-                    // for the NEW address). Next cycle is safe to sample.
+                S_SETTLE_TEX: begin
+                    // Registered outputs now on bus. MC processes address.
                     blit_state <= S_WAIT_TEX;
                 end
 
                 S_WAIT_TEX: begin
                     if (blitter_bus_ready) begin
-                        // Extract the correct byte from the 32-bit word
                         case (tex_byte_lane)
                             2'd0: w_texel <= blitter_bus_data[ 7: 0];
                             2'd1: w_texel <= blitter_bus_data[15: 8];
@@ -277,68 +241,64 @@ module SCRATCHPAD #(
                             2'd3: w_texel <= blitter_bus_data[31:24];
                         endcase
                         blit_rd    <= 1'b0;
-                        blit_state <= S_LOOKUP_CMAP;
+                        blit_state <= S_FETCH_CMAP;
                     end
                 end
 
-                S_LOOKUP_CMAP: begin
-                    // Set up BRAM port B read for colormap lookup
-                    bram_b_addr <= cmap_word_addr;
-                    blit_state  <= S_READ_CMAP;
+                // ---- Phase 2: Read colormap from scratchpad ----
+                S_FETCH_CMAP: begin
+                    blit_addr  <= cmap_bus_addr;
+                    blit_rd    <= 1'b1;
+                    blit_wr    <= 1'b0;
+                    blit_state <= S_SETTLE_CMAP;
                 end
 
-                S_READ_CMAP: begin
-                    // BRAM has 1-cycle latency; dout_b now has the data
-                    // Extract pixel byte from colormap word
-                    blit_state <= S_WRITE_PIXEL;
+                S_SETTLE_CMAP: begin
+                    // Bus has scratchpad addr. BRAM reads this cycle.
+                    blit_state <= S_WAIT_CMAP;
                 end
 
+                S_WAIT_CMAP: begin
+                    if (blitter_bus_ready) begin
+                        case (cmap_byte_lane)
+                            2'd0: w_pixel <= blitter_bus_data[ 7: 0];
+                            2'd1: w_pixel <= blitter_bus_data[15: 8];
+                            2'd2: w_pixel <= blitter_bus_data[23:16];
+                            2'd3: w_pixel <= blitter_bus_data[31:24];
+                        endcase
+                        blit_rd    <= 1'b0;
+                        blit_state <= S_WRITE_PIXEL;
+                    end
+                end
+
+                // ---- Phase 3: Write pixel to scratchpad ----
                 S_WRITE_PIXEL: begin
-                    // Write pixel to screen buffer via port B
-                    bram_b_addr <= dst_word_addr;
+                    blit_addr  <= dst_bus_addr;
+                    blit_rd    <= 1'b0;
+                    blit_wr    <= 1'b1;
                     case (dst_byte_lane)
-                        2'd0: begin
-                            bram_b_we  <= 4'b0001;
-                            case (cmap_byte_lane)
-                                2'd0: bram_b_din <= {24'b0, dout_b[ 7: 0]};
-                                2'd1: bram_b_din <= {24'b0, dout_b[15: 8]};
-                                2'd2: bram_b_din <= {24'b0, dout_b[23:16]};
-                                2'd3: bram_b_din <= {24'b0, dout_b[31:24]};
-                            endcase
-                        end
-                        2'd1: begin
-                            bram_b_we  <= 4'b0010;
-                            case (cmap_byte_lane)
-                                2'd0: bram_b_din <= {16'b0, dout_b[ 7: 0], 8'b0};
-                                2'd1: bram_b_din <= {16'b0, dout_b[15: 8], 8'b0};
-                                2'd2: bram_b_din <= {16'b0, dout_b[23:16], 8'b0};
-                                2'd3: bram_b_din <= {16'b0, dout_b[31:24], 8'b0};
-                            endcase
-                        end
-                        2'd2: begin
-                            bram_b_we  <= 4'b0100;
-                            case (cmap_byte_lane)
-                                2'd0: bram_b_din <= {8'b0, dout_b[ 7: 0], 16'b0};
-                                2'd1: bram_b_din <= {8'b0, dout_b[15: 8], 16'b0};
-                                2'd2: bram_b_din <= {8'b0, dout_b[23:16], 16'b0};
-                                2'd3: bram_b_din <= {8'b0, dout_b[31:24], 16'b0};
-                            endcase
-                        end
-                        2'd3: begin
-                            bram_b_we  <= 4'b1000;
-                            case (cmap_byte_lane)
-                                2'd0: bram_b_din <= {dout_b[ 7: 0], 24'b0};
-                                2'd1: bram_b_din <= {dout_b[15: 8], 24'b0};
-                                2'd2: bram_b_din <= {dout_b[23:16], 24'b0};
-                                2'd3: bram_b_din <= {dout_b[31:24], 24'b0};
-                            endcase
-                        end
+                        2'd0: begin blit_mask <= 4'b0001; blit_wr_data <= {24'b0, w_pixel}; end
+                        2'd1: begin blit_mask <= 4'b0010; blit_wr_data <= {16'b0, w_pixel, 8'b0}; end
+                        2'd2: begin blit_mask <= 4'b0100; blit_wr_data <= {8'b0, w_pixel, 16'b0}; end
+                        2'd3: begin blit_mask <= 4'b1000; blit_wr_data <= {w_pixel, 24'b0}; end
                     endcase
-                    blit_state <= S_NEXT;
+                    blit_state <= S_SETTLE_WR;
                 end
 
+                S_SETTLE_WR: begin
+                    // Write signals now on bus.
+                    blit_state <= S_WAIT_WR;
+                end
+
+                S_WAIT_WR: begin
+                    if (blitter_bus_ready) begin
+                        blit_wr    <= 1'b0;
+                        blit_state <= S_NEXT;
+                    end
+                end
+
+                // ---- Next pixel / done ----
                 S_NEXT: begin
-                    // Update working registers
                     w_src_frac   <= w_src_frac + reg_src_step;
                     w_dst_offset <= w_dst_offset + reg_dst_step;
                     w_count      <= w_count - 32'd1;
