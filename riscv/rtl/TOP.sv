@@ -185,6 +185,15 @@ module TOP #(
     wire        sp_ready;
 
     // ---------------------------------------------------------------
+    // Blitter (inside SCRATCHPAD) ↔ external bus
+    // ---------------------------------------------------------------
+    wire        blitter_active;
+    wire [28:0] blitter_bus_addr;
+    wire        blitter_bus_rd;
+    wire [31:0] blitter_bus_data;
+    wire        blitter_bus_ready;
+
+    // ---------------------------------------------------------------
     // MEMORY_CONTROLLER ↔ RAM_CONTROLLER
     // ---------------------------------------------------------------
     wire        ram_ready;
@@ -450,29 +459,39 @@ module TOP #(
         .mc_read_value     (bus_rd_data),
         .mc_controller_ready(bus_ready),
         .flush             (combined_set_pc),
-        .pause             (dbg_bus_request | flash_bus_request),
+        .pause             (dbg_bus_request | flash_bus_request | blitter_active),
         .paused            (pipeline_paused),
         .step              (dbg_step_pipeline)
     );
 
-    // --- FLASH_LOADER / DEBUG / CPU BUS MUX ---
-    // Priority: flash_loader (boot) > debug > pipeline.
+    // --- FLASH_LOADER / DEBUG / CPU / BLITTER BUS MUX ---
+    // Priority: blitter > flash_loader (boot) > debug > pipeline.
+    // blitter_active=1 during hardware blit. CPU stalls because bus_ready
+    // reflects blitter transactions, not CPU's.
     // flash_active=1 only during boot. After DONE, flash is transparent.
 
-    assign bus_addr    = flash_active    ? {2'b0, mc_flash_addr[27:0]} :
-                         pipeline_paused ? mc_dbg_addr              : pipe_addr;
-    assign bus_rd      = flash_active    ? 1'b0                  :
-                         pipeline_paused ? mc_dbg_rd             : pipe_rd;
-    assign bus_wr      = flash_active    ? mc_flash_wr           :
-                         pipeline_paused ? mc_dbg_wr             : pipe_wr;
-    assign bus_wr_data = flash_active    ? mc_flash_wr_data      :
-                         pipeline_paused ? mc_dbg_wr_data        : pipe_wr_data;
-    assign bus_mask    = flash_active    ? mc_flash_mask          :
-                         pipeline_paused ? {MASK_SIZE{1'b1}}     : pipe_mask;
+    // Pre-blitter mux (flash > debug > pipeline)
+    wire [29:0] pre_bus_addr    = flash_active    ? {2'b0, mc_flash_addr[27:0]} :
+                                  pipeline_paused ? mc_dbg_addr              : pipe_addr;
+    wire        pre_bus_rd      = flash_active    ? 1'b0                  :
+                                  pipeline_paused ? mc_dbg_rd             : pipe_rd;
+    wire        pre_bus_wr      = flash_active    ? mc_flash_wr           :
+                                  pipeline_paused ? mc_dbg_wr             : pipe_wr;
+    wire [31:0] pre_bus_wr_data = flash_active    ? mc_flash_wr_data      :
+                                  pipeline_paused ? mc_dbg_wr_data        : pipe_wr_data;
+    wire [3:0]  pre_bus_mask    = flash_active    ? mc_flash_mask          :
+                                  pipeline_paused ? {MASK_SIZE{1'b1}}     : pipe_mask;
+
+    // Blitter mux — final output to PERIPHERAL_BUS
+    assign bus_addr    = blitter_active ? {1'b0, blitter_bus_addr} : pre_bus_addr;
+    assign bus_rd      = blitter_active ? blitter_bus_rd   : pre_bus_rd;
+    assign bus_wr      = blitter_active ? 1'b0             : pre_bus_wr;
+    assign bus_wr_data = blitter_active ? 32'b0            : pre_bus_wr_data;
+    assign bus_mask    = blitter_active ? 4'b1111          : pre_bus_mask;
 
     assign mc_dbg_rd_data = bus_rd_data;
-    assign mc_dbg_ready   = (!flash_active & pipeline_paused) ? bus_ready : 1'b0;
-    assign mc_flash_ready = flash_active ? bus_ready : 1'b0;
+    assign mc_dbg_ready   = (!flash_active & !blitter_active & pipeline_paused) ? bus_ready : 1'b0;
+    assign mc_flash_ready = (flash_active & !blitter_active) ? bus_ready : 1'b0;
 
     // --- PERIPHERAL_BUS ---
     PERIPHERAL_BUS pbus (
@@ -528,7 +547,13 @@ module TOP #(
         .sp_write_value         (sp_wr_data),
         .sp_mask                (sp_mask_w),
         .sp_read_value          (sp_rd_data),
-        .sp_controller_ready    (sp_ready)
+        .sp_controller_ready    (sp_ready),
+
+        .blitter_active         (blitter_active),
+        .blitter_bus_addr       (blitter_bus_addr),
+        .blitter_bus_rd         (blitter_bus_rd),
+        .blitter_bus_data       (blitter_bus_data),
+        .blitter_bus_ready      (blitter_bus_ready)
     );
 
     // --- UART_IO_DEVICE ---
@@ -601,7 +626,7 @@ module TOP #(
         .controller_ready (timer_ready)
     );
 
-    // --- SCRATCHPAD (128 KB BRAM) ---
+    // --- SCRATCHPAD (128 KB BRAM + Blitter) ---
     SCRATCHPAD scratchpad (
         .clk              (clk),
         .reset            (reset),
@@ -611,7 +636,12 @@ module TOP #(
         .write_value      (sp_wr_data),
         .mask             (sp_mask_w),
         .read_value       (sp_rd_data),
-        .controller_ready (sp_ready)
+        .controller_ready (sp_ready),
+        .blitter_active   (blitter_active),
+        .blitter_bus_addr (blitter_bus_addr),
+        .blitter_bus_rd   (blitter_bus_rd),
+        .blitter_bus_data (blitter_bus_data),
+        .blitter_bus_ready(blitter_bus_ready)
     );
 
     // --- FLASH_LOADER (boot from QSPI flash) ---
