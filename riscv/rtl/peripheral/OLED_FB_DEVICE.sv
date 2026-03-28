@@ -110,7 +110,9 @@ module OLED_FB_DEVICE (
     wire is_reg     = (local_addr < PAL_ADDR_START);
 
     wire [1:0]  reg_sel = local_addr[3:2];
-    wire [7:0]  pal_idx = local_addr[8:1] - PAL_ADDR_START[8:1]; // 16-бит записи, halfword aligned
+    wire [7:0]  pal_idx = local_addr[8:1] - PAL_ADDR_START[8:1];
+    // sh (store halfword) позиционирует данные: чётный addr → [15:0], нечётный → [31:16]
+    wire [15:0] pal_write_data = local_addr[1] ? write_value[31:16] : write_value[15:0];
     wire [15:0] fb_offset = local_addr - FB_ADDR_START[15:0];
     wire [BRAM_ADDR_W-1:0] fb_word_addr = fb_offset[BRAM_ADDR_W+1:2]; // /4 для 32-бит слов
 
@@ -341,8 +343,8 @@ module OLED_FB_DEVICE (
             spi_trigger <= 1'b0;
             flush_trigger <= 1'b0;
 
-            // --- Register writes (blocked during render to prevent mid-frame corruption) ---
-            if (write_trigger && is_reg && !rend_busy) begin
+            // --- Register writes ---
+            if (write_trigger && is_reg) begin
                 case (reg_sel)
                     2'd0: begin
                         if (write_value[0]) flush_trigger <= 1'b1;
@@ -353,9 +355,9 @@ module OLED_FB_DEVICE (
                 endcase
             end
 
-            // --- Palette writes (blocked during render) ---
-            if (write_trigger && is_palette && !rend_busy)
-                palette[pal_idx] <= write_value[15:0];
+            // --- Palette writes (всегда разрешены — distributed RAM, не BRAM) ---
+            if (write_trigger && is_palette)
+                palette[pal_idx] <= pal_write_data;
 
             // --- Renderer FSM ---
             case (rstate)
