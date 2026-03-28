@@ -14,7 +14,7 @@
 // SCRATCHPAD:               (0x10040000)
 module PERIPHERAL_BUS (
     // Интерфейс с CPU (upstream) — 29-битная шина
-    input  wire [28:0] address,
+    input  wire [29:0] address,
     input  wire        read_trigger,
     input  wire        write_trigger,
     input  wire [31:0] write_value,
@@ -22,7 +22,7 @@ module PERIPHERAL_BUS (
     output wire [31:0] read_value,
     output wire        controller_ready,
 
-    // MEMORY_CONTROLLER (downstream) — 28-битный адрес (256 MB DDR)
+    // MEMORY_CONTROLLER (downstream)
     output wire [27:0] mc_address,
     output wire        mc_read_trigger,
     output wire        mc_write_trigger,
@@ -30,6 +30,7 @@ module PERIPHERAL_BUS (
     output wire [3:0]  mc_mask,
     input  wire [31:0] mc_read_value,
     input  wire        mc_controller_ready,
+    output wire        mc_stream,          // 1 = stream access (bypass cache)
 
     // UART_IO_DEVICE (downstream)
     output wire [27:0] io_address,
@@ -74,9 +75,13 @@ module PERIPHERAL_BUS (
     input  wire        sp_controller_ready
 );
     // --- Decode ---
-    wire io_sel    = address[28];
-    wire sp_sel    = io_sel & address[18];           // 0x1004_0000+
-    wire dev_sel   = io_sel & ~address[18];          // 0x1000_0000–0x1003_FFFF
+    // addr[29] = stream bit (bypass cache, read-only)
+    // addr[28] = I/O select
+    wire stream_sel = address[29] & ~address[28];    // stream DDR read
+    wire io_sel     = address[28];
+    wire mem_sel    = ~address[28] & ~address[29];   // normal DDR (cached)
+    wire sp_sel     = io_sel & address[18];          // 0x1004_0000+
+    wire dev_sel    = io_sel & ~address[18];         // 0x1000_0000–0x1003_FFFF
     wire [1:0] io_dev = address[17:16];
 
     wire uart_sel  = dev_sel & (io_dev == 2'b00);
@@ -84,12 +89,14 @@ module PERIPHERAL_BUS (
     wire sd_sel    = dev_sel & (io_dev == 2'b10);
     wire timer_sel = dev_sel & (io_dev == 2'b11);
 
-    // --- MEMORY_CONTROLLER ---
+    // --- MEMORY_CONTROLLER (cached + stream через один порт) ---
+    wire mc_sel = mem_sel | stream_sel;
     assign mc_address       = address[27:0];
-    assign mc_read_trigger  = io_sel ? 1'b0 : read_trigger;
-    assign mc_write_trigger = io_sel ? 1'b0 : write_trigger;
+    assign mc_read_trigger  = mc_sel ? read_trigger  : 1'b0;
+    assign mc_write_trigger = mem_sel ? write_trigger : 1'b0;  // stream = read-only
     assign mc_write_value   = write_value;
     assign mc_mask          = mask;
+    assign mc_stream        = stream_sel;
 
     // --- UART ---
     assign io_address       = address[27:0];
@@ -124,18 +131,18 @@ module PERIPHERAL_BUS (
     assign sp_mask          = mask;
 
     // --- Мультиплексирование ответа ---
-    assign read_value       = sp_sel    ? sp_read_value    :
-                              timer_sel ? timer_read_value :
-                              sd_sel    ? sd_read_value    :
-                              oled_sel  ? oled_read_value  :
-                              uart_sel  ? io_read_value    :
+    assign read_value       = sp_sel    ? sp_read_value        :
+                              timer_sel ? timer_read_value     :
+                              sd_sel    ? sd_read_value        :
+                              oled_sel  ? oled_read_value      :
+                              uart_sel  ? io_read_value        :
                                           mc_read_value;
 
-    assign controller_ready = sp_sel    ? sp_controller_ready    :
-                              timer_sel ? timer_controller_ready :
-                              sd_sel    ? sd_controller_ready    :
-                              oled_sel  ? oled_controller_ready  :
-                              uart_sel  ? io_controller_ready    :
+    assign controller_ready = sp_sel    ? sp_controller_ready     :
+                              timer_sel ? timer_controller_ready  :
+                              sd_sel    ? sd_controller_ready     :
+                              oled_sel  ? oled_controller_ready   :
+                              uart_sel  ? io_controller_ready     :
                                           mc_controller_ready;
 
 endmodule

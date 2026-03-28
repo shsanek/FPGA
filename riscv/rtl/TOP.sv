@@ -115,7 +115,7 @@ module TOP #(
     // ---------------------------------------------------------------
     // CPU_PIPELINE_ADAPTER outputs (before debug mux)
     // ---------------------------------------------------------------
-    wire [28:0] pipe_addr;
+    wire [29:0] pipe_addr;
     wire        pipe_rd, pipe_wr;
     wire [31:0] pipe_wr_data;
     wire [3:0]  pipe_mask;
@@ -123,7 +123,7 @@ module TOP #(
     // ---------------------------------------------------------------
     // Bus (after debug mux) ↔ PERIPHERAL_BUS
     // ---------------------------------------------------------------
-    wire [28:0] bus_addr;
+    wire [29:0] bus_addr;
     wire        bus_rd, bus_wr;
     wire [31:0] bus_wr_data, bus_rd_data;
     wire [3:0]  bus_mask;
@@ -138,6 +138,7 @@ module TOP #(
     wire [3:0]  mc_mask;
     wire        mc_ready;
     wire        mc_contains_addr;  // не используется снаружи
+    wire        mc_stream;
 
     // ---------------------------------------------------------------
     // PERIPHERAL_BUS ↔ UART_IO_DEVICE
@@ -210,7 +211,7 @@ module TOP #(
     // ---------------------------------------------------------------
     // DEBUG_CONTROLLER memory port (muxed with CPU onto bus)
     // ---------------------------------------------------------------
-    wire [28:0] mc_dbg_addr;
+    wire [29:0] mc_dbg_addr;
     wire        mc_dbg_rd, mc_dbg_wr;
     wire [31:0] mc_dbg_wr_data, mc_dbg_rd_data;
     wire        mc_dbg_ready;
@@ -371,7 +372,7 @@ module TOP #(
     assign uart_tx_ready = !tx_fifo_full;
 
     // --- DEBUG_CONTROLLER ---
-    DEBUG_CONTROLLER #(.DEBUG_ENABLE(DEBUG_ENABLE)) dbg_ctrl (
+    DEBUG_CONTROLLER #(.DEBUG_ENABLE(DEBUG_ENABLE), .ADDRESS_SIZE(30)) dbg_ctrl (
         .clk               (clk),
         .reset             (reset),
         .rx_byte           (uart_rx_byte),
@@ -458,7 +459,7 @@ module TOP #(
     // Priority: flash_loader (boot) > debug > pipeline.
     // flash_active=1 only during boot. After DONE, flash is transparent.
 
-    assign bus_addr    = flash_active    ? {1'b0, mc_flash_addr[27:0]} :
+    assign bus_addr    = flash_active    ? {2'b0, mc_flash_addr[27:0]} :
                          pipeline_paused ? mc_dbg_addr              : pipe_addr;
     assign bus_rd      = flash_active    ? 1'b0                  :
                          pipeline_paused ? mc_dbg_rd             : pipe_rd;
@@ -490,6 +491,7 @@ module TOP #(
         .mc_mask           (mc_mask),
         .mc_read_value     (mc_rd_data),
         .mc_controller_ready(mc_ready),
+        .mc_stream          (mc_stream),
 
         .io_address        (io_addr),
         .io_read_trigger   (io_rd),
@@ -660,7 +662,8 @@ module TOP #(
         .write_value         (mc_wr_data),
         .read_trigger        (mc_rd),
         .read_value          (mc_rd_data),
-        .contains_address    (mc_contains_addr)
+        .contains_address    (mc_contains_addr),
+        .stream              (mc_stream)
     );
 
     // --- RAM_CONTROLLER ---
