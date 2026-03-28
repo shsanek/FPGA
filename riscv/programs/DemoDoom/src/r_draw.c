@@ -466,7 +466,7 @@ void R_DrawSpan (void)
     BLIT_DST_STEP    = 1;
     BLIT_COUNT       = count + 1;
     BLIT_CMAP_OFFSET = (uint32_t)ds_colormap;
-    BLIT_CMD         = 2;  // CMD_SPAN → blitter_active, CPU stall
+    BLIT_CMD         = 2;
 }
 
 

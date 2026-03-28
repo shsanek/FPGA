@@ -207,6 +207,8 @@ void D_Display (void)
     if (nodrawers)
         return;                    // for comparative timing / profiling
 
+    uint32_t dd0 = TIMER_TIME_US;
+
     redrawsbar = false;
 
     // change the view size if needed
@@ -262,11 +264,13 @@ void D_Display (void)
     // draw buffered stuff to screen
     I_UpdateNoBlit ();
 
+    uint32_t dd1 = TIMER_TIME_US;
 
     // draw the view directly
     if (gamestate == GS_LEVEL && !automapactive && gametic)
         R_RenderPlayerView (&players[displayplayer]);
 
+    uint32_t dd2 = TIMER_TIME_US;
 
     if (gamestate == GS_LEVEL && gametic)
         HU_Drawer ();
@@ -320,11 +324,30 @@ void D_Display (void)
 
     NetUpdate ();         // send out any new accumulation
 
-
+    uint32_t dd3 = TIMER_TIME_US;
 
     // normal update
     I_FinishUpdate ();              // page flip or blit buffer
 
+    uint32_t dd4 = TIMER_TIME_US;
+
+    static int dfc = 0;
+    static uint32_t last_dd_log_ms = 0;
+    dfc++;
+    uint32_t now_ms = TIMER_TIME_MS;
+    if (dfc == 1 || (now_ms - last_dd_log_ms) >= 3000) {
+        uint32_t total = dd4 - dd0;
+        uint32_t pre = dd1 - dd0;
+        uint32_t render = dd2 - dd1;
+        uint32_t post = dd3 - dd2;
+        uint32_t oled = dd4 - dd3;
+        if (total > 0) {
+            printf("[DISP F%d] pre=%d(%d%%) render=%d(%d%%) post=%d(%d%%) oled=%d(%d%%) total=%d us\n",
+                   dfc, pre, pre*100/total, render, render*100/total,
+                   post, post*100/total, oled, oled*100/total, total);
+        }
+        last_dd_log_ms = now_ms;
+    }
 }
 
 
@@ -356,8 +379,14 @@ void D_DoomLoop (void)
         fc++;
         uint32_t now_ms = TIMER_TIME_MS;
         if (fc == 1 || (now_ms - last_log_ms) >= 3000) {
-            printf("[FRAME %d] total=%d tics=%d display=%d us\n",
-                   fc, ft3 - ft0, ft2 - ft1, ft3 - ft2);
+            uint32_t total = ft3 - ft0;
+            uint32_t t_input = ft1 - ft0;
+            uint32_t t_tics = ft2 - ft1;
+            uint32_t t_disp = ft3 - ft2;
+            if (total > 0)
+                printf("[LOOP %d] total=%d input=%d(%d%%) tics=%d(%d%%) display=%d(%d%%) us\n",
+                       fc, total, t_input, t_input*100/total,
+                       t_tics, t_tics*100/total, t_disp, t_disp*100/total);
             last_log_ms = now_ms;
         }
     }

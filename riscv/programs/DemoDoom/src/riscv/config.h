@@ -25,6 +25,9 @@
 #define SCRATCH_SCREEN    ((uint8_t *)SCRATCH_BASE)
 #define SCRATCH_COLORMAPS ((uint8_t *)(SCRATCH_BASE + 0x0FA00U))
 
+/* Bus address flags */
+#define BUS_STREAM        0x20000000U   /* bit29: bypass cache, use stream cache */
+
 /* Hardware Blitter (inside SCRATCHPAD, offset 0x20000) */
 #define BLIT_BASE        (SCRATCH_BASE + 0x20000U)
 #define BLIT_CMD         (*(volatile uint32_t *)(BLIT_BASE + 0x00))
