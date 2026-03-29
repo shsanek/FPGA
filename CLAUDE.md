@@ -51,12 +51,13 @@ FPGA/
 │
 ├── riscv/
 │   ├── rtl/                            # SystemVerilog modules
-│   │   ├── TOP.sv                      # System top (CPU + peripherals + DDR)
+│   │   ├── TOP_V2.sv                   # System top (128-bit bus, I_CACHE + D_CACHE)
 │   │   ├── FPGA_TOP.sv                 # FPGA wrapper (clocking, MIG, pins)
 │   │   ├── BASE_TYPE.sv                # Shared type definitions
 │   │   ├── core/                       # CPU ядро
 │   │   │   ├── CPU_SINGLE_CYCLE.sv     # Single-cycle RV32I core
-│   │   │   ├── CPU_PIPELINE_ADAPTER.sv # Instruction fetch / data access FSM
+│   │   │   ├── CPU_IF_ADAPTER.sv       # Instruction fetch → bus read pulses
+│   │   │   ├── CPU_DATA_ADAPTER_V2.sv  # Data access (load/store) → bus
 │   │   │   ├── CPU_ALU.sv              # ALU wrapper
 │   │   │   ├── OP_0110011.sv           # R-type ALU operations
 │   │   │   ├── OP_0010011.sv           # I-type ALU operations
@@ -66,19 +67,17 @@ FPGA/
 │   │   │   ├── LOAD_UNIT.sv            # Load alignment + sign extension
 │   │   │   └── STORE_UNIT.sv           # Store byte mask
 │   │   ├── memory/                     # Cache + DDR
-│   │   │   ├── MEMORY_CONTROLLER.sv    # Cache controller (D-cache + stream + I-cache)
-│   │   │   ├── CHUNK_STORAGE.sv        # Single cache line
-│   │   │   ├── CHUNK_STORAGE_4_POOL.sv # 4-entry D-cache pool (LRU)
-│   │   │   ├── I_CACHE.sv             # Direct-mapped I-cache (256×16B = 4KB, read-only)
+│   │   │   ├── MEMORY_CONTROLLER_V2.sv # Unified cache (D/I, WAYS=1/2, READ_ONLY)
+│   │   │   ├── BUS_ARBITER.sv          # 2-port priority arbiter (MEM > I_CACHE)
 │   │   │   ├── RAM_CONTROLLER.sv       # MIG DDR controller
 │   │   │   ├── MIG_MODEL.sv            # Simulation-only MIG mock
-│   │   │   ├── SCRATCHPAD.sv           # 128 KB BRAM + Hardware Blitter
-│   │   │   └── STREAM_CACHE.sv         # 1-entry read-only DDR bypass cache
+│   │   │   └── SCRATCHPAD.sv           # 128 KB BRAM + Hardware Blitter
 │   │   ├── peripheral/                 # Периферия + шина
-│   │   │   ├── PERIPHERAL_BUS.sv       # Address decoder
+│   │   │   ├── PERIPHERAL_BUS_V2.sv    # 128-bit address decoder
+│   │   │   ├── BUS_128_TO_32.sv        # Bus bridge: 128-bit → 32-bit device
+│   │   │   ├── BUS_32_TO_128.sv        # Bus bridge: 32-bit CPU → 128-bit bus
 │   │   │   ├── UART_IO_DEVICE.sv       # Memory-mapped UART
-│   │   │   ├── OLED_IO_DEVICE.sv       # PmodOLEDrgb raw SPI (legacy)
-│   │   │   ├── OLED_FB_DEVICE.sv      # PmodOLEDrgb BRAM framebuffer + SPI renderer
+│   │   │   ├── OLED_FB_DEVICE.sv       # PmodOLEDrgb BRAM framebuffer + SPI renderer
 │   │   │   ├── SD_IO_DEVICE.sv         # PmodMicroSD (SPI)
 │   │   │   ├── SPI_MASTER.sv           # Full-duplex SPI
 │   │   │   └── FLASH_LOADER.sv         # QSPI flash boot loader
@@ -148,29 +147,32 @@ Implements all 8 RISC-V R-type operations. Dispatch is based on `funct3`; `funct
 - **OUTPUT_CONTROLLER** — parallel-to-serial UART transmitter
 - **VALUE_STORAGE** — 4-button / 4-LED state machine buffer
 
-### `riscv/MEMORY/` (Memory subsystem)
-
-Cache hierarchy between the processor and DDR RAM:
+### Memory subsystem (128-bit bus)
 
 ```
-MEMORY_CONTROLLER (bus_type[1:0] selects cache path)
-├── CHUNK_STORAGE_4_POOL   # D-cache: 4-entry write-back (128-bit chunks) ← bus_type=00
-│   └── CHUNK_STORAGE ×4  # Individual cache line with mask-based writes
-├── STREAM_CACHE           # 1-entry read-only bypass cache              ← bus_type=01
-├── I_CACHE                # I-cache: 256-entry direct-mapped (4 KB)     ← bus_type=10
-└── RAM_CONTROLLER         # MIG DDR controller with dual-clock sync (clk / mig_ui_clk)
+CPU IF → CPU_IF_ADAPTER → BUS_32_TO_128 → I_CACHE (MCV2, RO=1) ──miss──→ BUS_ARBITER p1
+CPU MEM → CPU_DATA_ADAPTER_V2 → mux → BUS_32_TO_128 ──────────────────→ BUS_ARBITER p0
+                                                                              ↓
+                                                                        PERIPHERAL_BUS_V2
+                                                                        ├── MEMORY_CONTROLLER_V2 (D$+DDR)
+                                                                        ├── UART, OLED, SD, TIMER (via BUS_128_TO_32)
+                                                                        └── SCRATCHPAD (via BUS_128_TO_32)
 ```
 
-**I_CACHE** (instruction cache):
-- Direct-mapped, 256 lines × 16 bytes = 4 KB, read-only
-- Address: `[tag 16b | index 8b | offset 4b]` (28-bit)
-- Combinational hit check (distributed RAM for tags + data)
-- CPU_PIPELINE_ADAPTER prefixes IF address with `2'b11` → routes through I-cache
-- Eliminates instruction/data cache thrashing in DOOM BSP traversal
+**MEMORY_CONTROLLER_V2** (unified cache):
+- Parameters: `DEPTH` (lines), `WAYS` (1=direct-mapped, 2=2-way LRU), `READ_ONLY` (0=D$, 1=I$)
+- 128-bit standard bus interface (upstream slave + downstream master to DDR)
+- 6-state FSM: WAIT_REQUEST → READ_CACHE → WRITE_CACHE → MISS_READ_REQ → MISS_READ_WAIT → MISS_SAVE
+- Output buffer (1-entry line buffer for sequential access fast path)
+- Stream: `bus_address[29]=1` → bypass cache (don't save to D_CACHE)
+- Fire-and-forget dirty eviction in MISS_SAVE (NBA semantics)
+- I_CACHE instance: MCV2 with READ_ONLY=1, miss → BUS_ARBITER → shared bus → D_CACHE → DDR
 
-**MEMORY_CONTROLLER states:** `NORMAL` → `WATING` → `SAVE_DATA` → `WRITE_DATA` → `NORMAL`
-- On cache miss: optionally evicts dirty line to RAM, then fetches new chunk
-- Write path: buffers address/mask/data internally, applies after chunk load
+**BUS_ARBITER:**
+- 2-port priority arbiter (port0=MEM data > port1=I_CACHE miss)
+- 5 explicit states: IDLE, WAIT_P0, WAIT_P1, WAIT_P0_QUEUE_P1, QUEUE_P0_WAIT_P1
+- Per-port latched read_data registers
+- Handles simultaneous sends without data loss
 
 **RAM_CONTROLLER:**
 - Two-clock-domain design: `clk` (processor) and `mig_ui_clk` (MIG DDR)
@@ -186,56 +188,53 @@ MEMORY_CONTROLLER (bus_type[1:0] selects cache path)
 - Stores writes when `wdf_wren = 1`, returns reads with 1-cycle latency
 - `mig_app_rdy` and `mig_app_wdf_rdy` always `1` (no back-pressure)
 
-### Peripheral Bus — адресная карта (30-bit, addr[29:28] = bus type)
+### Peripheral Bus V2 — адресная карта (32-bit, 128-bit data bus)
 
 ```
-addr[29:28]=00: DDR D-cache (MEMORY_CONTROLLER, bus_type=00)
-addr[29:28]=01: I/O устройства + SCRATCHPAD
-addr[29:28]=10: DDR stream  (MEMORY_CONTROLLER, bus_type=01)
-addr[29:28]=11: DDR I-cache (MEMORY_CONTROLLER, bus_type=10)
+bit30=0 (0x0000_0000 – 0x3FFF_FFFF) → MEMORY_CONTROLLER_V2 (D-cache + DDR)
+  bit29=0: normal D-cache path
+  bit29=1: stream (bypass D-cache, don't save)
 
-0x0000_0000 – 0x0FFF_FFFF  →  MEMORY_CONTROLLER (DDR3 256 MB, D-cache)
-0x1000_0000 – 0x1000_FFFF  →  UART_IO_DEVICE
-  0x1000_0000 : TX_DATA   (W/R)
-  0x1000_0004 : RX_DATA   (R)
-  0x1000_0008 : STATUS    (R) {tx_ready, rx_avail}
-0x1001_0000 – 0x1001_FFFF  →  OLED_FB_DEVICE (PmodOLEDrgb SSD1331, JA)
-  0x1001_0000 : CONTROL   (W)   — bit0: flush, bit1: mode (0=RGB565, 1=PAL256)
-  0x1001_0004 : STATUS    (R)   — bit0: busy
-  0x1001_0008 : VP_WIDTH  (W/R) — ширина viewport (96–256)
-  0x1001_000C : VP_HEIGHT (W/R) — высота viewport (64–256)
-  0x1001_0010 : PALETTE   (W/R) — 256×16 бит RGB565 (halfword, 512 байт)
-  0x1001_4000 : FRAMEBUF  (W/R) — пиксели, stride=power-of-2
-0x1002_0000 – 0x1002_FFFF  →  SD_IO_DEVICE (PmodMicroSD, JC)
-  0x1002_0000 : DATA      (W/R) — SPI full-duplex TX/RX
-  0x1002_0004 : CONTROL   (W/R) — {CS}
-  0x1002_0008 : STATUS    (R)   — {card_detect, spi_busy}
-  0x1002_000C : DIVIDER   (W/R) — SPI clock divider (init=101/~400kHz, fast=3/~10MHz)
-0x1003_0000 – 0x1003_FFFF  →  TIMER_DEVICE (счётчик тактов и времени)
-  0x1003_0000 : CYCLE_LO  (R)   — нижние 32 бита 64-bit счётчика тактов
-  0x1003_0004 : CYCLE_HI  (R)   — верхние 32 бита (snapshot при чтении CYCLE_LO)
-  0x1003_0008 : TIME_MS   (R)   — миллисекунды с момента reset (32-бит, ~49 дней)
-  0x1003_000C : TIME_US   (R)   — микросекунды с момента reset (32-бит, ~71 мин)
-0x1004_0000 – 0x1005_FFFF  →  SCRATCHPAD (BRAM 128 KB, 1-тактовый доступ)
-0x1006_0000 – 0x1006_003F  →  BLITTER MMIO (внутри SCRATCHPAD)
-  0x1006_0000 : CMD         (W)   — 1=column, 2=span
-  0x1006_0004 : STATUS      (R)   — bit0: busy
-  0x1006_0008 : SRC_ADDR    (W)   — адрес текстуры (30-bit bus addr)
-  0x1006_0024 : CMAP_OFFSET (W)   — адрес colormap (полный bus addr)
+bit30=1 (0x4000_0000+) → I/O devices (decoded by addr[19:16]):
+
+0x4000_0000 – 0x4000_FFFF  →  UART_IO_DEVICE
+  0x4000_0000 : TX_DATA   (W/R)
+  0x4000_0004 : RX_DATA   (R)
+  0x4000_0008 : STATUS    (R) {tx_ready, rx_avail}
+0x4001_0000 – 0x4001_FFFF  →  OLED_FB_DEVICE (PmodOLEDrgb SSD1331, JA)
+  0x4001_0000 : CONTROL   (W)   — bit0: flush, bit1: mode (0=RGB565, 1=PAL256)
+  0x4001_0004 : STATUS    (R)   — bit0: busy
+  0x4001_0008 : VP_WIDTH  (W/R)
+  0x4001_000C : VP_HEIGHT (W/R)
+  0x4001_0010 : PALETTE   (W/R) — 256×16 бит RGB565
+  0x4001_4000 : FRAMEBUF  (W/R)
+0x4002_0000 – 0x4002_FFFF  →  SD_IO_DEVICE (PmodMicroSD, JC)
+  0x4002_0000 : DATA      (W/R)
+  0x4002_0004 : CONTROL   (W/R) — {CS}
+  0x4002_0008 : STATUS    (R)   — {card_detect, spi_busy}
+  0x4002_000C : DIVIDER   (W/R)
+0x4003_0000 – 0x4003_FFFF  →  TIMER_DEVICE
+  0x4003_0000 : CYCLE_LO  (R)
+  0x4003_0004 : CYCLE_HI  (R)
+  0x4003_0008 : TIME_MS   (R)
+  0x4003_000C : TIME_US   (R)
+0x4004_0000 – 0x4005_FFFF  →  SCRATCHPAD (BRAM 128 KB)
+0x4006_0000 – 0x4006_003F  →  BLITTER MMIO (внутри SCRATCHPAD)
   (см. docs/blitter.md для полного списка регистров)
 ```
 
-Декодирование:
-- `addr[29:28]=00` → DDR D-cache (MEMORY_CONTROLLER, `bus_type=00`)
-- `addr[29:28]=01, addr[18]=0` → I/O, `addr[17:16]` → устройство (00=UART, 01=OLED, 10=SD, 11=TIMER)
-- `addr[29:28]=01, addr[18]=1` → SCRATCHPAD (128 KB BRAM)
-- `addr[29:28]=10` → DDR stream (MEMORY_CONTROLLER, `bus_type=01`)
-- `addr[29:28]=11` → DDR I-cache (MEMORY_CONTROLLER, `bus_type=10`)
+Декодирование (PERIPHERAL_BUS_V2):
+- `addr[30]=0` → MEMORY_CONTROLLER_V2 (DDR, addr[29]=stream flag)
+- `addr[30]=1, addr[19:16]=0` → UART (via BUS_128_TO_32)
+- `addr[30]=1, addr[19:16]=1` → OLED (via BUS_128_TO_32)
+- `addr[30]=1, addr[19:16]=2` → SD (via BUS_128_TO_32)
+- `addr[30]=1, addr[19:16]=3` → TIMER (via BUS_128_TO_32)
+- `addr[30]=1, addr[19:16]>=4` → SCRATCHPAD (via BUS_128_TO_32)
 
-### `riscv/CPU/SPI_MASTER.sv`
+### `riscv/rtl/peripheral/SPI_MASTER.sv`
 Full-duplex SPI Mode 0 (CPOL=0, CPHA=0), MSB first. Настраиваемый делитель тактовой.
 MOSI выход + MISO вход, `rx_data` содержит принятый байт после `done=1`.
-Используется как OLED_IO_DEVICE, так и SD_IO_DEVICE.
+Используется OLED_FB_DEVICE, SD_IO_DEVICE и FLASH_LOADER.
 
 ### PMOD подключения
 
