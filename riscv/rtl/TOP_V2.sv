@@ -335,7 +335,9 @@ module TOP_V2 #(
     MEMORY_CONTROLLER_V2 #(
         .DEPTH(MCV2_DEPTH), .WAYS(MCV2_WAYS), .READ_ONLY(1)
     ) icache (
-        .clk(clk), .reset(reset || combined_set_pc),  // flush I_CACHE on PC change
+        .clk(clk), .reset(reset || combined_set_pc),  // full flush on PC change
+        // Invalidate (TODO: snoop from D-cache writes)
+        .invalidate_ready(), .invalidate_address(32'b0), .invalidate_trigger(1'b0),
         // Upstream: from IF converter
         .bus_address(if128_addr), .bus_read(if128_rd), .bus_write(1'b0),
         .bus_write_data(128'b0), .bus_write_mask(16'b0),
@@ -471,6 +473,8 @@ module TOP_V2 #(
         .DEPTH(MCV2_DEPTH), .WAYS(MCV2_WAYS), .READ_ONLY(0)
     ) mem_ctrl (
         .clk(clk), .reset(reset),
+        // Invalidate not used for D-cache
+        .invalidate_ready(), .invalidate_address(32'b0), .invalidate_trigger(1'b0),
         // Bus slave (from PERIPHERAL_BUS_V2)
         .bus_address(mc_bus_addr), .bus_read(mc_bus_rd), .bus_write(mc_bus_wr),
         .bus_write_data(mc_bus_wr_data), .bus_write_mask(mc_bus_mask),

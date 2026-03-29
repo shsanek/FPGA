@@ -23,6 +23,11 @@ module MEMORY_CONTROLLER_V2 #(
     input wire clk,
     input wire reset,
 
+    // === Cache invalidate (e.g. flush I_CACHE line on write to code region) ===
+    output reg                    invalidate_ready,
+    input  wire [ADDR_WIDTH-1:0]  invalidate_address,
+    input  wire                   invalidate_trigger,
+
     // === Bus slave (upstream) ===
     input  wire [ADDR_WIDTH-1:0]  bus_address,
     input  wire                   bus_read,
@@ -127,6 +132,9 @@ module MEMORY_CONTROLLER_V2 #(
     // =========================================================
     wire addr_stream = bus_address[29];
 
+    // Invalidate: TODO — implement cache line invalidation
+    // For now just report ready when in WAIT_REQUEST
+
     // =========================================================
     // FSM states
     // =========================================================
@@ -155,6 +163,7 @@ module MEMORY_CONTROLLER_V2 #(
             output_valid       <= 0;
             current_is_write   <= 0;
             current_stream     <= 0;
+            invalidate_ready <= 1;
             for (i = 0; i < SETS; i = i + 1) begin
                 valid_0[i] <= 0;
                 dirty_0[i] <= 0;
@@ -167,6 +176,9 @@ module MEMORY_CONTROLLER_V2 #(
             bus_read_valid <= 0;
             external_read  <= 0;
             external_write <= 0;
+
+            // Invalidate: TODO
+            invalidate_ready <= (state == WAIT_REQUEST);
 
             case (state)
 
