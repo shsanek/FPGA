@@ -81,6 +81,9 @@ module BUS_ARBITER #(
     reg active_port;    // 0 or 1
     reg first_busy;     // skip first BUSY cycle (NBA timing guard)
 
+    assign port0_reuest = p0_read || p0_write;
+    assign port1_reuest = p1_read || p1_write;
+
     // =========================================================
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -109,7 +112,7 @@ module BUS_ARBITER #(
                     if (bus_ready) begin
 
                         // === Direct forward from port inputs (0-cycle) ===
-                        if (p0_read || p0_write) begin
+                        if (port0_reuest) begin
                             bus_address    <= p0_address;
                             bus_read       <= p0_read;
                             bus_write      <= p0_write;
@@ -120,7 +123,8 @@ module BUS_ARBITER #(
                             state          <= BUSY;
 
                             // p1 sent simultaneously → latch it
-                            if ((p1_read || p1_write) && !p1_lat_valid) begin
+                            // (p1_lat_valid guaranteed 0 — port won't send when latch full)
+                            if (port1_reuest) begin
                                 p1_lat_valid      <= 1;
                                 p1_lat_is_read    <= p1_read;
                                 p1_lat_address    <= p1_address;
@@ -128,7 +132,7 @@ module BUS_ARBITER #(
                                 p1_lat_write_mask <= p1_write_mask;
                             end
 
-                        end else if (p1_read || p1_write) begin
+                        end else if (port1_reuest) begin
                             bus_address    <= p1_address;
                             bus_read       <= p1_read;
                             bus_write      <= p1_write;
@@ -172,14 +176,15 @@ module BUS_ARBITER #(
                     first_busy <= 0;
 
                     // Latch incoming commands while busy
-                    if ((p0_read || p0_write) && !p0_lat_valid) begin
+                    // (port won't send when latch full — ready=0)
+                    if (port0_reuest) begin
                         p0_lat_valid      <= 1;
                         p0_lat_is_read    <= p0_read;
                         p0_lat_address    <= p0_address;
                         p0_lat_write_data <= p0_write_data;
                         p0_lat_write_mask <= p0_write_mask;
                     end
-                    if ((p1_read || p1_write) && !p1_lat_valid) begin
+                    if (port1_reuest) begin
                         p1_lat_valid      <= 1;
                         p1_lat_is_read    <= p1_read;
                         p1_lat_address    <= p1_address;
