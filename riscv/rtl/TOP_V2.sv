@@ -291,7 +291,6 @@ module TOP_V2 #(
     // ===============================================================
     // I_CACHE: CPU IF → IF_ADAPTER → BUS_32_TO_128 → MCV2(RO=1)
     // ===============================================================
-    // IF adapter: generates read pulses when PC changes
     wire [31:0] if32_addr;
     wire        if32_rd;
     wire [31:0] if32_rd_data;
@@ -308,29 +307,23 @@ module TOP_V2 #(
         .flush(combined_set_pc)
     );
 
-    // 32→128 converter for I_CACHE
     wire         icache_bus_ready;
     wire [127:0] icache_bus_rd_data;
     wire         icache_bus_rd_valid;
 
-    BUS_32_TO_128 if_conv (
-        .cpu_address   (if32_addr),
-        .cpu_read      (if32_rd),
-        .cpu_write     (1'b0),
-        .cpu_write_data(32'b0),
-        .cpu_write_mask(4'b0),
-        .cpu_read_data (if32_rd_data),
-        .cpu_ready     (if32_ready),
-        .cpu_read_valid(if32_rd_valid),
-        .bus_address   (if128_addr),
-        .bus_read      (if128_rd),
-        .bus_write     (),
-        .bus_write_data(),
-        .bus_write_mask(),
-        .bus_ready     (icache_bus_ready),
-        .bus_read_data (icache_bus_rd_data),
-        .bus_read_valid(icache_bus_rd_valid)
-    );
+    // IF path: no BUS_32_TO_128 — manual wiring with word select by instr_addr
+    // IF_ADAPTER controls bus_read pulse; I_CACHE gets line-aligned address
+    assign if128_addr = if32_addr;  // IF_ADAPTER already sends aligned addr
+    assign if128_rd   = if32_rd;
+    assign if32_ready    = icache_bus_ready;
+    assign if32_rd_valid = icache_bus_rd_valid;
+
+    // Word select from 128-bit I_CACHE response by CURRENT PC (not request addr)
+    wire [1:0] if_word_sel = instr_addr[3:2];
+    assign if32_rd_data = if_word_sel == 2'd3 ? icache_bus_rd_data[127:96] :
+                          if_word_sel == 2'd2 ? icache_bus_rd_data[95:64]  :
+                          if_word_sel == 2'd1 ? icache_bus_rd_data[63:32]  :
+                                                icache_bus_rd_data[31:0];
 
     MEMORY_CONTROLLER_V2 #(
         .DEPTH(MCV2_DEPTH), .WAYS(MCV2_WAYS), .READ_ONLY(1)
