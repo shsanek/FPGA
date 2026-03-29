@@ -5,13 +5,16 @@
 //   - MEMORY_CONTROLLER_V2: native 128-bit
 //   - I/O devices (UART, OLED, SD, TIMER, SCRATCHPAD): via BUS_128_TO_32
 //
-// Address map (by bus_address[31:28]):
-//   0x0_______ → MEMORY_CONTROLLER (D-cache + DDR)
-//   0x1000____ → UART
-//   0x1001____ → OLED
-//   0x1002____ → SD
-//   0x1003____ → TIMER
-//   0x1004____ → SCRATCHPAD
+// Address map:
+//   bit30=0 (0x0000_0000 – 0x3FFF_FFFF) → MEMORY_CONTROLLER
+//       bit29=0: normal D-cache path
+//       bit29=1: stream (bypass cache)
+//   bit30=1 (0x4000_0000+) → I/O devices (by [19:16]):
+//       0x4000_xxxx → UART
+//       0x4001_xxxx → OLED
+//       0x4002_xxxx → SD
+//       0x4003_xxxx → TIMER
+//       0x4004_xxxx → SCRATCHPAD
 
 module PERIPHERAL_BUS_V2 (
     input wire clk,
@@ -86,14 +89,14 @@ module PERIPHERAL_BUS_V2 (
     // =========================================================
     // Address decode
     // =========================================================
-    wire mc_sel    = (bus_address[31:28] == 4'h0);
-    wire io_sel    = (bus_address[31:28] == 4'h1);
+    wire mc_sel    = !bus_address[30];                          // 0x0000_0000 – 0x3FFF_FFFF
+    wire io_sel    =  bus_address[30];                          // 0x4000_0000+
 
-    wire uart_sel  = io_sel && (bus_address[19:16] == 4'h0);  // 0x1000_xxxx
-    wire oled_sel  = io_sel && (bus_address[19:16] == 4'h1);  // 0x1001_xxxx
-    wire sd_sel    = io_sel && (bus_address[19:16] == 4'h2);  // 0x1002_xxxx
-    wire timer_sel = io_sel && (bus_address[19:16] == 4'h3);  // 0x1003_xxxx
-    wire sp_sel    = io_sel && (bus_address[19:16] >= 4'h4);  // 0x1004_xxxx+
+    wire uart_sel  = io_sel && (bus_address[19:16] == 4'h0);  // 0x4000_xxxx
+    wire oled_sel  = io_sel && (bus_address[19:16] == 4'h1);  // 0x4001_xxxx
+    wire sd_sel    = io_sel && (bus_address[19:16] == 4'h2);  // 0x4002_xxxx
+    wire timer_sel = io_sel && (bus_address[19:16] == 4'h3);  // 0x4003_xxxx
+    wire sp_sel    = io_sel && (bus_address[19:16] >= 4'h4);  // 0x4004_xxxx+
 
     // =========================================================
     // MEMORY_CONTROLLER: native 128-bit, direct pass-through
