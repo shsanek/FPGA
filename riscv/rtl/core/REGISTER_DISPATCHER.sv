@@ -1,12 +1,7 @@
 // REGISTER_DISPATCHER — pipeline stage 3: hazard check + register read.
 //
-// Waits for decoded instruction from INSTRUCTION_DECODE.
-// Checks busy[rs1]/busy[rs2] — if register is being written by in-flight
-// instruction, stalls until writeback clears it.
-// When clear: reads register values, marks busy[rd], sends to Execute.
-// If next_stage_ready — goes straight back to WAITING_INSTRUCTION.
-//
-// FSM: WAITING_INSTRUCTION → WAITING_HAZARD (→ back when next_stage_ready)
+// Pipelined: accepts in 1 cycle when no hazard and not blocked.
+// Stalls on data hazard (busy source register) until writeback clears it.
 
 module REGISTER_DISPATCHER (
     input wire clk,
@@ -15,7 +10,7 @@ module REGISTER_DISPATCHER (
     // === From INSTRUCTION_DECODE ===
     input  wire [31:0] prev_pc,
     input  wire [31:0] prev_instruction,
-    input  wire [4:0]  prev_rs1_index,       // 5'b10000 = not used
+    input  wire [4:0]  prev_rs1_index,
     input  wire [4:0]  prev_rs2_index,
     input  wire [4:0]  prev_rd_index,
     input  wire        prev_stage_valid,
@@ -35,103 +30,83 @@ module REGISTER_DISPATCHER (
     input  wire [31:0] rf_rs1_data,
     input  wire [31:0] rf_rs2_data,
 
-    // === Writeback notification (from last stage) ===
-    input  wire [4:0]  wb_rd_index,          // which register was written
-    input  wire        wb_valid,             // write happened
+    // === Writeback notification ===
+    input  wire [4:0]  wb_rd_index,
+    input  wire        wb_valid,
 
     // === Pipeline flush ===
     input  wire        flush
 );
 
-    // =========================================================
-    // Busy table: 1 bit per register (0..31)
-    // busy[i]=1 means an in-flight instruction will write to register i
-    // Register 0 is always free (hardwired zero)
-    // =========================================================
     reg busy [0:31];
 
-    // =========================================================
-    // Latched instruction from decode stage
-    // =========================================================
+    // Latched from decode (need to hold during hazard stall)
     reg [31:0] lat_pc;
     reg [31:0] lat_instruction;
     reg [4:0]  lat_rs1_index;
     reg [4:0]  lat_rs2_index;
     reg [4:0]  lat_rd_index;
+    reg        lat_valid;      // have latched instruction waiting
 
-    // =========================================================
-    // Hazard check: are source registers busy?
-    // Index 5'b10000 (32) = not used → no hazard
-    // Register 0 = never busy
-    // =========================================================
+    // Hazard check on latched indices
     wire rs1_busy = (lat_rs1_index < 5'd32) && (lat_rs1_index != 5'd0) && busy[lat_rs1_index];
     wire rs2_busy = (lat_rs2_index < 5'd32) && (lat_rs2_index != 5'd0) && busy[lat_rs2_index];
-    wire has_hazard = rs1_busy || rs2_busy;
+    wire has_hazard = lat_valid && (rs1_busy || rs2_busy);
 
-    // =========================================================
-    // Register file read addresses (from latched indices)
-    // =========================================================
+    // Register file addresses from latched indices
     assign rf_rs1_addr = lat_rs1_index[4] ? 5'd0 : lat_rs1_index;
     assign rf_rs2_addr = lat_rs2_index[4] ? 5'd0 : lat_rs2_index;
 
-    // =========================================================
-    // FSM
-    // =========================================================
-    typedef enum logic [0:0] {
-        WAITING_INSTRUCTION,
-        WAITING_HAZARD
-    } state_t;
+    // Blocked = have valid output but next stage hasn't taken it
+    wire blocked = next_stage_valid && !next_stage_ready;
 
-    state_t state;
-
-    assign prev_stage_ready = (state == WAITING_INSTRUCTION);
+    // Can accept: no latched instruction waiting (or it's being dispatched this cycle)
+    wire can_dispatch = lat_valid && !has_hazard && !blocked;
+    assign prev_stage_ready = !lat_valid || can_dispatch;
 
     integer i;
     always_ff @(posedge clk) begin
-        // Writeback: clear busy bit (always, independent of state)
+        // Writeback: always clear busy (independent of everything)
         if (wb_valid && wb_rd_index < 5'd32 && wb_rd_index != 5'd0)
             busy[wb_rd_index] <= 0;
 
-        next_stage_valid <= 0;
-
         if (reset || flush) begin
-            state <= WAITING_INSTRUCTION;
             for (i = 0; i < 32; i = i + 1)
                 busy[i] <= 0;
-            out_pc          <= 32'b0;
-            out_instruction <= 32'h0000_0013;
-            out_rs1_value   <= 32'b0;
-            out_rs2_value   <= 32'b0;
-            next_stage_valid <= 1'b0;
+            lat_valid        <= 0;
+            next_stage_valid <= 0;
+            out_pc           <= 32'b0;
+            out_instruction  <= 32'h0000_0013;
+            out_rs1_value    <= 32'b0;
+            out_rs2_value    <= 32'b0;
         end else begin
-            case (state)
-                WAITING_INSTRUCTION: begin
-                    if (prev_stage_valid) begin
-                        lat_pc          <= prev_pc;
-                        lat_instruction <= prev_instruction;
-                        lat_rs1_index   <= prev_rs1_index;
-                        lat_rs2_index   <= prev_rs2_index;
-                        lat_rd_index    <= prev_rd_index;
-                        state           <= WAITING_HAZARD;
-                    end
-                end
+            // Clear valid when next stage accepts
+            if (next_stage_valid && next_stage_ready)
+                next_stage_valid <= 0;
 
-                WAITING_HAZARD: begin
-                    if (!has_hazard) begin
-                        out_pc          <= lat_pc;
-                        out_instruction <= lat_instruction;
-                        out_rs1_value   <= rf_rs1_data;
-                        out_rs2_value   <= rf_rs2_data;
-                        next_stage_valid <= 1'b1;
-                        // Mark destination register as busy
-                        if (lat_rd_index < 5'd32 && lat_rd_index != 5'd0)
-                            busy[lat_rd_index] <= 1;
+            // Dispatch: no hazard, not blocked → send to execute
+            if (can_dispatch) begin
+                out_pc           <= lat_pc;
+                out_instruction  <= lat_instruction;
+                out_rs1_value    <= rf_rs1_data;
+                out_rs2_value    <= rf_rs2_data;
+                next_stage_valid <= 1;
 
-                        if (next_stage_ready)
-                            state <= WAITING_INSTRUCTION;
-                    end
-                end
-            endcase
+                if (lat_rd_index < 5'd32 && lat_rd_index != 5'd0)
+                    busy[lat_rd_index] <= 1;
+
+                lat_valid <= 0;
+            end
+
+            // Accept new from decode (when slot free)
+            if (prev_stage_ready && prev_stage_valid) begin
+                lat_pc          <= prev_pc;
+                lat_instruction <= prev_instruction;
+                lat_rs1_index   <= prev_rs1_index;
+                lat_rs2_index   <= prev_rs2_index;
+                lat_rd_index    <= prev_rd_index;
+                lat_valid       <= 1;
+            end
         end
     end
 
