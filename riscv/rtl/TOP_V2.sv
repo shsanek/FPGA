@@ -271,10 +271,21 @@ module TOP_V2 #(
     );
 
     // ===============================================================
-    // CPU
+    // CPU + INSTRUCTION_PROVIDER + I_CACHE
     // ===============================================================
     wire combined_set_pc = flash_set_pc | dbg_set_pc;
     wire [31:0] combined_new_pc = flash_set_pc ? flash_new_pc : dbg_new_pc;
+
+    // INSTRUCTION_PROVIDER outputs
+    wire [31:0] ip_instruction;
+    wire        ip_valid;
+    wire [31:0] ip_current_pc;
+
+    // CPU sees PC and instruction from INSTRUCTION_PROVIDER
+    // instr_stall = !ip_valid (CPU stalls when no instruction ready)
+    assign instr_addr   = ip_current_pc;
+    assign instr_data   = ip_instruction;
+    assign instr_stall_w = !ip_valid;
 
     CPU_SINGLE_CYCLE #(.DEBUG_ENABLE(DEBUG_ENABLE)) cpu (
         .clk(clk), .reset(reset),
@@ -288,55 +299,35 @@ module TOP_V2 #(
         .dbg_current_pc(dbg_current_pc), .dbg_current_instr(dbg_current_instr)
     );
 
-    // ===============================================================
-    // I_CACHE: CPU IF → IF_ADAPTER → BUS_32_TO_128 → MCV2(RO=1)
-    // ===============================================================
-    wire [31:0] if32_addr;
-    wire        if32_rd;
-    wire [31:0] if32_rd_data;
-    wire        if32_ready;
-    wire        if32_rd_valid;
-
-    CPU_IF_ADAPTER if_adapter (
-        .clk(clk), .reset(reset),
-        .instr_addr(instr_addr), .instr_data(instr_data),
-        .instr_stall(instr_stall_w),
-        .bus_address(if32_addr), .bus_read(if32_rd),
-        .bus_read_data(if32_rd_data),
-        .bus_ready(if32_ready), .bus_read_valid(if32_rd_valid),
-        .flush(combined_set_pc)
-    );
-
+    // INSTRUCTION_PROVIDER: internal PC, 128-bit line buffer, word select
     wire         icache_bus_ready;
     wire [127:0] icache_bus_rd_data;
     wire         icache_bus_rd_valid;
 
-    // IF path: no BUS_32_TO_128 — manual wiring with word select by instr_addr
-    // IF_ADAPTER controls bus_read pulse; I_CACHE gets line-aligned address
-    assign if128_addr = if32_addr;  // IF_ADAPTER already sends aligned addr
-    assign if128_rd   = if32_rd;
-    assign if32_ready    = icache_bus_ready;
-    assign if32_rd_valid = icache_bus_rd_valid;
+    // ready_save_data: CPU accepted instruction (not stalled by MEM and instruction was valid)
+    wire ip_ready_save = ip_valid && !cpu_mem_stall;
 
-    // Word select from 128-bit I_CACHE response by CURRENT PC (not request addr)
-    wire [1:0] if_word_sel = instr_addr[3:2];
-    assign if32_rd_data = if_word_sel == 2'd3 ? icache_bus_rd_data[127:96] :
-                          if_word_sel == 2'd2 ? icache_bus_rd_data[95:64]  :
-                          if_word_sel == 2'd1 ? icache_bus_rd_data[63:32]  :
-                                                icache_bus_rd_data[31:0];
+    INSTRUCTION_PROVIDER ip (
+        .clk(clk), .reset(reset),
+        .instruction(ip_instruction), .valid(ip_valid), .current_pc(ip_current_pc),
+        .new_pc(combined_new_pc), .set_pc(combined_set_pc),
+        .ready_save_data(ip_ready_save),
+        // 128-bit bus → I_CACHE
+        .bus_address(if128_addr), .bus_read(if128_rd),
+        .bus_read_data(icache_bus_rd_data),
+        .bus_ready(icache_bus_ready), .bus_read_valid(icache_bus_rd_valid)
+    );
 
+    // I_CACHE (MCV2 READ_ONLY=1)
     MEMORY_CONTROLLER_V2 #(
         .DEPTH(MCV2_DEPTH), .WAYS(MCV2_WAYS), .READ_ONLY(1)
     ) icache (
-        .clk(clk), .reset(reset || combined_set_pc),  // full flush on PC change
-        // Invalidate (TODO: snoop from D-cache writes)
+        .clk(clk), .reset(reset || combined_set_pc),
         .invalidate_ready(), .invalidate_address(32'b0), .invalidate_trigger(1'b0),
-        // Upstream: from IF converter
         .bus_address(if128_addr), .bus_read(if128_rd), .bus_write(1'b0),
         .bus_write_data(128'b0), .bus_write_mask(16'b0),
         .bus_ready(icache_bus_ready), .bus_read_data(icache_bus_rd_data),
         .bus_read_valid(icache_bus_rd_valid),
-        // Downstream: miss → BUS_ARBITER port1
         .external_address(icache_ext_addr), .external_read(icache_ext_rd),
         .external_write(icache_ext_wr), .external_write_data(icache_ext_wr_data),
         .external_write_mask(icache_ext_wr_mask),
@@ -383,26 +374,35 @@ module TOP_V2 #(
     assign data_bus32_ready   = (!flash_active & !pipeline_paused) ? mux32_ready : 1'b0;
 
     // ===============================================================
-    // BUS_32_TO_128: data path 32→128 (MEM + debug + flash)
+    // Data path 32→128 (inline, no separate module)
     // ===============================================================
-    BUS_32_TO_128 data_conv (
-        .cpu_address   (mux32_addr),
-        .cpu_read      (mux32_rd),
-        .cpu_write     (mux32_wr),
-        .cpu_write_data(mux32_wr_data),
-        .cpu_write_mask(mux32_mask),
-        .cpu_read_data (mux32_rd_data),
-        .cpu_ready     (mux32_ready),
-        .cpu_read_valid(mux32_read_valid),
-        .bus_address   (data128_addr),
-        .bus_read      (data128_rd),
-        .bus_write     (data128_wr),
-        .bus_write_data(data128_wr_data),
-        .bus_write_mask(data128_mask),
-        .bus_ready     (data128_ready),
-        .bus_read_data (data128_rd_data),
-        .bus_read_valid(data128_read_valid)
-    );
+    wire [1:0] data_word_sel = mux32_addr[3:2];
+
+    assign data128_addr = mux32_addr;
+    assign data128_rd   = mux32_rd;
+    assign data128_wr   = mux32_wr;
+    assign mux32_ready     = data128_ready;
+    assign mux32_read_valid = data128_read_valid;
+
+    // Write 32→128: position data + mask by word_sel
+    assign data128_wr_data = {
+        data_word_sel == 2'd3 ? mux32_wr_data : 32'b0,
+        data_word_sel == 2'd2 ? mux32_wr_data : 32'b0,
+        data_word_sel == 2'd1 ? mux32_wr_data : 32'b0,
+        data_word_sel == 2'd0 ? mux32_wr_data : 32'b0
+    };
+    assign data128_mask = {
+        data_word_sel == 2'd3 ? mux32_mask : 4'b0,
+        data_word_sel == 2'd2 ? mux32_mask : 4'b0,
+        data_word_sel == 2'd1 ? mux32_mask : 4'b0,
+        data_word_sel == 2'd0 ? mux32_mask : 4'b0
+    };
+
+    // Read 128→32: select word by word_sel
+    assign mux32_rd_data = data_word_sel == 2'd3 ? data128_rd_data[127:96] :
+                           data_word_sel == 2'd2 ? data128_rd_data[95:64]  :
+                           data_word_sel == 2'd1 ? data128_rd_data[63:32]  :
+                                                   data128_rd_data[31:0];
 
     // ===============================================================
     // BUS_ARBITER: data (port0, priority) + I_CACHE miss (port1)
