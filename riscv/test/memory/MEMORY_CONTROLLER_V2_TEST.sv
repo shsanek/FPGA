@@ -19,7 +19,6 @@ module MEMORY_CONTROLLER_V2_TEST;
     wire                    controller_ready;
     wire [CHUNK_PART-1:0]   read_value;
     wire                    read_value_ready;
-    wire                    write_done;
 
     wire [ADDRESS_SIZE-1:0] ram_address;
     wire                    ram_read_trigger;
@@ -81,7 +80,6 @@ module MEMORY_CONTROLLER_V2_TEST;
         .controller_ready     (controller_ready),
         .read_value           (read_value),
         .read_value_ready     (read_value_ready),
-        .write_done           (write_done),
         .ram_controller_ready (ram_controller_ready),
         .ram_address          (ram_address),
         .ram_read_trigger     (ram_read_trigger),
@@ -102,7 +100,7 @@ module MEMORY_CONTROLLER_V2_TEST;
     wire                    ro_controller_ready;
     wire [CHUNK_PART-1:0]   ro_read_value;
     wire                    ro_read_value_ready;
-    wire                    ro_write_done;
+
 
     wire [ADDRESS_SIZE-1:0] ro_ram_address;
     wire                    ro_ram_read_trigger;
@@ -161,7 +159,8 @@ module MEMORY_CONTROLLER_V2_TEST;
         .controller_ready     (ro_controller_ready),
         .read_value           (ro_read_value),
         .read_value_ready     (ro_read_value_ready),
-        .write_done           (ro_write_done),
+
+
         .ram_controller_ready (ro_ram_controller_ready),
         .ram_address          (ro_ram_address),
         .ram_read_trigger     (ro_ram_read_trigger),
@@ -182,7 +181,7 @@ module MEMORY_CONTROLLER_V2_TEST;
     wire                    w2_controller_ready;
     wire [CHUNK_PART-1:0]   w2_read_value;
     wire                    w2_read_value_ready;
-    wire                    w2_write_done;
+
 
     wire [ADDRESS_SIZE-1:0] w2_ram_address;
     wire                    w2_ram_read_trigger;
@@ -241,7 +240,8 @@ module MEMORY_CONTROLLER_V2_TEST;
         .controller_ready     (w2_controller_ready),
         .read_value           (w2_read_value),
         .read_value_ready     (w2_read_value_ready),
-        .write_done           (w2_write_done),
+
+
         .ram_controller_ready (w2_ram_controller_ready),
         .ram_address          (w2_ram_address),
         .ram_read_trigger     (w2_ram_read_trigger),
@@ -281,19 +281,6 @@ module MEMORY_CONTROLLER_V2_TEST;
         end
     endtask
 
-    task automatic wait_write_done_sig(input int timeout);
-        int cnt;
-        cnt = 0;
-        while (!write_done && cnt < timeout) begin
-            @(posedge clk);
-            cnt++;
-        end
-        assert(cnt < timeout) else begin
-            $display("TIMEOUT waiting for write_done");
-            errors++;
-        end
-    endtask
-
     task automatic do_read(
         input [ADDRESS_SIZE-1:0] addr,
         input                    stream,
@@ -329,7 +316,7 @@ module MEMORY_CONTROLLER_V2_TEST;
         write_value = data;
         @(posedge clk); #1;
         command = 2'b00;
-        wait_write_done_sig(100);
+        wait_ready(100);
     endtask
 
     // =========================================================
@@ -388,7 +375,7 @@ module MEMORY_CONTROLLER_V2_TEST;
         begin
             int cnt;
             cnt = 0;
-            while (!w2_write_done && cnt < 100) begin @(posedge clk); cnt++; end
+            while (!w2_controller_ready && cnt < 100) begin @(posedge clk); cnt++; end
             assert(cnt < 100) else begin $display("TIMEOUT [%s] w2 write", label); errors++; end
         end
     endtask

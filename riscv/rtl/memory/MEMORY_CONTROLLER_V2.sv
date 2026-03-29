@@ -28,7 +28,6 @@ module MEMORY_CONTROLLER_V2 #(
     output reg                     controller_ready,
     output wire [CHUNK_PART-1:0]   read_value,    // 128-bit line
     output reg                     read_value_ready,
-    output reg                     write_done,     // not use in I-cache
 
     // === Downstream (D-cache: to RAM_CONTROLLER, I-cache: to MEMORY_MUX) ===
     input  wire                    ram_controller_ready,
@@ -149,7 +148,6 @@ module MEMORY_CONTROLLER_V2 #(
             state            <= WAIT_REQUEST;
             controller_ready <= 1;
             read_value_ready <= 0;
-            write_done       <= 0;
             ram_read_trigger <= 0;
             ram_write_trigger<= 0;
             output_valid     <= 0;
@@ -165,7 +163,6 @@ module MEMORY_CONTROLLER_V2 #(
         end else begin
             // Clear single-cycle pulses
             read_value_ready  <= 0;
-            write_done        <= 0;
             ram_read_trigger  <= 0;
             ram_write_trigger <= 0;
 
@@ -245,12 +242,12 @@ module MEMORY_CONTROLLER_V2 #(
                         end
                         // LRU: mark hit way as MRU
                         if (WAYS > 1) lru[idx] <= !hit_way;
-                        write_done <= 1;
+
                         controller_ready <= 1;
                         state <= WAIT_REQUEST;
                     end else begin
                         if (READ_ONLY) begin
-                            write_done <= 1;
+    
                             controller_ready <= 1;
                             state <= WAIT_REQUEST;
                         end else begin
