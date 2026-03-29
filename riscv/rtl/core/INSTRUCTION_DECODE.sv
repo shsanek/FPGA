@@ -1,7 +1,7 @@
-// INSTRUCTION_DECODE — pipeline stage: decode instruction + read registers.
+// INSTRUCTION_DECODE — pipeline stage: decode instruction indices.
 //
 // Receives PC + instruction from INSTRUCTION_PROVIDER.
-// Decodes rs1/rs2/rd indices, reads register file, latches results.
+// Decodes rs1/rs2/rd indices (values read later by Execute stage).
 // Passes to next stage (Execute) via valid/ready handshake.
 //
 // FSM: WAITING_INSTRUCTION → WAITING_SEND
@@ -26,19 +26,11 @@ module INSTRUCTION_DECODE (
     output reg  [4:0]  out_rs1_index,        // 5'b10000 = not used
     output reg  [4:0]  out_rs2_index,        // 5'b10000 = not used
     output reg  [4:0]  out_rd_index,         // 5'b10000 = not used
-    output reg  [31:0] out_rs1_value,
-    output reg  [31:0] out_rs2_value,
     output wire        next_stage_valid,     // we are ready to send
     input  wire        next_stage_ready,     // next stage ready to accept
 
     // === Pipeline flush (branch/jump changed PC) ===
-    input  wire        flush,
-
-    // === Register file read (combinational) ===
-    output wire [4:0]  rf_rs1_addr,
-    output wire [4:0]  rf_rs2_addr,
-    input  wire [31:0] rf_rs1_data,
-    input  wire [31:0] rf_rs2_data
+    input  wire        flush
 );
 
     // =========================================================
@@ -72,10 +64,6 @@ module INSTRUCTION_DECODE (
                     (opcode == OP_JAL) || (opcode == OP_JALR) || (opcode == OP_LUI) ||
                     (opcode == OP_AUIPC);
 
-    // Register file read addresses (combinational — always driven)
-    assign rf_rs1_addr = uses_rs1 ? rs1 : 5'b0;
-    assign rf_rs2_addr = uses_rs2 ? rs2 : 5'b0;
-
     // =========================================================
     // FSM
     // =========================================================
@@ -97,8 +85,6 @@ module INSTRUCTION_DECODE (
             out_rs1_index   <= NO_REG;
             out_rs2_index   <= NO_REG;
             out_rd_index    <= NO_REG;
-            out_rs1_value   <= 32'b0;
-            out_rs2_value   <= 32'b0;
         end else begin
             case (state)
                 WAITING_INSTRUCTION: begin
@@ -109,8 +95,6 @@ module INSTRUCTION_DECODE (
                         out_rs1_index   <= uses_rs1 ? rs1 : NO_REG;
                         out_rs2_index   <= uses_rs2 ? rs2 : NO_REG;
                         out_rd_index    <= uses_rd  ? rd  : NO_REG;
-                        out_rs1_value   <= rf_rs1_data;
-                        out_rs2_value   <= rf_rs2_data;
                         state           <= WAITING_SEND;
                     end
                 end
