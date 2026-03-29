@@ -26,7 +26,7 @@ module REGISTER_DISPATCHER (
     output reg  [31:0] out_instruction,
     output reg  [31:0] out_rs1_value,
     output reg  [31:0] out_rs2_value,
-    output wire        next_stage_valid,
+    output reg         next_stage_valid,
     input  wire        next_stage_ready,
 
     // === Register file read (combinational) ===
@@ -85,13 +85,14 @@ module REGISTER_DISPATCHER (
     state_t state;
 
     assign prev_stage_ready = (state == WAITING_INSTRUCTION);
-    assign next_stage_valid = (state == WAITING_HAZARD) && !has_hazard;
 
     integer i;
     always_ff @(posedge clk) begin
         // Writeback: clear busy bit (always, independent of state)
         if (wb_valid && wb_rd_index < 5'd32 && wb_rd_index != 5'd0)
             busy[wb_rd_index] <= 0;
+
+        next_stage_valid <= 0;
 
         if (reset || flush) begin
             state <= WAITING_INSTRUCTION;
@@ -101,6 +102,7 @@ module REGISTER_DISPATCHER (
             out_instruction <= 32'h0000_0013;
             out_rs1_value   <= 32'b0;
             out_rs2_value   <= 32'b0;
+            next_stage_valid <= 1'b0;
         end else begin
             case (state)
                 WAITING_INSTRUCTION: begin
@@ -120,7 +122,7 @@ module REGISTER_DISPATCHER (
                         out_instruction <= lat_instruction;
                         out_rs1_value   <= rf_rs1_data;
                         out_rs2_value   <= rf_rs2_data;
-
+                        next_stage_valid <= 1;
                         // Mark destination register as busy
                         if (lat_rd_index < 5'd32 && lat_rd_index != 5'd0)
                             busy[lat_rd_index] <= 1;
