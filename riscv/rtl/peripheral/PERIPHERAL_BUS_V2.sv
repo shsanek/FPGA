@@ -219,13 +219,14 @@ module PERIPHERAL_BUS_V2 (
     // =========================================================
     // Response mux (upstream ← selected device)
     // =========================================================
-    assign bus_ready = mc_sel    ? mc_bus_ready         :
-                       uart_sel  ? uart_128_ready       :
-                       oled_sel  ? oled_128_ready       :
-                       sd_sel    ? sd_128_ready         :
-                       timer_sel ? timer_128_ready      :
-                       sp_sel    ? sp_128_ready         :
-                                   1'b1;
+    // All devices must be ready — prevents sending to a device
+    // whose address appears on the bus while another device is busy
+    assign bus_ready = mc_bus_ready
+                     & uart_128_ready
+                     & oled_128_ready
+                     & sd_128_ready
+                     & timer_128_ready
+                     & sp_128_ready;
 
     assign bus_read_data = mc_sel    ? mc_bus_read_data      :
                            uart_sel  ? uart_128_read_data    :
