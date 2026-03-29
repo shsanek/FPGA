@@ -6,8 +6,8 @@
 /* g_failed — используется check.h макросами для отслеживания ошибок */
 int g_failed = 0;
 
-#define UART_TX  ((volatile unsigned int *)0x10000000U)
-#define UART_STS ((volatile unsigned int *)0x10000008U)
+#define UART_TX  ((volatile unsigned int *)0x40000000U)
+#define UART_STS ((volatile unsigned int *)0x40000008U)
 
 int putchar(int c) {
     /* Optional: wait for tx_ready (bit1) before writing */

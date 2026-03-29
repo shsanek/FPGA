@@ -6,17 +6,17 @@
 #include "oled.h"
 #include "font8x10.h"
 
-/* ---- Hardware registers (OLED_FB_DEVICE, слот 0x1001_0000) ---- */
-#define OLED_CONTROL   (*(volatile unsigned int *)0x10010000U)
-#define OLED_STATUS    (*(volatile unsigned int *)0x10010004U)
-#define OLED_VP_WIDTH  (*(volatile unsigned int *)0x10010008U)
-#define OLED_VP_HEIGHT (*(volatile unsigned int *)0x1001000CU)
+/* ---- Hardware registers (OLED_FB_DEVICE, слот 0x4001_0000) ---- */
+#define OLED_CONTROL   (*(volatile unsigned int *)0x40010000U)
+#define OLED_STATUS    (*(volatile unsigned int *)0x40010004U)
+#define OLED_VP_WIDTH  (*(volatile unsigned int *)0x40010008U)
+#define OLED_VP_HEIGHT (*(volatile unsigned int *)0x4001000CU)
 
-/* Палитра: 256 × 16 бит, base 0x10010010, halfword доступ (sh/lhu) */
-#define OLED_PALETTE   ((volatile unsigned short *)0x10010010U)
+/* Палитра: 256 × 16 бит, base 0x40010010, halfword доступ (sh/lhu) */
+#define OLED_PALETTE   ((volatile unsigned short *)0x40010010U)
 
-/* Framebuffer: base 0x10014000, 32-бит доступ */
-#define OLED_FB_BASE   0x10014000U
+/* Framebuffer: base 0x40014000, 32-бит доступ */
+#define OLED_FB_BASE   0x40014000U
 #define OLED_FB        ((volatile unsigned int *)OLED_FB_BASE)
 
 /* ---- State ---- */

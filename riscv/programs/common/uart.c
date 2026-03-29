@@ -1,9 +1,9 @@
 /* UART console — memory-mapped UART_IO_DEVICE (0x10000000). */
 #include "uart.h"
 
-#define UART_TX_DATA  (*(volatile unsigned int *)0x10000000U)
-#define UART_RX_DATA  (*(volatile unsigned int *)0x10000004U)
-#define UART_STATUS   (*(volatile unsigned int *)0x10000008U)
+#define UART_TX_DATA  (*(volatile unsigned int *)0x40000000U)
+#define UART_RX_DATA  (*(volatile unsigned int *)0x40000004U)
+#define UART_STATUS   (*(volatile unsigned int *)0x40000008U)
 
 /* STATUS bits: bit1=tx_ready, bit0=rx_available */
 

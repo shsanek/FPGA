@@ -11,7 +11,7 @@
 #include "runtime.h"
 
 /* --- Hardware defines --- */
-#define SCRATCH_BASE      0x10040000U
+#define SCRATCH_BASE      0x40040000U
 #define BLIT_BASE         (SCRATCH_BASE + 0x20000U)
 
 #define BLIT_CMD          (*(volatile unsigned int *)(BLIT_BASE + 0x00))
