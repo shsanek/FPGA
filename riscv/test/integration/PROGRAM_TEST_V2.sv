@@ -256,15 +256,14 @@ module PROGRAM_TEST_V2 ();
         // Debug: trace first 20 cycles after resume
         for (n = 0; n < 20; n++) begin
             @(posedge clk); #1;
-            $display("TRACE[%0d]: PC=%08X da_state=%0d if_ready=%b if_rd=%b arb_state=%0d bus128_rd=%b bus128_ready=%b mc_ready=%b",
+            $display("TRACE[%0d]: PC=%08X instr=%08X istall=%b mstall=%b if_st=%0d da_st=%0d paused=%b",
                      n, dut.cpu.pc,
+                     dut.cpu.instr_data,
+                     dut.instr_stall_w,
+                     dut.cpu_mem_stall,
+                     dut.if_adapter.state,
                      dut.data_adapter.state,
-                     dut.if128_ready,
-                     dut.if128_rd,
-                     dut.arbiter.state,
-                     dut.bus128_rd,
-                     dut.bus128_ready,
-                     dut.mc_bus_ready);
+                     dut.pipeline_paused);
         end
 
         // Wait for EBREAK (halted) or timeout

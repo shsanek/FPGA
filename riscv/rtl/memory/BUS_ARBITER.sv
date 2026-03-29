@@ -48,8 +48,12 @@ module BUS_ARBITER #(
     input  wire                   bus_read_valid
 );
 
-    assign p0_read_data = bus_read_data;
-    assign p1_read_data = bus_read_data;
+    // Latch read data per port — only update when this port's read_valid fires
+    reg [DATA_WIDTH-1:0] p0_read_data_reg;
+    reg [DATA_WIDTH-1:0] p1_read_data_reg;
+
+    assign p0_read_data = p0_read_data_reg;
+    assign p1_read_data = p1_read_data_reg;
 
     // =========================================================
     // Port registers (latched on send)
@@ -160,7 +164,10 @@ module BUS_ARBITER #(
                     end
                     // Bus done → response to p0
                     if (bus_done) begin
-                        if (bus_read_valid) p0_read_valid <= 1;
+                        if (bus_read_valid) begin
+                            p0_read_valid    <= 1;
+                            p0_read_data_reg <= bus_read_data;
+                        end
                         if (!p1_request)
                             state <= IDLE;
                         else
@@ -180,7 +187,10 @@ module BUS_ARBITER #(
                     end
                     // Bus done → response to p1
                     if (bus_done) begin
-                        if (bus_read_valid) p1_read_valid <= 1;
+                        if (bus_read_valid) begin
+                            p1_read_valid    <= 1;
+                            p1_read_data_reg <= bus_read_data;
+                        end
                         if (!p0_request)
                             state <= IDLE;
                         else
@@ -192,7 +202,10 @@ module BUS_ARBITER #(
                     first_cycle <= 0;
                     // Bus done → response to p0, forward p1 from latch
                     if (bus_done) begin
-                        if (bus_read_valid) p0_read_valid <= 1;
+                        if (bus_read_valid) begin
+                            p0_read_valid    <= 1;
+                            p0_read_data_reg <= bus_read_data;
+                        end
                         // Forward queued p1
                         bus_address    <= p1_reg_address;
                         bus_read       <= p1_reg_is_read;
@@ -208,7 +221,10 @@ module BUS_ARBITER #(
                     first_cycle <= 0;
                     // Bus done → response to p1, forward p0 from latch
                     if (bus_done) begin
-                        if (bus_read_valid) p1_read_valid <= 1;
+                        if (bus_read_valid) begin
+                            p1_read_valid    <= 1;
+                            p1_read_data_reg <= bus_read_data;
+                        end
                         // Forward queued p0
                         bus_address    <= p0_reg_address;
                         bus_read       <= p0_reg_is_read;

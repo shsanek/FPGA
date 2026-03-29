@@ -95,12 +95,8 @@ module TOP_V2 #(
     // ===============================================================
     // I_CACHE (MCV2 READ_ONLY=1) — instruction fetch
     // ===============================================================
-    // CPU IF → BUS_32_TO_128 → I_CACHE upstream (bus slave)
     wire [31:0]  if128_addr;
     wire         if128_rd;
-    wire [127:0] if128_rd_data;
-    wire         if128_ready;
-    wire         if128_read_valid;
 
     // I_CACHE miss → external (bus master) → BUS_ARBITER port1
     wire [31:0]  icache_ext_addr;
@@ -293,21 +289,39 @@ module TOP_V2 #(
     );
 
     // ===============================================================
-    // I_CACHE: CPU IF → BUS_32_TO_128 → MCV2(RO=1) → miss → arbiter
+    // I_CACHE: CPU IF → IF_ADAPTER → BUS_32_TO_128 → MCV2(RO=1)
     // ===============================================================
+    // IF adapter: generates read pulses when PC changes
+    wire [31:0] if32_addr;
+    wire        if32_rd;
+    wire [31:0] if32_rd_data;
+    wire        if32_ready;
+    wire        if32_rd_valid;
+
+    CPU_IF_ADAPTER if_adapter (
+        .clk(clk), .reset(reset),
+        .instr_addr(instr_addr), .instr_data(instr_data),
+        .instr_stall(instr_stall_w),
+        .bus_address(if32_addr), .bus_read(if32_rd),
+        .bus_read_data(if32_rd_data),
+        .bus_ready(if32_ready), .bus_read_valid(if32_rd_valid),
+        .flush(combined_set_pc)
+    );
+
+    // 32→128 converter for I_CACHE
     wire         icache_bus_ready;
     wire [127:0] icache_bus_rd_data;
     wire         icache_bus_rd_valid;
 
     BUS_32_TO_128 if_conv (
-        .cpu_address   (instr_addr),
-        .cpu_read      (1'b1),          // always reading instructions
+        .cpu_address   (if32_addr),
+        .cpu_read      (if32_rd),
         .cpu_write     (1'b0),
         .cpu_write_data(32'b0),
         .cpu_write_mask(4'b0),
-        .cpu_read_data (instr_data),
-        .cpu_ready     (if128_ready),
-        .cpu_read_valid(if128_read_valid),
+        .cpu_read_data (if32_rd_data),
+        .cpu_ready     (if32_ready),
+        .cpu_read_valid(if32_rd_valid),
         .bus_address   (if128_addr),
         .bus_read      (if128_rd),
         .bus_write     (),
@@ -318,12 +332,10 @@ module TOP_V2 #(
         .bus_read_valid(icache_bus_rd_valid)
     );
 
-    assign instr_stall_w = !if128_ready;
-
     MEMORY_CONTROLLER_V2 #(
         .DEPTH(MCV2_DEPTH), .WAYS(MCV2_WAYS), .READ_ONLY(1)
     ) icache (
-        .clk(clk), .reset(reset),
+        .clk(clk), .reset(reset || combined_set_pc),  // flush I_CACHE on PC change
         // Upstream: from IF converter
         .bus_address(if128_addr), .bus_read(if128_rd), .bus_write(1'b0),
         .bus_write_data(128'b0), .bus_write_mask(16'b0),
