@@ -1,11 +1,13 @@
 // BUS_ARBITER — 2-port priority arbiter with standard bus interface.
 //
-// Each port has a 1-entry command latch. When arbiter is IDLE and
-// downstream is ready, commands are forwarded directly (0-cycle).
-// When arbiter is BUSY, incoming commands are latched and served later.
+// Port 0 has priority. Incoming commands latched into registers,
+// then forwarded to bus. States encode exactly what's happening:
 //
-// Port 0 has priority over Port 1.
-// Simultaneous sends: p0 forwarded, p1 latched.
+//   IDLE → WAIT_P0 / WAIT_P1 / WAIT_P0_QUEUE_P1
+//   WAIT_P0 → IDLE (done) / WAIT_P0_QUEUE_P1 (p1 arrives)
+//   WAIT_P1 → IDLE (done) / QUEUE_P0_WAIT_P1 (p0 arrives)
+//   WAIT_P0_QUEUE_P1 → WAIT_P1 (p0 done, forward p1)
+//   QUEUE_P0_WAIT_P1 → WAIT_P0 (p1 done, forward p0)
 
 module BUS_ARBITER #(
     parameter DATA_WIDTH = 128,
@@ -15,7 +17,7 @@ module BUS_ARBITER #(
     input wire clk,
     input wire reset,
 
-    // === Port 0 (higher priority) — bus slave interface ===
+    // === Port 0 (higher priority) ===
     input  wire [ADDR_WIDTH-1:0]  p0_address,
     input  wire                   p0_read,
     input  wire                   p0_write,
@@ -25,7 +27,7 @@ module BUS_ARBITER #(
     output wire [DATA_WIDTH-1:0]  p0_read_data,
     output reg                    p0_read_valid,
 
-    // === Port 1 (lower priority) — bus slave interface ===
+    // === Port 1 (lower priority) ===
     input  wire [ADDR_WIDTH-1:0]  p1_address,
     input  wire                   p1_read,
     input  wire                   p1_write,
@@ -35,7 +37,7 @@ module BUS_ARBITER #(
     output wire [DATA_WIDTH-1:0]  p1_read_data,
     output reg                    p1_read_valid,
 
-    // === Downstream — bus master interface ===
+    // === Downstream ===
     output reg  [ADDR_WIDTH-1:0]  bus_address,
     output reg                    bus_read,
     output reg                    bus_write,
@@ -46,61 +48,56 @@ module BUS_ARBITER #(
     input  wire                   bus_read_valid
 );
 
-    // Read data shared — only active port gets read_valid
     assign p0_read_data = bus_read_data;
     assign p1_read_data = bus_read_data;
 
     // =========================================================
-    // Per-port command latch (1-entry buffer)
+    // Port registers (latched on send)
     // =========================================================
-    reg                    p0_lat_valid;
-    reg                    p0_lat_is_read;
-    reg [ADDR_WIDTH-1:0]  p0_lat_address;
-    reg [DATA_WIDTH-1:0]  p0_lat_write_data;
-    reg [MASK_WIDTH-1:0]  p0_lat_write_mask;
+    reg [ADDR_WIDTH-1:0]  p0_reg_address;
+    reg                   p0_reg_is_read;
+    reg [DATA_WIDTH-1:0]  p0_reg_write_data;
+    reg [MASK_WIDTH-1:0]  p0_reg_write_mask;
 
-    reg                    p1_lat_valid;
-    reg                    p1_lat_is_read;
-    reg [ADDR_WIDTH-1:0]  p1_lat_address;
-    reg [DATA_WIDTH-1:0]  p1_lat_write_data;
-    reg [MASK_WIDTH-1:0]  p1_lat_write_mask;
+    reg [ADDR_WIDTH-1:0]  p1_reg_address;
+    reg                   p1_reg_is_read;
+    reg [DATA_WIDTH-1:0]  p1_reg_write_data;
+    reg [MASK_WIDTH-1:0]  p1_reg_write_mask;
 
     // =========================================================
     // FSM
     // =========================================================
-    typedef enum logic [0:0] {
+    typedef enum logic [2:0] {
         IDLE,
-        BUSY
+        WAIT_P0,
+        WAIT_P1,
+        WAIT_P0_QUEUE_P1,
+        QUEUE_P0_WAIT_P1
     } state_t;
 
     state_t state;
-    reg active_port;    // 0 or 1
-    reg first_busy;     // skip first BUSY cycle (NBA timing guard)
+    reg first_cycle;  // NBA timing guard
 
-    wire port0_reuest = p0_read || p0_write;
-    wire port1_reuest = p1_read || p1_write;
+    wire p0_request = p0_read || p0_write;
+    wire p1_request = p1_read || p1_write;
 
-    // Port ready = latch empty AND not being served right now
-    wire p0_busy = (state == BUSY) && (active_port == 0);
-    wire p1_busy = (state == BUSY) && (active_port == 1);
+    // Port ready: can send when IDLE, or when OTHER port is being served (queue slot free)
+    assign p0_ready = (state == IDLE) || (state == WAIT_P1);
+    assign p1_ready = (state == IDLE) || (state == WAIT_P0);
 
-    assign p0_ready = !p0_lat_valid && !p0_busy;
-    assign p1_ready = !p1_lat_valid && !p1_busy;
+    // Bus done = downstream ready AND not first cycle (NBA guard)
+    wire bus_done = bus_ready && !first_cycle;
 
     // =========================================================
     always_ff @(posedge clk) begin
         if (reset) begin
-            state          <= IDLE;
-            bus_read       <= 0;
-            bus_write      <= 0;
-            p0_read_valid  <= 0;
-            p1_read_valid  <= 0;
-            p0_lat_valid   <= 0;
-            p1_lat_valid   <= 0;
-            first_busy     <= 0;
-            active_port    <= 0;
+            state         <= IDLE;
+            bus_read      <= 0;
+            bus_write     <= 0;
+            p0_read_valid <= 0;
+            p1_read_valid <= 0;
+            first_cycle   <= 0;
         end else begin
-            // Clear pulses
             bus_read      <= 0;
             bus_write     <= 0;
             p0_read_valid <= 0;
@@ -108,103 +105,122 @@ module BUS_ARBITER #(
 
             case (state)
 
-                // -------------------------------------------------
-                // IDLE: forward by priority (direct or from latch)
-                // -------------------------------------------------
                 IDLE: begin
-                    if (bus_ready) begin
+                    if (p0_request) begin
+                        // Latch p0
+                        p0_reg_address    <= p0_address;
+                        p0_reg_is_read    <= p0_read;
+                        p0_reg_write_data <= p0_write_data;
+                        p0_reg_write_mask <= p0_write_mask;
+                        // Forward p0 to bus
+                        bus_address    <= p0_address;
+                        bus_read       <= p0_read;
+                        bus_write      <= p0_write;
+                        bus_write_data <= p0_write_data;
+                        bus_write_mask <= p0_write_mask;
+                        first_cycle    <= 1;
 
-                        // === Direct forward from port inputs (0-cycle) ===
-                        if (port0_reuest) begin
-                            bus_address    <= p0_address;
-                            bus_read       <= p0_read;
-                            bus_write      <= p0_write;
-                            bus_write_data <= p0_write_data;
-                            bus_write_mask <= p0_write_mask;
-                            active_port    <= 0;
-                            first_busy     <= 1;
-                            state          <= BUSY;
-
-                            // p1 sent simultaneously → latch it
-                            // (p1_lat_valid guaranteed 0 — port won't send when latch full)
-                            if (port1_reuest) begin
-                                p1_lat_valid      <= 1;
-                                p1_lat_is_read    <= p1_read;
-                                p1_lat_address    <= p1_address;
-                                p1_lat_write_data <= p1_write_data;
-                                p1_lat_write_mask <= p1_write_mask;
-                            end
-
-                        end else if (port1_reuest) begin
-                            bus_address    <= p1_address;
-                            bus_read       <= p1_read;
-                            bus_write      <= p1_write;
-                            bus_write_data <= p1_write_data;
-                            bus_write_mask <= p1_write_mask;
-                            active_port    <= 1;
-                            first_busy     <= 1;
-                            state          <= BUSY;
-
-                        // === Forward from latch (1-cycle, was latched while busy) ===
-                        end else if (p0_lat_valid) begin
-                            bus_address    <= p0_lat_address;
-                            bus_read       <= p0_lat_is_read;
-                            bus_write      <= !p0_lat_is_read;
-                            bus_write_data <= p0_lat_write_data;
-                            bus_write_mask <= p0_lat_write_mask;
-                            p0_lat_valid   <= 0;
-                            active_port    <= 0;
-                            first_busy     <= 1;
-                            state          <= BUSY;
-
-                        end else if (p1_lat_valid) begin
-                            bus_address    <= p1_lat_address;
-                            bus_read       <= p1_lat_is_read;
-                            bus_write      <= !p1_lat_is_read;
-                            bus_write_data <= p1_lat_write_data;
-                            bus_write_mask <= p1_lat_write_mask;
-                            p1_lat_valid   <= 0;
-                            active_port    <= 1;
-                            first_busy     <= 1;
-                            state          <= BUSY;
+                        if (p1_request) begin
+                            // Latch p1 too (simultaneous)
+                            p1_reg_address    <= p1_address;
+                            p1_reg_is_read    <= p1_read;
+                            p1_reg_write_data <= p1_write_data;
+                            p1_reg_write_mask <= p1_write_mask;
+                            state <= WAIT_P0_QUEUE_P1;
+                        end else begin
+                            state <= WAIT_P0;
                         end
 
-                    end // bus_ready
+                    end else if (p1_request) begin
+                        // Latch p1
+                        p1_reg_address    <= p1_address;
+                        p1_reg_is_read    <= p1_read;
+                        p1_reg_write_data <= p1_write_data;
+                        p1_reg_write_mask <= p1_write_mask;
+                        // Forward p1 to bus
+                        bus_address    <= p1_address;
+                        bus_read       <= p1_read;
+                        bus_write      <= p1_write;
+                        bus_write_data <= p1_write_data;
+                        bus_write_mask <= p1_write_mask;
+                        first_cycle    <= 1;
+                        state <= WAIT_P1;
+                    end
                 end
 
-                // -------------------------------------------------
-                // BUSY: wait for downstream, latch incoming
-                // -------------------------------------------------
-                BUSY: begin
-                    first_busy <= 0;
-
-                    // Latch incoming commands while busy
-                    // (port won't send when latch full — ready=0)
-                    if (port0_reuest) begin
-                        p0_lat_valid      <= 1;
-                        p0_lat_is_read    <= p0_read;
-                        p0_lat_address    <= p0_address;
-                        p0_lat_write_data <= p0_write_data;
-                        p0_lat_write_mask <= p0_write_mask;
+                WAIT_P0: begin
+                    first_cycle <= 0;
+                    // p1 can arrive while we wait
+                    if (p1_request) begin
+                        p1_reg_address    <= p1_address;
+                        p1_reg_is_read    <= p1_read;
+                        p1_reg_write_data <= p1_write_data;
+                        p1_reg_write_mask <= p1_write_mask;
+                        state <= WAIT_P0_QUEUE_P1;
                     end
-                    if (port1_reuest) begin
-                        p1_lat_valid      <= 1;
-                        p1_lat_is_read    <= p1_read;
-                        p1_lat_address    <= p1_address;
-                        p1_lat_write_data <= p1_write_data;
-                        p1_lat_write_mask <= p1_write_mask;
+                    // Bus done → response to p0
+                    if (bus_done) begin
+                        if (bus_read_valid) p0_read_valid <= 1;
+                        if (!p1_request)
+                            state <= IDLE;
+                        else
+                            state <= WAIT_P0_QUEUE_P1;
                     end
-
-                    // Route read response to active port
-                    if (bus_read_valid) begin
-                        if (active_port == 0) p0_read_valid <= 1;
-                        else                  p1_read_valid <= 1;
-                    end
-
-                    // Done when downstream ready (skip first cycle — NBA guard)
-                    if (bus_ready && !first_busy)
-                        state <= IDLE;
                 end
+
+                WAIT_P1: begin
+                    first_cycle <= 0;
+                    // p0 can arrive while we wait
+                    if (p0_request) begin
+                        p0_reg_address    <= p0_address;
+                        p0_reg_is_read    <= p0_read;
+                        p0_reg_write_data <= p0_write_data;
+                        p0_reg_write_mask <= p0_write_mask;
+                        state <= QUEUE_P0_WAIT_P1;
+                    end
+                    // Bus done → response to p1
+                    if (bus_done) begin
+                        if (bus_read_valid) p1_read_valid <= 1;
+                        if (!p0_request)
+                            state <= IDLE;
+                        else
+                            state <= QUEUE_P0_WAIT_P1;
+                    end
+                end
+
+                WAIT_P0_QUEUE_P1: begin
+                    first_cycle <= 0;
+                    // Bus done → response to p0, forward p1 from latch
+                    if (bus_done) begin
+                        if (bus_read_valid) p0_read_valid <= 1;
+                        // Forward queued p1
+                        bus_address    <= p1_reg_address;
+                        bus_read       <= p1_reg_is_read;
+                        bus_write      <= !p1_reg_is_read;
+                        bus_write_data <= p1_reg_write_data;
+                        bus_write_mask <= p1_reg_write_mask;
+                        first_cycle    <= 1;
+                        state <= WAIT_P1;
+                    end
+                end
+
+                QUEUE_P0_WAIT_P1: begin
+                    first_cycle <= 0;
+                    // Bus done → response to p1, forward p0 from latch
+                    if (bus_done) begin
+                        if (bus_read_valid) p1_read_valid <= 1;
+                        // Forward queued p0
+                        bus_address    <= p0_reg_address;
+                        bus_read       <= p0_reg_is_read;
+                        bus_write      <= !p0_reg_is_read;
+                        bus_write_data <= p0_reg_write_data;
+                        bus_write_mask <= p0_reg_write_mask;
+                        first_cycle    <= 1;
+                        state <= WAIT_P0;
+                    end
+                end
+
+                default: state <= IDLE;
 
             endcase
         end
