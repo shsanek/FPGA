@@ -63,7 +63,7 @@ module INSTRUCTION_PROVIDER #(
 
     state_t state;
 
-    assign valid = line_hit && (state == S_READY);
+    assign valid = line_hit && (state != S_FETCH_REQ);
 
     // =========================================================
     // Bus address: always line-aligned from current PC
@@ -105,7 +105,7 @@ module INSTRUCTION_PROVIDER #(
                             state <= S_FETCH_REQ;
                         end else begin
                             state <= S_READY;
-                        end;
+                        end
                     end
                 end
 
