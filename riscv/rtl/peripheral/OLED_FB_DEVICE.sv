@@ -74,6 +74,7 @@ module OLED_FB_DEVICE (
     logic [31:0]             bram_dout_a;
     logic [3:0]              bram_we_a;
 
+    logic [BRAM_ADDR_W+1:0] pixel_addr_r; // forward-declared for bram_addr_b
     wire [BRAM_ADDR_W-1:0] bram_addr_b;   // комбинаторный — от pixel_addr_r
     logic [31:0]            bram_dout_b;
 
@@ -174,7 +175,7 @@ module OLED_FB_DEVICE (
     logic [6:0]  scr_x, scr_y;
     logic [15:0] cur_pixel;
     logic [31:0] delay_cnt;
-    logic [BRAM_ADDR_W+1:0] pixel_addr_r; // linear pixel/byte address
+    // pixel_addr_r declared above (near bram_addr_b) for iverilog forward-ref
 
     // SSD1331 init commands (stored in ROM)
     localparam INIT_CMD_COUNT = 42;   // 36 init + 6 window
