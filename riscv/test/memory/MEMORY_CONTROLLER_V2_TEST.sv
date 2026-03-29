@@ -172,6 +172,86 @@ module MEMORY_CONTROLLER_V2_TEST;
     );
 
     // =========================================================
+    // DUT_2W: WAYS=2, READ_ONLY=0 (2-way set-associative D-cache)
+    // =========================================================
+    reg  [ADDRESS_SIZE-1:0] w2_address;
+    reg  [1:0]              w2_command;
+    reg                     w2_read_stream;
+    reg  [MASK_SIZE-1:0]    w2_write_mask;
+    reg  [CHUNK_PART-1:0]   w2_write_value;
+    wire                    w2_controller_ready;
+    wire [CHUNK_PART-1:0]   w2_read_value;
+    wire                    w2_read_value_ready;
+    wire                    w2_write_done;
+
+    wire [ADDRESS_SIZE-1:0] w2_ram_address;
+    wire                    w2_ram_read_trigger;
+    wire                    w2_ram_write_trigger;
+    wire [CHUNK_PART-1:0]   w2_ram_write_value;
+
+    reg                     w2_ram_controller_ready;
+    reg  [CHUNK_PART-1:0]   w2_ram_read_value;
+    reg                     w2_ram_read_value_ready;
+
+    reg [CHUNK_PART-1:0] w2_ddr_mem [0:255];
+    reg [3:0] w2_ddr_delay;
+    reg w2_ddr_pending_read;
+    reg [CHUNK_PART-1:0] w2_ddr_pending_data;
+
+    always_ff @(posedge clk) begin
+        w2_ram_read_value_ready <= 0;
+        if (w2_ram_write_trigger) begin
+            w2_ddr_mem[w2_ram_address[11:4]] <= w2_ram_write_value;
+            w2_ram_controller_ready <= 0;
+        end
+        if (w2_ram_read_trigger) begin
+            w2_ddr_pending_data <= w2_ddr_mem[w2_ram_address[11:4]];
+            w2_ddr_pending_read <= 1;
+            w2_ddr_delay <= 2;
+            w2_ram_controller_ready <= 0;
+        end else if (w2_ddr_pending_read) begin
+            if (w2_ddr_delay == 0) begin
+                w2_ram_read_value <= w2_ddr_pending_data;
+                w2_ram_read_value_ready <= 1;
+                w2_ddr_pending_read <= 0;
+                w2_ram_controller_ready <= 1;
+            end else begin
+                w2_ddr_delay <= w2_ddr_delay - 1;
+            end
+        end else if (!w2_ram_controller_ready) begin
+            w2_ram_controller_ready <= 1;
+        end
+    end
+
+    MEMORY_CONTROLLER_V2 #(
+        .DEPTH        (DEPTH),
+        .WAYS         (2),
+        .READ_ONLY    (0),
+        .CHUNK_PART   (CHUNK_PART),
+        .MASK_SIZE    (MASK_SIZE),
+        .ADDRESS_SIZE (ADDRESS_SIZE)
+    ) dut_2w (
+        .clk                  (clk),
+        .reset                (reset),
+        .address              (w2_address),
+        .command              (w2_command),
+        .read_stream          (w2_read_stream),
+        .write_mask           (w2_write_mask),
+        .write_value          (w2_write_value),
+        .controller_ready     (w2_controller_ready),
+        .read_value           (w2_read_value),
+        .read_value_ready     (w2_read_value_ready),
+        .write_done           (w2_write_done),
+        .ram_controller_ready (w2_ram_controller_ready),
+        .ram_address          (w2_ram_address),
+        .ram_read_trigger     (w2_ram_read_trigger),
+        .ram_read_value       (w2_ram_read_value),
+        .ram_read_value_ready (w2_ram_read_value_ready),
+        .ram_write_trigger    (w2_ram_write_trigger),
+        .ram_write_value      (w2_ram_write_value)
+    );
+
+    // =========================================================
     // Helper tasks (D-cache DUT)
     // =========================================================
 
@@ -253,6 +333,67 @@ module MEMORY_CONTROLLER_V2_TEST;
     endtask
 
     // =========================================================
+    // Helper tasks (2-way DUT_2W)
+    // =========================================================
+
+    task automatic w2_do_read(
+        input [ADDRESS_SIZE-1:0] addr,
+        input [CHUNK_PART-1:0]   expected,
+        input string             label
+    );
+        begin
+            int cnt;
+            cnt = 0;
+            while (!w2_controller_ready && cnt < 100) begin @(posedge clk); cnt++; end
+            assert(cnt < 100) else begin $display("TIMEOUT [%s] w2 ready", label); errors++; end
+        end
+        @(posedge clk); #1;
+        w2_address     = addr;
+        w2_command     = 2'b01;
+        w2_read_stream = 0;
+        @(posedge clk); #1;
+        w2_command = 2'b00;
+        begin
+            int cnt;
+            cnt = 0;
+            while (!w2_read_value_ready && cnt < 100) begin @(posedge clk); cnt++; end
+            assert(cnt < 100) else begin $display("TIMEOUT [%s] w2 read", label); errors++; end
+        end
+        assert(w2_read_value == expected) else begin
+            $display("FAIL [%s]: addr=%h expected=%h got=%h", label, addr, expected, w2_read_value);
+            errors++;
+        end
+    endtask
+
+    task automatic w2_do_write(
+        input [ADDRESS_SIZE-1:0] addr,
+        input [MASK_SIZE-1:0]    mask_val,
+        input [CHUNK_PART-1:0]   data,
+        input string             label
+    );
+        begin
+            int cnt;
+            cnt = 0;
+            while (!w2_controller_ready && cnt < 100) begin @(posedge clk); cnt++; end
+            assert(cnt < 100) else begin $display("TIMEOUT [%s] w2 ready", label); errors++; end
+        end
+        @(posedge clk); #1;
+        w2_address     = addr;
+        w2_command     = 2'b10;
+        w2_read_stream = 0;
+        w2_write_mask  = mask_val;
+        w2_write_value = data;
+        @(posedge clk); #1;
+        w2_command = 2'b00;
+        begin
+            int cnt;
+            cnt = 0;
+            while (!w2_write_done && cnt < 100) begin @(posedge clk); cnt++; end
+            assert(cnt < 100) else begin $display("TIMEOUT [%s] w2 write", label); errors++; end
+        end
+    endtask
+
+    // =========================================================
     // Helper tasks (I-cache DUT_RO)
     // =========================================================
 
@@ -317,6 +458,11 @@ module MEMORY_CONTROLLER_V2_TEST;
         ro_ram_controller_ready = 1; ro_ram_read_value = 0;
         ro_ram_read_value_ready = 0; ro_ddr_pending_read = 0;
 
+        w2_address = 0; w2_command = 0; w2_read_stream = 0;
+        w2_write_mask = 0; w2_write_value = 0;
+        w2_ram_controller_ready = 1; w2_ram_read_value = 0;
+        w2_ram_read_value_ready = 0; w2_ddr_pending_read = 0;
+
         // Pre-fill DDR (both)
         ddr_mem[0]  = {32'hDDDD_DDDD, 32'hCCCC_CCCC, 32'hBBBB_BBBB, 32'hAAAA_AAAA};
         ddr_mem[1]  = {32'h44444444,  32'h33333333,  32'h22222222,  32'h11111111};
@@ -325,6 +471,16 @@ module MEMORY_CONTROLLER_V2_TEST;
         ro_ddr_mem[0] = {32'hDDDD_DDDD, 32'hCCCC_CCCC, 32'hBBBB_BBBB, 32'hAAAA_AAAA};
         ro_ddr_mem[1] = {32'h44444444,  32'h33333333,  32'h22222222,  32'h11111111};
         ro_ddr_mem[4] = {32'hF4F4F4F4,  32'hF3F3F3F3,  32'hF2F2F2F2,  32'hF1F1F1F1};
+
+        // DEPTH=16, WAYS=2 → SETS=8, INDEX_W=3
+        // Addr decomposition: [tag 21b | idx 3b | offset 4b]
+        // idx = addr[6:4]
+        // Addr 0x0000000: idx=0. Addr 0x0000080: idx=0 (different tag, same set!)
+        // Addr 0x0000100: idx=0 (yet another tag, same set)
+        w2_ddr_mem[0]  = {32'hDDDD_DDDD, 32'hCCCC_CCCC, 32'hBBBB_BBBB, 32'hAAAA_AAAA}; // addr 0x00
+        w2_ddr_mem[8]  = {32'h44444444,  32'h33333333,  32'h22222222,  32'h11111111};   // addr 0x80
+        w2_ddr_mem[16] = {32'hF4F4F4F4,  32'hF3F3F3F3,  32'hF2F2F2F2,  32'hF1F1F1F1}; // addr 0x100
+        w2_ddr_mem[1]  = {32'h88888888,  32'h77777777,  32'h66666666,  32'h55555555};   // addr 0x10
 
         reset = 1;
         @(posedge clk); @(posedge clk);
@@ -462,6 +618,73 @@ module MEMORY_CONTROLLER_V2_TEST;
             $display("FAIL [T17]: RO should never write to DDR, ddr_mem[0] changed");
             errors++;
         end
+
+        // =========================================================
+        // 2-way set-associative tests (WAYS=2)
+        // DEPTH=16, WAYS=2 → 8 sets × 2 ways
+        // idx = addr[6:4] (3 bits)
+        // =========================================================
+
+        $display("T18: 2W — two lines same set, no conflict");
+        // addr 0x00 → idx=0, addr 0x80 → idx=0 (different tag)
+        // Both should coexist in way0 and way1
+        w2_do_read(28'h0000000,
+                   {32'hDDDD_DDDD, 32'hCCCC_CCCC, 32'hBBBB_BBBB, 32'hAAAA_AAAA}, "T18-A");
+        w2_do_read(28'h0000080,
+                   {32'h44444444, 32'h33333333, 32'h22222222, 32'h11111111}, "T18-B");
+        // Re-read A — should be cache hit (not evicted!)
+        w2_do_read(28'h0000000,
+                   {32'hDDDD_DDDD, 32'hCCCC_CCCC, 32'hBBBB_BBBB, 32'hAAAA_AAAA}, "T18-A-hit");
+
+        $display("T19: 2W — third line evicts LRU");
+        // addr 0x100 → idx=0, third tag. Evicts LRU way.
+        // LRU after T18: A was accessed last → B is LRU → evict B
+        w2_do_read(28'h0000100,
+                   {32'hF4F4F4F4, 32'hF3F3F3F3, 32'hF2F2F2F2, 32'hF1F1F1F1}, "T19-C");
+        // A should still be cached
+        w2_do_read(28'h0000000,
+                   {32'hDDDD_DDDD, 32'hCCCC_CCCC, 32'hBBBB_BBBB, 32'hAAAA_AAAA}, "T19-A-still");
+        // B should be evicted (miss → DDR)
+        w2_do_read(28'h0000080,
+                   {32'h44444444, 32'h33333333, 32'h22222222, 32'h11111111}, "T19-B-evicted");
+
+        $display("T20: 2W — write hit correct way");
+        // Write to addr 0x10 (different set, idx=1)
+        w2_do_read(28'h0000010,
+                   {32'h88888888, 32'h77777777, 32'h66666666, 32'h55555555}, "T20-fill");
+        w2_do_write(28'h0000010, 16'h000F, {96'b0, 32'hCAFE0000}, "T20-wr");
+        w2_do_read(28'h0000010,
+                   {32'h88888888, 32'h77777777, 32'h66666666, 32'hCAFE0000}, "T20-rb");
+
+        $display("T21: 2W — dirty eviction from correct way");
+        // addr 0x10 is dirty (written in T20), idx=1
+        // Fill way1 of idx=1 with different tag
+        w2_ddr_mem[9] = {32'hEEEEEEEE, 32'hDDDDDDDD, 32'hCCCCCCCC, 32'hBBBBBBBB};
+        w2_do_read(28'h0000090,
+                   {32'hEEEEEEEE, 32'hDDDDDDDD, 32'hCCCCCCCC, 32'hBBBBBBBB}, "T21-fill-w1");
+        // Now fill third tag for idx=1 → evicts LRU (dirty)
+        w2_ddr_mem[17] = {32'h12121212, 32'h34343434, 32'h56565656, 32'h78787878};
+        w2_do_read(28'h0000110,
+                   {32'h12121212, 32'h34343434, 32'h56565656, 32'h78787878}, "T21-evict");
+        // Wait for evict writeback
+        begin
+            int cnt;
+            cnt = 0;
+            while (!w2_controller_ready && cnt < 100) begin @(posedge clk); cnt++; end
+        end
+        @(posedge clk); @(posedge clk); @(posedge clk);
+        // Check dirty line was written back
+        assert(w2_ddr_mem[1] == {32'h88888888, 32'h77777777, 32'h66666666, 32'hCAFE0000}) else begin
+            $display("FAIL [T21-wb]: dirty writeback mismatch, got %h", w2_ddr_mem[1]);
+            errors++;
+        end
+
+        $display("T22: 2W — output buffer works");
+        w2_do_read(28'h0000010,
+                   {32'h88888888, 32'h77777777, 32'h66666666, 32'hCAFE0000}, "T22-fill");
+        // Same line again — output buffer hit
+        w2_do_read(28'h0000010,
+                   {32'h88888888, 32'h77777777, 32'h66666666, 32'hCAFE0000}, "T22-ob-hit");
 
         // =========================================================
         // Summary
