@@ -32,6 +32,7 @@ output wire         bus_read_valid,    // пульс 1 такт — данные
 3. Write: slave обрабатывает, `bus_ready` вернётся в 1 когда готов
 4. Read: slave ставит `bus_read_valid=1` + `bus_read_data` когда данные готовы
 
+
 ## Архитектура (целевая)
 
 ```
@@ -46,40 +47,40 @@ output wire         bus_read_valid,    // пульс 1 такт — данные
      │  │ I_CACHE │              │              │
      │  │ (MCV2   │              │              │
      │  │  RO=1)  │              │              │
-     │  └──┬───┬──┘              │              │
-     │ hit │   │ miss            │              │
-     │  ↓  │   │ (bus master)    │ (bus master) │
-     │ CPU │   │                 │              │
-     │     │   │  ┌──────────────┴───────────┐  │
-     │     │   └──┤    CORE_BUS_ARBITER      │  │
-     │     │      │  (I_CACHE miss vs MEM)   │  │
-     │     │      │  priority: MEM > I_CACHE │  │
-     │     │      └────────────┬─────────────┘  │
-     │     │                   │ standard bus   │
-     └─────┼───────────────────┼────────────────┘
-           │                   │
-           │           ┌───────┴──────────┐
-           │           │  MULTICORE_MUX   │
-           │           │  (1 core = pass- │
-           │           │   through,       │
-           │           │   N cores later) │
-           │           └───────┬──────────┘
-           │                   │ standard bus (128b data, 32b addr)
-           │                   │
-      ┌────┴───────────────────┴───────────────────┐
+     │  └──────┬──┘              │              │
+     │         │ miss            │              │
+     │         │ (bus master)    │ (bus master) │
+     │         │                 │              │
+     │         │  ┌──────────────┴───────────┐  │
+     │         └──┤    CORE_BUS_ARBITER      │  │
+     │            │  (I_CACHE miss vs MEM)   │  │
+     │            │  priority: MEM > I_CACHE │  │
+     │            └────────────┬─────────────┘  │
+     │                         │ standard bus   │
+     └─────────────────────────┼────────────────┘
+                               │
+                       ┌───────┴──────────┐
+                       │  MULTICORE_MUX   │
+                       │  (1 core = pass- │
+                       │   through,       │
+                       │   N cores later) │
+                       └───────┬──────────┘
+                               │ standard bus (128b data, 32b addr)
+                               │
+      ┌────────────────────────┴──────────────┐
       │             BUS_DECODER               │
-      │         (address decoder)              │
-      │                                        │
+      │         (address decoder)             │
+      │                                       │
       │  addr[31:28]=0x0 → MEMORY_CONTROLLER  │
       │  addr[31:28]=0x1 → I/O devices        │
       │  addr[31:28]=0x2 → SCRATCHPAD         │
-      │  ...                                   │
+      │  ...                                  │
       └──┬──────────────┬─────────────────┬───┘
          │              │                 │
          ▼              ▼                 ▼
     ┌──────────┐  ┌──────────┐    ┌──────────────┐
     │  MCV2    │  │ I/O devs │    │  SCRATCHPAD  │
-    │ D$+DDR  │  │UART,OLED │    │              │
+    │ D$+DDR   │  │UART,OLED │    │              │
     │          │  │SD,TIMER  │    │              │
     └────┬─────┘  └──────────┘    └──────────────┘
          │
@@ -87,6 +88,13 @@ output wire         bus_read_valid,    // пульс 1 такт — данные
     │  DDR3    │
     └──────────┘
 ```
+
+  CPU Core:
+    I_CACHE miss ──┐
+                   ├── CORE_BUS_ARBITER ── MULTICORE_MUX ── BUS_DECODER
+    MEM stage ─────┘                                          ├── MEMORY_CONTROLLER (D$ + DDR)
+                                                              ├── UART, OLED, SD, TIMER
+                                                              └── SCRATCHPAD
 
 ### CORE_BUS_ARBITER (внутри ядра)
 
