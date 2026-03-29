@@ -1,15 +1,17 @@
-// I_CACHE — direct-mapped read-only instruction cache.
+// I_CACHE — direct-mapped cache with optional write support.
 //
-// 256 lines x 16 bytes = 4 KB. Same external interface as CHUNK_STORAGE_4_POOL.
-// Read-only: save_need_flag = 0 always, writes ignored.
+// DEPTH lines x 16 bytes. Same external interface as CHUNK_STORAGE_4_POOL.
+// READ_ONLY=1 (default): save_need_flag=0 always, writes ignored (I-cache mode).
+// READ_ONLY=0: byte-masked writes, dirty tracking, write-back eviction (D-cache mode).
 //
 // Address decomposition (28-bit):
-//   [27:12] tag (16 bit)  |  [11:4] index (8 bit)  |  [3:0] offset (4 bit)
+//   [tag | index (clog2(DEPTH)) | offset (4 bit)]
 //
 // Hit check is combinational (tags/valid in distributed RAM).
 // Data stored as 128-bit lines, word selected by address[3:2].
 module I_CACHE #(
     parameter DEPTH = 256,
+    parameter READ_ONLY = 1,
     parameter CHUNK_PART = 128,
     parameter DATA_SIZE = 32,
     parameter MASK_SIZE = DATA_SIZE / 8,
@@ -48,6 +50,9 @@ module I_CACHE #(
     reg [TAG_W-1:0] tags  [0:DEPTH-1];
     reg             valid [0:DEPTH-1];
 
+    // Dirty bit per line (only meaningful when READ_ONLY=0)
+    reg dirty [0:DEPTH-1];
+
     // Data storage: one 128-bit line per entry (single write port)
     reg [CHUNK_PART-1:0] lines [0:DEPTH-1];
 
@@ -73,10 +78,18 @@ module I_CACHE #(
     end
     assign read_value = hit ? selected_word : {DATA_SIZE{1'b0}};
 
-    // --- Read-only: never dirty ---
-    assign save_address   = {ADDRESS_SIZE{1'b0}};
-    assign save_data      = {CHUNK_PART{1'b0}};
-    assign save_need_flag = 1'b0;
+    // --- Eviction / dirty outputs ---
+    generate
+        if (READ_ONLY) begin : gen_ro
+            assign save_address   = {ADDRESS_SIZE{1'b0}};
+            assign save_data      = {CHUNK_PART{1'b0}};
+            assign save_need_flag = 1'b0;
+        end else begin : gen_rw
+            assign save_need_flag = dirty[idx] && valid[idx];
+            assign save_address   = {tags[idx], idx, 4'b0000};
+            assign save_data      = lines[idx];
+        end
+    endgenerate
 
     // --- Fill logic ---
     wire [INDEX_W-1:0] new_idx = new_address[INDEX_W+3 : 4];
@@ -85,12 +98,49 @@ module I_CACHE #(
     integer i;
     always_ff @(posedge clk) begin
         if (reset) begin
-            for (i = 0; i < DEPTH; i = i + 1)
+            for (i = 0; i < DEPTH; i = i + 1) begin
                 valid[i] <= 1'b0;
+                dirty[i] <= 1'b0;
+            end
         end else if (new_data_save) begin
             tags[new_idx]  <= new_tag;
             valid[new_idx] <= 1'b1;
+            dirty[new_idx] <= 1'b0;
             lines[new_idx] <= new_data;
+        end else if (!READ_ONLY && write_trigger && hit) begin
+            // Byte-masked write into the hit line
+            begin
+                reg [CHUNK_PART-1:0] updated_line;
+                updated_line = lines[idx];
+                case (word_sel)
+                    2'd0: begin
+                        if (mask[0]) updated_line[ 7: 0] = write_value[ 7: 0];
+                        if (mask[1]) updated_line[15: 8] = write_value[15: 8];
+                        if (mask[2]) updated_line[23:16] = write_value[23:16];
+                        if (mask[3]) updated_line[31:24] = write_value[31:24];
+                    end
+                    2'd1: begin
+                        if (mask[0]) updated_line[39:32] = write_value[ 7: 0];
+                        if (mask[1]) updated_line[47:40] = write_value[15: 8];
+                        if (mask[2]) updated_line[55:48] = write_value[23:16];
+                        if (mask[3]) updated_line[63:56] = write_value[31:24];
+                    end
+                    2'd2: begin
+                        if (mask[0]) updated_line[71:64] = write_value[ 7: 0];
+                        if (mask[1]) updated_line[79:72] = write_value[15: 8];
+                        if (mask[2]) updated_line[87:80] = write_value[23:16];
+                        if (mask[3]) updated_line[95:88] = write_value[31:24];
+                    end
+                    2'd3: begin
+                        if (mask[0]) updated_line[103: 96] = write_value[ 7: 0];
+                        if (mask[1]) updated_line[111:104] = write_value[15: 8];
+                        if (mask[2]) updated_line[119:112] = write_value[23:16];
+                        if (mask[3]) updated_line[127:120] = write_value[31:24];
+                    end
+                endcase
+                lines[idx] <= updated_line;
+            end
+            dirty[idx] <= 1'b1;
         end
     end
 

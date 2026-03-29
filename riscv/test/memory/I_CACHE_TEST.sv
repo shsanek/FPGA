@@ -10,7 +10,9 @@ module I_CACHE_TEST;
   reg reset;
   initial begin clk = 0; forever #5 clk = ~clk; end
 
-  // DUT ports
+  // =========================================================
+  // DUT: READ_ONLY=0 (writable D-cache mode)
+  // =========================================================
   reg  [ADDRESS_SIZE-1:0] address;
   reg  [MASK_SIZE-1:0]    mask;
   reg                     write_trigger;
@@ -32,6 +34,7 @@ module I_CACHE_TEST;
 
   I_CACHE #(
     .DEPTH        (DEPTH),
+    .READ_ONLY    (0),
     .CHUNK_PART   (CHUNK_PART),
     .DATA_SIZE    (DATA_SIZE),
     .MASK_SIZE    (MASK_SIZE),
@@ -53,6 +56,49 @@ module I_CACHE_TEST;
     .new_data         (new_data),
     .new_address      (new_address),
     .new_data_save    (new_data_save)
+  );
+
+  // =========================================================
+  // DUT2: READ_ONLY=1 (for T14)
+  // =========================================================
+  reg  [ADDRESS_SIZE-1:0] ro_address;
+  reg  [MASK_SIZE-1:0]    ro_mask;
+  reg                     ro_write_trigger;
+  reg  [DATA_SIZE-1:0]    ro_write_value;
+  reg                     ro_read_trigger;
+  wire                    ro_contains_address;
+  wire [DATA_SIZE-1:0]    ro_read_value;
+  wire [ADDRESS_SIZE-1:0] ro_save_address;
+  wire [CHUNK_PART-1:0]   ro_save_data;
+  wire                    ro_save_need_flag;
+  reg  [CHUNK_PART-1:0]   ro_new_data;
+  reg  [ADDRESS_SIZE-1:0] ro_new_address;
+  reg                     ro_new_data_save;
+
+  I_CACHE #(
+    .DEPTH        (DEPTH),
+    .READ_ONLY    (1),
+    .CHUNK_PART   (CHUNK_PART),
+    .DATA_SIZE    (DATA_SIZE),
+    .MASK_SIZE    (MASK_SIZE),
+    .ADDRESS_SIZE (ADDRESS_SIZE)
+  ) dut_ro (
+    .clk              (clk),
+    .reset            (reset),
+    .address          (ro_address),
+    .mask             (ro_mask),
+    .write_trigger    (ro_write_trigger),
+    .write_value      (ro_write_value),
+    .read_trigger     (ro_read_trigger),
+    .read_value       (ro_read_value),
+    .contains_address (ro_contains_address),
+    .save_address     (ro_save_address),
+    .save_data        (ro_save_data),
+    .save_need_flag   (ro_save_need_flag),
+    .order_tick       (1'b0),
+    .new_data         (ro_new_data),
+    .new_address      (ro_new_address),
+    .new_data_save    (ro_new_data_save)
   );
 
   task automatic fill_line(
@@ -102,6 +148,22 @@ module I_CACHE_TEST;
       errors++;
     end
     read_trigger = 0;
+  endtask
+
+  task automatic write_word(
+    input [ADDRESS_SIZE-1:0] addr,
+    input [MASK_SIZE-1:0]    wr_mask,
+    input [DATA_SIZE-1:0]    data
+  );
+    @(posedge clk);
+    #1;
+    address       = addr;
+    mask          = wr_mask;
+    write_trigger = 1;
+    write_value   = data;
+    @(posedge clk);
+    #1;
+    write_trigger = 0;
   endtask
 
   initial begin
@@ -166,31 +228,26 @@ module I_CACHE_TEST;
     check_miss(28'h0000010, "T4-old-evicted");
 
     // =========================================================
-    // T5: save_need_flag is always 0 (read-only)
+    // T5: Clean line — save_need_flag=0 (just filled, not written)
     // =========================================================
-    $display("T5: Read-only — save_need_flag=0");
+    $display("T5: Clean line — save_need_flag=0");
+    // Point address at index 0x02 (filled in T3, never written)
+    #1; address = 28'h0000020;
+    #1;
     assert(save_need_flag == 0) else begin
-      $display("FAIL [T5]: save_need_flag should be 0");
+      $display("FAIL [T5]: save_need_flag should be 0 for clean line");
       errors++;
     end
 
     // =========================================================
-    // T6: Write is ignored
+    // T6: Write hit — word is updated (READ_ONLY=0)
     // =========================================================
-    $display("T6: Write ignored");
-    // Try writing to line at index 0x02 (filled in T3)
-    @(posedge clk);
-    #1;
-    address       = 28'h0000020;
-    mask          = 4'hF;
-    write_trigger = 1;
-    write_value   = 32'hDEADBEEF;
-    @(posedge clk);
-    #1;
-    write_trigger = 0;
-    @(posedge clk);
-    // Value should be unchanged
-    check_hit(28'h0000020, 32'h11111111, "T6-write-ignored");
+    $display("T6: Write hit");
+    // Write to line at index 0x02, word0
+    write_word(28'h0000020, 4'hF, 32'hDEADBEEF);
+    check_hit(28'h0000020, 32'hDEADBEEF, "T6-write-hit-word0");
+    // Other words unchanged
+    check_hit(28'h0000024, 32'h22222222, "T6-other-words-ok");
 
     // =========================================================
     // T7: Reset clears all valid bits
@@ -225,6 +282,143 @@ module I_CACHE_TEST;
     fill_line(28'hFFF0000, {32'h9999_9999, 32'h8888_8888, 32'h7777_7777, 32'h6666_6666});
     check_hit(28'hFFF0000, 32'h6666_6666, "T9-high-tag-w0");
     check_hit(28'hFFF000C, 32'h9999_9999, "T9-high-tag-w3");
+
+    // =========================================================
+    // T10: Write hit — write to word2, read back
+    // =========================================================
+    $display("T10: Write hit — word2");
+    // Reset and fill a fresh line at index 0x05
+    reset = 1; @(posedge clk); @(posedge clk); #1; reset = 0; @(posedge clk);
+    fill_line(28'h0000050, {32'hAAAAAAAA, 32'hBBBBBBBB, 32'hCCCCCCCC, 32'hDDDDDDDD});
+    // Write to word2 (offset 0x8)
+    write_word(28'h0000058, 4'hF, 32'h12345678);
+    check_hit(28'h0000058, 32'h12345678, "T10-word2-written");
+    // Other words intact
+    check_hit(28'h0000050, 32'hDDDDDDDD, "T10-word0-intact");
+    check_hit(28'h0000054, 32'hCCCCCCCC, "T10-word1-intact");
+    check_hit(28'h000005C, 32'hAAAAAAAA, "T10-word3-intact");
+
+    // =========================================================
+    // T11: Byte mask — partial write
+    // =========================================================
+    $display("T11: Byte mask");
+    // Fill line at index 0x06 with known data
+    fill_line(28'h0000060, {32'hFFFFFFFF, 32'hFFFFFFFF, 32'hFFFFFFFF, 32'hAABBCCDD});
+    // Write only byte0 (mask=0001)
+    write_word(28'h0000060, 4'b0001, 32'h00000011);
+    check_hit(28'h0000060, 32'hAABBCC11, "T11-byte0-only");
+    // Write only byte2 (mask=0100)
+    write_word(28'h0000060, 4'b0100, 32'h00990000);
+    check_hit(28'h0000060, 32'hAA99CC11, "T11-byte2-only");
+
+    // =========================================================
+    // T12: Dirty eviction — save_need_flag + save_data
+    // =========================================================
+    $display("T12: Dirty eviction");
+    reset = 1; @(posedge clk); @(posedge clk); #1; reset = 0; @(posedge clk);
+    // Fill line at index 0x00, tag=0x0000
+    fill_line(28'h0000000, {32'h44444444, 32'h33333333, 32'h22222222, 32'h11111111});
+    // Write to make it dirty
+    write_word(28'h0000000, 4'hF, 32'hBEEFBEEF);
+    // Point address at same index — should see dirty flag
+    #1; address = 28'h0000000;
+    #1;
+    assert(save_need_flag == 1) else begin
+      $display("FAIL [T12]: save_need_flag should be 1 for dirty line");
+      errors++;
+    end
+    assert(save_address == 28'h0000000) else begin
+      $display("FAIL [T12]: save_address expected 0, got %h", save_address);
+      errors++;
+    end
+    // Check save_data has written word (word0=BEEFBEEF, rest unchanged)
+    assert(save_data[31:0] == 32'hBEEFBEEF) else begin
+      $display("FAIL [T12]: save_data word0 expected BEEFBEEF, got %h", save_data[31:0]);
+      errors++;
+    end
+    assert(save_data[63:32] == 32'h22222222) else begin
+      $display("FAIL [T12]: save_data word1 expected 22222222, got %h", save_data[63:32]);
+      errors++;
+    end
+
+    // Now fill same index with different tag — evicts dirty line
+    // (save_need_flag was checked above; after fill, dirty clears)
+    fill_line(28'h0001000, {32'hAAAAAAAA, 32'hBBBBBBBB, 32'hCCCCCCCC, 32'hDDDDDDDD});
+    #1; address = 28'h0001000;
+    #1;
+    assert(save_need_flag == 0) else begin
+      $display("FAIL [T12]: save_need_flag should be 0 after clean fill");
+      errors++;
+    end
+
+    // =========================================================
+    // T13: Fill clears dirty
+    // =========================================================
+    $display("T13: Fill clears dirty");
+    reset = 1; @(posedge clk); @(posedge clk); #1; reset = 0; @(posedge clk);
+    // Fill, write (dirty), then re-fill same index
+    fill_line(28'h0000010, {32'h0, 32'h0, 32'h0, 32'h0});
+    write_word(28'h0000010, 4'hF, 32'hCAFECAFE);
+    #1; address = 28'h0000010;
+    #1;
+    assert(save_need_flag == 1) else begin
+      $display("FAIL [T13]: expected dirty after write");
+      errors++;
+    end
+    // Re-fill same index — dirty should clear
+    fill_line(28'h0000010, {32'hFFFFFFFF, 32'hFFFFFFFF, 32'hFFFFFFFF, 32'hFFFFFFFF});
+    #1; address = 28'h0000010;
+    #1;
+    assert(save_need_flag == 0) else begin
+      $display("FAIL [T13]: expected clean after re-fill");
+      errors++;
+    end
+    check_hit(28'h0000010, 32'hFFFFFFFF, "T13-refill-data");
+
+    // =========================================================
+    // T14: READ_ONLY=1 — writes ignored, save_need_flag=0
+    // =========================================================
+    $display("T14: READ_ONLY=1");
+    // Use dut_ro instance
+    ro_address       = 0;
+    ro_mask          = 4'hF;
+    ro_write_trigger = 0;
+    ro_write_value   = 0;
+    ro_read_trigger  = 0;
+    ro_new_data      = 0;
+    ro_new_address   = 0;
+    ro_new_data_save = 0;
+    @(posedge clk);
+    // Fill a line
+    @(posedge clk); #1;
+    ro_new_address   = 28'h0000020;
+    ro_new_data      = {32'h44444444, 32'h33333333, 32'h22222222, 32'h11111111};
+    ro_new_data_save = 1;
+    @(posedge clk); #1;
+    ro_new_data_save = 0;
+    // Attempt write
+    @(posedge clk); #1;
+    ro_address       = 28'h0000020;
+    ro_mask          = 4'hF;
+    ro_write_trigger = 1;
+    ro_write_value   = 32'hDEADDEAD;
+    @(posedge clk); #1;
+    ro_write_trigger = 0;
+    @(posedge clk);
+    // Read back — should be original
+    #1;
+    ro_address    = 28'h0000020;
+    ro_read_trigger = 1;
+    #1;
+    assert(ro_read_value == 32'h11111111) else begin
+      $display("FAIL [T14]: READ_ONLY write should be ignored, got %h", ro_read_value);
+      errors++;
+    end
+    assert(ro_save_need_flag == 0) else begin
+      $display("FAIL [T14]: READ_ONLY save_need_flag should be 0");
+      errors++;
+    end
+    ro_read_trigger = 0;
 
     // =========================================================
     // Summary

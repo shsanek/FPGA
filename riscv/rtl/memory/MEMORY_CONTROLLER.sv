@@ -193,14 +193,16 @@ module MEMORY_CONTROLLER#(
     end
 
     // =========================================================
-    // CHUNK_STORAGE_4_POOL (main D-cache)
+    // D-cache: I_CACHE with READ_ONLY=0 (256 lines = 4 KB)
     // =========================================================
-    CHUNK_STORAGE_4_POOL #(
+    I_CACHE #(
+        .DEPTH(256),
+        .READ_ONLY(0),
         .CHUNK_PART(CHUNK_PART),
         .DATA_SIZE(DATA_SIZE),
         .MASK_SIZE(MASK_SIZE),
         .ADDRESS_SIZE(ADDRESS_SIZE)
-    ) storage_pool (
+    ) dcache_inst (
         .clk                   (clk),
         .reset                 (reset),
         .address               (output_address),
@@ -247,10 +249,11 @@ module MEMORY_CONTROLLER#(
     );
 
     // =========================================================
-    // I_CACHE (direct-mapped read-only, 256 lines = 4 KB)
+    // I_CACHE (direct-mapped read-only, 1024 lines = 16 KB)
     // =========================================================
     I_CACHE #(
         .DEPTH(1024),
+        .READ_ONLY(1),
         .CHUNK_PART(CHUNK_PART),
         .DATA_SIZE(DATA_SIZE),
         .MASK_SIZE(MASK_SIZE),
