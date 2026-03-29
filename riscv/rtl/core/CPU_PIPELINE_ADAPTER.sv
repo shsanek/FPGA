@@ -141,7 +141,7 @@ module CPU_PIPELINE_ADAPTER (
                     if (pause && !stepping)
                         state <= S_PAUSED;
                     else if (mc_controller_ready) begin
-                        addr_reg <= instr_addr[29:0];
+                        addr_reg <= {2'b11, instr_addr[27:0]};
                         state    <= S_FETCH_WAIT;
                     end
                 end

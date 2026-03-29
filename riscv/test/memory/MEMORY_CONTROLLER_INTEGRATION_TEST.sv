@@ -83,7 +83,8 @@ module MEMORY_CONTROLLER_INTEGRATION_TEST;
         .write_value              (write_value),
         .read_trigger             (read_trigger),
         .read_value               (read_value),
-        .contains_address         (contains_address)
+        .contains_address         (contains_address),
+        .bus_type                 (2'b00)
     );
 
     // ----------------------------------------------------------------

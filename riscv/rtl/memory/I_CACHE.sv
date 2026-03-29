@@ -7,7 +7,7 @@
 //   [27:12] tag (16 bit)  |  [11:4] index (8 bit)  |  [3:0] offset (4 bit)
 //
 // Hit check is combinational (tags/valid in distributed RAM).
-// Data storage also distributed RAM for combinational read.
+// Data stored as 128-bit lines, word selected by address[3:2].
 module I_CACHE #(
     parameter DEPTH = 256,
     parameter CHUNK_PART = 128,
@@ -48,8 +48,8 @@ module I_CACHE #(
     reg [TAG_W-1:0] tags  [0:DEPTH-1];
     reg             valid [0:DEPTH-1];
 
-    // Data storage (distributed RAM — async read, 4 words per line)
-    reg [DATA_SIZE-1:0] data [0:DEPTH*4-1];
+    // Data storage: one 128-bit line per entry (single write port)
+    reg [CHUNK_PART-1:0] lines [0:DEPTH-1];
 
     // --- Address decomposition ---
     wire [INDEX_W-1:0] idx      = address[INDEX_W+3 : 4];
@@ -60,13 +60,22 @@ module I_CACHE #(
     wire hit = valid[idx] && (tags[idx] == addr_tag);
     assign contains_address = hit;
 
-    // --- Read value (combinational) ---
-    wire [INDEX_W+1:0] data_idx = {idx, word_sel};
-    assign read_value = hit ? data[data_idx] : {DATA_SIZE{1'b0}};
+    // --- Read value: select word from 128-bit line ---
+    wire [CHUNK_PART-1:0] line_data = lines[idx];
+    reg [DATA_SIZE-1:0] selected_word;
+    always_comb begin
+        case (word_sel)
+            2'd0: selected_word = line_data[31:0];
+            2'd1: selected_word = line_data[63:32];
+            2'd2: selected_word = line_data[95:64];
+            2'd3: selected_word = line_data[127:96];
+        endcase
+    end
+    assign read_value = hit ? selected_word : {DATA_SIZE{1'b0}};
 
     // --- Read-only: never dirty ---
-    assign save_address   = '0;
-    assign save_data      = '0;
+    assign save_address   = {ADDRESS_SIZE{1'b0}};
+    assign save_data      = {CHUNK_PART{1'b0}};
     assign save_need_flag = 1'b0;
 
     // --- Fill logic ---
@@ -79,12 +88,9 @@ module I_CACHE #(
             for (i = 0; i < DEPTH; i = i + 1)
                 valid[i] <= 1'b0;
         end else if (new_data_save) begin
-            tags[new_idx]              <= new_tag;
-            valid[new_idx]             <= 1'b1;
-            data[{new_idx, 2'd0}]     <= new_data[31:0];
-            data[{new_idx, 2'd1}]     <= new_data[63:32];
-            data[{new_idx, 2'd2}]     <= new_data[95:64];
-            data[{new_idx, 2'd3}]     <= new_data[127:96];
+            tags[new_idx]  <= new_tag;
+            valid[new_idx] <= 1'b1;
+            lines[new_idx] <= new_data;
         end
     end
 

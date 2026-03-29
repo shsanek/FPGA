@@ -233,7 +233,7 @@ module MEMORY_CONTROLLER#(
         .address               (output_address),
         .mask                  (output_mask),
         .write_trigger         (1'b0),
-        .write_value           ('0),
+        .write_value           ({DATA_SIZE{1'b0}}),
         .read_trigger          (read_trigger),
         .read_value            (stream_read_value),
         .contains_address      (stream_contains_address),
@@ -250,7 +250,7 @@ module MEMORY_CONTROLLER#(
     // I_CACHE (direct-mapped read-only, 256 lines = 4 KB)
     // =========================================================
     I_CACHE #(
-        .DEPTH(256),
+        .DEPTH(1024),
         .CHUNK_PART(CHUNK_PART),
         .DATA_SIZE(DATA_SIZE),
         .MASK_SIZE(MASK_SIZE),
@@ -261,7 +261,7 @@ module MEMORY_CONTROLLER#(
         .address               (output_address),
         .mask                  (output_mask),
         .write_trigger         (1'b0),
-        .write_value           ('0),
+        .write_value           ({DATA_SIZE{1'b0}}),
         .read_trigger          (read_trigger),
         .read_value            (icache_read_value),
         .contains_address      (icache_contains_address),
