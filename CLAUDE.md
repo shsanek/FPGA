@@ -123,6 +123,7 @@ FPGA/
 │       ├── boot.md, debug.md, uart.md
 │       ├── mig_setup.md, ram_controller.md
 │       ├── blitter.md                 # Hardware blitter + бенчмарки
+│       ├── benchmarks.md             # Сравнительные таблицы DOOM (S/B/B+S/B+I)
 │       ├── tools.md, todo.md
 │
 └── vivado/                             # Vivado проект, TCL, XDC
