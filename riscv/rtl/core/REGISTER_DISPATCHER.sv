@@ -122,7 +122,7 @@ module REGISTER_DISPATCHER (
                         out_instruction <= lat_instruction;
                         out_rs1_value   <= rf_rs1_data;
                         out_rs2_value   <= rf_rs2_data;
-                        next_stage_valid <= 1;
+                        next_stage_valid <= 1'b1;
                         // Mark destination register as busy
                         if (lat_rd_index < 5'd32 && lat_rd_index != 5'd0)
                             busy[lat_rd_index] <= 1;

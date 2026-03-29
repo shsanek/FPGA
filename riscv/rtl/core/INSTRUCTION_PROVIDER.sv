@@ -1,8 +1,8 @@
-// INSTRUCTION_PROVIDER — instruction fetch stage with internal PC and 128-bit line buffer.
+// INSTRUCTION_PROVIDER — pipeline stage 1: instruction fetch.
 //
-// Holds PC internally. On set_pc: loads new_pc.
+// Holds PC internally. On flush: loads new_pc.
 // Stores 128-bit line, word select by pc[3:2] (combinational).
-// Advances PC only when next stage accepts data (ready_save_data=1).
+// Advances PC only when next stage accepts (next_stage_ready=1).
 
 module INSTRUCTION_PROVIDER #(
     parameter ADDR_WIDTH = 32
@@ -10,16 +10,15 @@ module INSTRUCTION_PROVIDER #(
     input wire clk,
     input wire reset,
 
-    // === Output: instruction to CPU ===
-    output wire [31:0] instruction,
-    output wire        valid,            // 1 = instruction ready, CPU can execute
-    output wire [31:0] current_pc,       // current PC value
+    // === To next stage (INSTRUCTION_DECODE) ===
+    output wire [31:0] out_pc,
+    output wire [31:0] out_instruction,
+    output wire        next_stage_valid,
+    input  wire        next_stage_ready,
 
-    // === Control ===
-    input wire [31:0]  new_pc,           // new PC value
-    input wire         set_pc,           // 1 = load new_pc, invalidate line buffer
-
-    input wire         ready_save_data,  // next stage accepted data, can advance PC
+    // === Pipeline flush (branch/jump changed PC) ===
+    input wire [31:0]  new_pc,
+    input wire         flush,
 
     // === 128-bit bus master (to I_CACHE) ===
     output reg  [ADDR_WIDTH-1:0] bus_address,
@@ -33,13 +32,13 @@ module INSTRUCTION_PROVIDER #(
     // Internal PC
     // =========================================================
     reg [31:0] pc;
-    assign current_pc = pc;
+    assign out_pc = pc;
 
     // =========================================================
     // Line buffer: 128-bit (4 words)
     // =========================================================
     reg [127:0]          line_data;
-    reg [ADDR_WIDTH-5:0] line_tag;     // pc[31:4] of cached line
+    reg [ADDR_WIDTH-5:0] line_tag;
     reg                  line_valid;
 
     wire line_hit = line_valid && (pc[31:4] == line_tag);
@@ -47,10 +46,10 @@ module INSTRUCTION_PROVIDER #(
     // =========================================================
     // Word select by pc[3:2] (combinational)
     // =========================================================
-    assign instruction = pc[3:2] == 2'd3 ? line_data[127:96] :
-                         pc[3:2] == 2'd2 ? line_data[95:64]  :
-                         pc[3:2] == 2'd1 ? line_data[63:32]  :
-                                           line_data[31:0];
+    assign out_instruction = pc[3:2] == 2'd3 ? line_data[127:96] :
+                             pc[3:2] == 2'd2 ? line_data[95:64]  :
+                             pc[3:2] == 2'd1 ? line_data[63:32]  :
+                                               line_data[31:0];
 
     // =========================================================
     // FSM
@@ -63,11 +62,7 @@ module INSTRUCTION_PROVIDER #(
 
     state_t state;
 
-    assign valid = line_hit && (state != S_FETCH_REQ);
-
-    // =========================================================
-    // Bus address: always line-aligned from current PC
-    // =========================================================
+    assign next_stage_valid = line_hit && (state != S_FETCH_REQ);
 
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -76,7 +71,7 @@ module INSTRUCTION_PROVIDER #(
             line_tag   <= {(ADDR_WIDTH-4){1'b1}};
             state      <= S_FETCH_REQ;
             bus_read   <= 0;
-        end else if (set_pc) begin
+        end else if (flush) begin
             pc         <= new_pc;
             line_valid <= 0;
             state      <= S_FETCH_REQ;
@@ -100,7 +95,7 @@ module INSTRUCTION_PROVIDER #(
                         line_data  <= bus_read_data;
                         line_tag   <= pc[31:4];
                         line_valid <= 1;
-                        if (ready_save_data) begin
+                        if (next_stage_ready) begin
                             pc    <= pc + 4;
                             state <= S_FETCH_REQ;
                         end else begin
@@ -110,7 +105,7 @@ module INSTRUCTION_PROVIDER #(
                 end
 
                 S_READY: begin
-                    if (ready_save_data) begin
+                    if (next_stage_ready) begin
                         pc    <= pc + 4;
                         state <= S_FETCH_REQ;
                     end
