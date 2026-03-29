@@ -65,10 +65,6 @@ module BUS_ARBITER #(
     reg [DATA_WIDTH-1:0]  p1_lat_write_data;
     reg [MASK_WIDTH-1:0]  p1_lat_write_mask;
 
-    // Port ready = latch empty (can accept a command)
-    assign p0_ready = !p0_lat_valid;
-    assign p1_ready = !p1_lat_valid;
-
     // =========================================================
     // FSM
     // =========================================================
@@ -81,8 +77,15 @@ module BUS_ARBITER #(
     reg active_port;    // 0 or 1
     reg first_busy;     // skip first BUSY cycle (NBA timing guard)
 
-    assign port0_reuest = p0_read || p0_write;
-    assign port1_reuest = p1_read || p1_write;
+    wire port0_reuest = p0_read || p0_write;
+    wire port1_reuest = p1_read || p1_write;
+
+    // Port ready = latch empty AND not being served right now
+    wire p0_busy = (state == BUSY) && (active_port == 0);
+    wire p1_busy = (state == BUSY) && (active_port == 1);
+
+    assign p0_ready = !p0_lat_valid && !p0_busy;
+    assign p1_ready = !p1_lat_valid && !p1_busy;
 
     // =========================================================
     always_ff @(posedge clk) begin
