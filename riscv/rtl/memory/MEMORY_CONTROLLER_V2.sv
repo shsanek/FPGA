@@ -132,8 +132,9 @@ module MEMORY_CONTROLLER_V2 #(
     // =========================================================
     wire addr_stream = bus_address[29];
 
-    // Invalidate: TODO — implement cache line invalidation
-    // For now just report ready when in WAIT_REQUEST
+    // Invalidate: address decomposition
+    wire [INDEX_W-1:0] inv_idx = invalidate_address[INDEX_W+3 : 4];
+    wire [TAG_W-1:0]   inv_tag = invalidate_address[CACHE_ADDR_W-1 : INDEX_W+4];
 
     // =========================================================
     // FSM states
@@ -177,8 +178,22 @@ module MEMORY_CONTROLLER_V2 #(
             external_read  <= 0;
             external_write <= 0;
 
-            // Invalidate: TODO
-            invalidate_ready <= (state == WAIT_REQUEST);
+            // Invalidate: clear cache line by address (only safe in WAIT_REQUEST)
+            if (invalidate_trigger && state == WAIT_REQUEST) begin
+                invalidate_ready <= 1;
+                // Invalidate output buffer if matches
+                if (output_valid &&
+                    invalidate_address[CACHE_ADDR_W-1:4] == output_address[CACHE_ADDR_W-1:4])
+                    output_valid <= 0;
+                // Invalidate way0 if tag matches
+                if (valid_0[inv_idx] && tags_0[inv_idx] == inv_tag)
+                    valid_0[inv_idx] <= 0;
+                // Invalidate way1 if tag matches
+                if ((WAYS > 1) && valid_1[inv_idx] && tags_1[inv_idx] == inv_tag)
+                    valid_1[inv_idx] <= 0;
+            end else begin
+                invalidate_ready <= (state == WAIT_REQUEST);
+            end
 
             case (state)
 
