@@ -59,7 +59,7 @@ module TOP_V2 #(
     localparam BIT_PERIOD = CLOCK_FREQ / BAUD_RATE;
 
     // ===============================================================
-    // CPU ↔ Pipeline Adapter
+    // CPU ↔ Data Adapter (MEM stage only, no IF)
     // ===============================================================
     wire [31:0] instr_addr, instr_data;
     wire        instr_stall_w;
@@ -68,21 +68,51 @@ module TOP_V2 #(
     wire [3:0]  cpu_mem_byte_mask;
     wire        cpu_mem_stall;
 
-    // Pipeline adapter → 32-bit bus (before mux)
-    wire [29:0] pipe_addr;
-    wire        pipe_rd, pipe_wr;
-    wire [31:0] pipe_wr_data;
-    wire [3:0]  pipe_mask;
+    // Data adapter → 32-bit bus
+    wire [31:0] data_bus32_addr;
+    wire        data_bus32_rd, data_bus32_wr;
+    wire [31:0] data_bus32_wr_data, data_bus32_rd_data;
+    wire [3:0]  data_bus32_mask;
+    wire        data_bus32_ready;
+    wire        data_bus32_read_valid;
 
-    // 32-bit bus (after mux, before BUS_32_TO_128)
-    wire [31:0] bus32_addr;
-    wire        bus32_rd, bus32_wr;
-    wire [31:0] bus32_wr_data, bus32_rd_data;
-    wire [3:0]  bus32_mask;
-    wire        bus32_ready;
-    wire        bus32_read_valid;
+    // 32-bit data bus (after debug/flash mux)
+    wire [31:0] mux32_addr;
+    wire        mux32_rd, mux32_wr;
+    wire [31:0] mux32_wr_data, mux32_rd_data;
+    wire [3:0]  mux32_mask;
+    wire        mux32_ready;
+    wire        mux32_read_valid;
 
-    // 128-bit bus (after BUS_32_TO_128)
+    // Data path: 32→128 (MEM stage + debug + flash → 128-bit)
+    wire [31:0]  data128_addr;
+    wire         data128_rd, data128_wr;
+    wire [127:0] data128_wr_data, data128_rd_data;
+    wire [15:0]  data128_mask;
+    wire         data128_ready;
+    wire         data128_read_valid;
+
+    // ===============================================================
+    // I_CACHE (MCV2 READ_ONLY=1) — instruction fetch
+    // ===============================================================
+    // CPU IF → BUS_32_TO_128 → I_CACHE upstream (bus slave)
+    wire [31:0]  if128_addr;
+    wire         if128_rd;
+    wire [127:0] if128_rd_data;
+    wire         if128_ready;
+    wire         if128_read_valid;
+
+    // I_CACHE miss → external (bus master) → BUS_ARBITER port1
+    wire [31:0]  icache_ext_addr;
+    wire         icache_ext_rd, icache_ext_wr;
+    wire [127:0] icache_ext_wr_data, icache_ext_rd_data;
+    wire [15:0]  icache_ext_wr_mask;
+    wire         icache_ext_ready;
+    wire         icache_ext_read_valid;
+
+    // ===============================================================
+    // BUS_ARBITER output → PERIPHERAL_BUS_V2 (128-bit)
+    // ===============================================================
     wire [31:0]  bus128_addr;
     wire         bus128_rd, bus128_wr;
     wire [127:0] bus128_wr_data, bus128_rd_data;
@@ -224,8 +254,8 @@ module TOP_V2 #(
     // ===============================================================
     // DEBUG_CONTROLLER
     // ===============================================================
-    wire mc_dbg_ready = (!flash_active & pipeline_paused) ? bus32_ready : 1'b0;
-    wire [31:0] mc_dbg_rd_data = bus32_rd_data;
+    wire mc_dbg_ready = (!flash_active & pipeline_paused) ? mux32_ready : 1'b0;
+    wire [31:0] mc_dbg_rd_data = mux32_rd_data;
 
     DEBUG_CONTROLLER #(.DEBUG_ENABLE(DEBUG_ENABLE), .ADDRESS_SIZE(30)) dbg_ctrl (
         .clk(clk), .reset(reset),
@@ -263,59 +293,129 @@ module TOP_V2 #(
     );
 
     // ===============================================================
-    // CPU_PIPELINE_ADAPTER
+    // I_CACHE: CPU IF → BUS_32_TO_128 → MCV2(RO=1) → miss → arbiter
     // ===============================================================
-    CPU_PIPELINE_ADAPTER pipeline (
+    wire         icache_bus_ready;
+    wire [127:0] icache_bus_rd_data;
+    wire         icache_bus_rd_valid;
+
+    BUS_32_TO_128 if_conv (
+        .cpu_address   (instr_addr),
+        .cpu_read      (1'b1),          // always reading instructions
+        .cpu_write     (1'b0),
+        .cpu_write_data(32'b0),
+        .cpu_write_mask(4'b0),
+        .cpu_read_data (instr_data),
+        .cpu_ready     (if128_ready),
+        .cpu_read_valid(if128_read_valid),
+        .bus_address   (if128_addr),
+        .bus_read      (if128_rd),
+        .bus_write     (),
+        .bus_write_data(),
+        .bus_write_mask(),
+        .bus_ready     (icache_bus_ready),
+        .bus_read_data (icache_bus_rd_data),
+        .bus_read_valid(icache_bus_rd_valid)
+    );
+
+    assign instr_stall_w = !if128_ready;
+
+    MEMORY_CONTROLLER_V2 #(
+        .DEPTH(MCV2_DEPTH), .WAYS(MCV2_WAYS), .READ_ONLY(1)
+    ) icache (
         .clk(clk), .reset(reset),
-        .instr_addr(instr_addr), .instr_data(instr_data), .instr_stall(instr_stall_w),
+        // Upstream: from IF converter
+        .bus_address(if128_addr), .bus_read(if128_rd), .bus_write(1'b0),
+        .bus_write_data(128'b0), .bus_write_mask(16'b0),
+        .bus_ready(icache_bus_ready), .bus_read_data(icache_bus_rd_data),
+        .bus_read_valid(icache_bus_rd_valid),
+        // Downstream: miss → BUS_ARBITER port1
+        .external_address(icache_ext_addr), .external_read(icache_ext_rd),
+        .external_write(icache_ext_wr), .external_write_data(icache_ext_wr_data),
+        .external_write_mask(icache_ext_wr_mask),
+        .external_ready(icache_ext_ready), .external_read_data(icache_ext_rd_data),
+        .external_read_valid(icache_ext_read_valid)
+    );
+
+    // ===============================================================
+    // CPU_DATA_ADAPTER_V2 (MEM stage only)
+    // ===============================================================
+    CPU_DATA_ADAPTER_V2 data_adapter (
+        .clk(clk), .reset(reset),
         .mem_read_en(cpu_mem_read_en), .mem_write_en(cpu_mem_write_en),
         .mem_addr(cpu_mem_addr), .mem_write_data(cpu_mem_write_data),
         .mem_byte_mask(cpu_mem_byte_mask), .mem_read_data(cpu_mem_read_data),
         .mem_stall(cpu_mem_stall),
-        .mc_address(pipe_addr), .mc_read_trigger(pipe_rd),
-        .mc_write_trigger(pipe_wr), .mc_write_value(pipe_wr_data), .mc_mask(pipe_mask),
-        .mc_read_value(bus32_rd_data), .mc_controller_ready(bus32_ready),
+        .bus_address(data_bus32_addr), .bus_read(data_bus32_rd),
+        .bus_write(data_bus32_wr), .bus_write_data(data_bus32_wr_data),
+        .bus_write_mask(data_bus32_mask), .bus_read_data(data_bus32_rd_data),
+        .bus_ready(data_bus32_ready),
         .flush(combined_set_pc),
         .pause(dbg_bus_request | flash_bus_request),
         .paused(pipeline_paused), .step(dbg_step_pipeline)
     );
 
     // ===============================================================
-    // 32-bit Bus Mux: flash > debug > pipeline
+    // 32-bit Bus Mux: flash > debug > data_adapter
     // ===============================================================
-    wire mc_flash_ready = (flash_active) ? bus32_ready : 1'b0;
+    wire mc_flash_ready = flash_active ? mux32_ready : 1'b0;
 
-    assign bus32_addr    = flash_active    ? {2'b0, mc_flash_addr[27:0], 2'b0} :
-                           pipeline_paused ? {2'b0, mc_dbg_addr}               :
-                                             {2'b0, pipe_addr};
-    assign bus32_rd      = flash_active    ? 1'b0      :
-                           pipeline_paused ? mc_dbg_rd  : pipe_rd;
-    assign bus32_wr      = flash_active    ? mc_flash_wr :
-                           pipeline_paused ? mc_dbg_wr   : pipe_wr;
-    assign bus32_wr_data = flash_active    ? mc_flash_wr_data :
-                           pipeline_paused ? mc_dbg_wr_data   : pipe_wr_data;
-    assign bus32_mask    = flash_active    ? mc_flash_mask      :
-                           pipeline_paused ? {MASK_SIZE{1'b1}} : pipe_mask;
+    assign mux32_addr    = flash_active    ? {4'b0, mc_flash_addr[27:0]} :
+                           pipeline_paused ? {2'b0, mc_dbg_addr}         :
+                                             data_bus32_addr;
+    assign mux32_rd      = flash_active    ? 1'b0           :
+                           pipeline_paused ? mc_dbg_rd       : data_bus32_rd;
+    assign mux32_wr      = flash_active    ? mc_flash_wr     :
+                           pipeline_paused ? mc_dbg_wr        : data_bus32_wr;
+    assign mux32_wr_data = flash_active    ? mc_flash_wr_data :
+                           pipeline_paused ? mc_dbg_wr_data   : data_bus32_wr_data;
+    assign mux32_mask    = flash_active    ? mc_flash_mask          :
+                           pipeline_paused ? {MASK_SIZE{1'b1}}     : data_bus32_mask;
+
+    assign data_bus32_rd_data = mux32_rd_data;
+    assign data_bus32_ready   = (!flash_active & !pipeline_paused) ? mux32_ready : 1'b0;
 
     // ===============================================================
-    // BUS_32_TO_128 (CPU 32-bit → 128-bit bus)
+    // BUS_32_TO_128: data path 32→128 (MEM + debug + flash)
     // ===============================================================
-    BUS_32_TO_128 cpu_bus_conv (
-        .cpu_address   (bus32_addr),
-        .cpu_read      (bus32_rd),
-        .cpu_write     (bus32_wr),
-        .cpu_write_data(bus32_wr_data),
-        .cpu_write_mask(bus32_mask),
-        .cpu_read_data (bus32_rd_data),
-        .cpu_ready     (bus32_ready),
-        .cpu_read_valid(bus32_read_valid),
-        .bus_address   (bus128_addr),
-        .bus_read      (bus128_rd),
-        .bus_write     (bus128_wr),
-        .bus_write_data(bus128_wr_data),
-        .bus_write_mask(bus128_mask),
-        .bus_ready     (bus128_ready),
-        .bus_read_data (bus128_rd_data),
+    BUS_32_TO_128 data_conv (
+        .cpu_address   (mux32_addr),
+        .cpu_read      (mux32_rd),
+        .cpu_write     (mux32_wr),
+        .cpu_write_data(mux32_wr_data),
+        .cpu_write_mask(mux32_mask),
+        .cpu_read_data (mux32_rd_data),
+        .cpu_ready     (mux32_ready),
+        .cpu_read_valid(mux32_read_valid),
+        .bus_address   (data128_addr),
+        .bus_read      (data128_rd),
+        .bus_write     (data128_wr),
+        .bus_write_data(data128_wr_data),
+        .bus_write_mask(data128_mask),
+        .bus_ready     (data128_ready),
+        .bus_read_data (data128_rd_data),
+        .bus_read_valid(data128_read_valid)
+    );
+
+    // ===============================================================
+    // BUS_ARBITER: data (port0, priority) + I_CACHE miss (port1)
+    // ===============================================================
+    BUS_ARBITER arbiter (
+        .clk(clk), .reset(reset),
+        // Port 0: data path (MEM + debug + flash)
+        .p0_address(data128_addr), .p0_read(data128_rd), .p0_write(data128_wr),
+        .p0_write_data(data128_wr_data), .p0_write_mask(data128_mask),
+        .p0_ready(data128_ready), .p0_read_data(data128_rd_data),
+        .p0_read_valid(data128_read_valid),
+        // Port 1: I_CACHE miss (read-only)
+        .p1_address(icache_ext_addr), .p1_read(icache_ext_rd), .p1_write(icache_ext_wr),
+        .p1_write_data(icache_ext_wr_data), .p1_write_mask(icache_ext_wr_mask),
+        .p1_ready(icache_ext_ready), .p1_read_data(icache_ext_rd_data),
+        .p1_read_valid(icache_ext_read_valid),
+        // Downstream → PERIPHERAL_BUS_V2
+        .bus_address(bus128_addr), .bus_read(bus128_rd), .bus_write(bus128_wr),
+        .bus_write_data(bus128_wr_data), .bus_write_mask(bus128_mask),
+        .bus_ready(bus128_ready), .bus_read_data(bus128_rd_data),
         .bus_read_valid(bus128_read_valid)
     );
 
