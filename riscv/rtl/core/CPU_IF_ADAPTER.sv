@@ -47,7 +47,7 @@ module CPU_IF_ADAPTER (
 
     always_ff @(posedge clk) begin
         if (reset || flush) begin
-            state        <= S_READ_REQ;
+            state        <= S_IDLE;  // S_IDLE detects addr_changed → fast path
             fetched_data <= 32'h0000_0013; // NOP
             fetched_addr <= 32'hFFFF_FFFF; // force mismatch
             has_data     <= 0;
@@ -57,8 +57,17 @@ module CPU_IF_ADAPTER (
 
             case (state)
                 S_IDLE: begin
-                    if (addr_changed)
-                        state <= S_READ_REQ;
+                    if (addr_changed) begin
+                        if (bus_ready) begin
+                            // Fast path: send read immediately (0 extra cycles)
+                            bus_address <= instr_addr;
+                            bus_read    <= 1;
+                            state       <= S_READ_WAIT;
+                        end else begin
+                            // Bus busy — wait
+                            state <= S_READ_REQ;
+                        end
+                    end
                 end
 
                 S_READ_REQ: begin
