@@ -69,7 +69,7 @@
     reg        core_stall = 0;
     wire       pipeline_empty;
     wire [31:0] dbg_pc, dbg_instr;
-    wire [31:0] instr_count;
+    wire [63:0] instr_count;
 
     CORE #(.ICACHE_DEPTH(16), .ICACHE_WAYS(1)) dut (
         .clk(clk), .reset(reset),

@@ -57,7 +57,7 @@ module core_test_bench_ipc_1;
     reg        core_stall = 0;
     wire       pipeline_empty;
     wire [31:0] dbg_pc, dbg_instr;
-    wire [31:0] instr_count;
+    wire [63:0] instr_count;
 
     CORE #(.ICACHE_DEPTH(64), .ICACHE_WAYS(1)) dut (
         .clk(clk), .reset(reset),

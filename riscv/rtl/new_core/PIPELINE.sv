@@ -55,7 +55,7 @@ module PIPELINE (
     output wire        out_flush,
 
     // === Instruction counter ===
-    output wire [31:0] instr_count
+    output wire [63:0] instr_count
 );
 
     // =========================================================

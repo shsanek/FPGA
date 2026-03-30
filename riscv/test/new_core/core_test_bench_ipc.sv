@@ -60,7 +60,7 @@ module core_test_bench_ipc;
     reg        core_stall = 0;
     wire       pipeline_empty;
     wire [31:0] dbg_pc, dbg_instr;
-    wire [31:0] instr_count;
+    wire [63:0] instr_count;
 
     // Large I-cache: 64 lines = 1KB (fits 198-word program)
     CORE #(.ICACHE_DEPTH(64), .ICACHE_WAYS(1)) dut (

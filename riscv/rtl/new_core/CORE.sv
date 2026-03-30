@@ -30,7 +30,7 @@ module CORE #(
     output wire         pipeline_empty,     // 1 = all stages idle
     output wire [31:0]  dbg_last_alu_pc,    // last PC dispatched to ALU
     output wire [31:0]  dbg_last_alu_instr, // last instruction dispatched to ALU
-    output wire [31:0]  instr_count         // instructions dispatched to ALU
+    output wire [63:0]  instr_count         // instructions dispatched to ALU
 );
 
     // =========================================================
