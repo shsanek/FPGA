@@ -49,7 +49,12 @@ module ALU_COMPUTE (
             3'b010: result = {31'b0, $signed(op_a) < $signed(op_b)};
             3'b011: result = {31'b0, op_a < op_b};
             3'b100: result = op_a ^ op_b;
-            3'b101: result = funct7[5] ? ($signed(op_a) >>> op_b[4:0]) : (op_a >> op_b[4:0]);
+            3'b101: begin
+                if (funct7[5])
+                    result = $unsigned($signed(op_a) >>> op_b[4:0]);
+                else
+                    result = op_a >> op_b[4:0];
+            end
             3'b110: result = op_a | op_b;
             3'b111: result = op_a & op_b;
         endcase

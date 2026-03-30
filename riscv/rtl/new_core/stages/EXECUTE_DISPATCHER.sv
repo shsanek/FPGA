@@ -59,7 +59,11 @@ module EXECUTE_DISPATCHER (
     // =========================================================
     // ALU ready signals (each ALU's prev_stage_ready)
     // =========================================================
-    wire compute_ready, branch_ready, jump_ready, upper_ready, memory_ready, muldiv_ready;
+    wire compute_ready, branch_ready, jump_ready, upper_ready, memory_ready, muldiv_ready, system_ready;
+
+    // Catch-all: FENCE, ECALL, EBREAK, unknown opcodes
+    wire sel_system = !sel_compute_final && !sel_branch && !sel_jump &&
+                      !sel_upper && !sel_memory && !sel_muldiv;
 
     // Selected ALU is ready?
     wire target_ready = (sel_compute_final && compute_ready) ||
@@ -67,13 +71,15 @@ module EXECUTE_DISPATCHER (
                         (sel_jump          && jump_ready)    ||
                         (sel_upper         && upper_ready)   ||
                         (sel_memory        && memory_ready)  ||
-                        (sel_muldiv        && muldiv_ready);
+                        (sel_muldiv        && muldiv_ready)  ||
+                        (sel_system        && system_ready);
 
-    // Block dispatch if branch/jump ALU is busy (might flush — must wait for result)
-    wire flush_pending = !branch_ready || !jump_ready;
+    // Block new dispatch while branch/jump ALU busy OR just dispatched
+    wire flush_alu_busy = !branch_ready || !jump_ready;
+    // Also block if we're dispatching a branch/jump right now
+    wire dispatching_flush = prev_stage_valid && (sel_branch || sel_jump) && target_ready;
 
-    // Can accept when target ALU free AND no flush-capable ALU in flight
-    assign prev_stage_ready = target_ready && !flush_pending;
+    assign prev_stage_ready = target_ready && !flush_alu_busy && !dispatching_flush;
 
     // Gate valid to each ALU
     wire compute_valid = prev_stage_valid && sel_compute_final && compute_ready;
@@ -82,14 +88,15 @@ module EXECUTE_DISPATCHER (
     wire upper_valid   = prev_stage_valid && sel_upper          && upper_ready;
     wire memory_valid  = prev_stage_valid && sel_memory         && memory_ready;
     wire muldiv_valid  = prev_stage_valid && sel_muldiv         && muldiv_ready;
+    wire system_valid  = prev_stage_valid && sel_system         && system_ready;
 
     // =========================================================
     // ALU result wires
     // =========================================================
-    wire [4:0]  compute_rd_idx, branch_rd_idx, jump_rd_idx, upper_rd_idx, memory_rd_idx, muldiv_rd_idx;
-    wire [31:0] compute_rd_val, branch_rd_val, jump_rd_val, upper_rd_val, memory_rd_val, muldiv_rd_val;
-    wire        compute_done,   branch_done,   jump_done,   upper_done,   memory_done,   muldiv_done;
-    wire        compute_wb_rdy, branch_wb_rdy, jump_wb_rdy, upper_wb_rdy, memory_wb_rdy, muldiv_wb_rdy;
+    wire [4:0]  compute_rd_idx, branch_rd_idx, jump_rd_idx, upper_rd_idx, memory_rd_idx, muldiv_rd_idx, system_rd_idx;
+    wire [31:0] compute_rd_val, branch_rd_val, jump_rd_val, upper_rd_val, memory_rd_val, muldiv_rd_val, system_rd_val;
+    wire        compute_done,   branch_done,   jump_done,   upper_done,   memory_done,   muldiv_done,   system_done;
+    wire        compute_wb_rdy, branch_wb_rdy, jump_wb_rdy, upper_wb_rdy, memory_wb_rdy, muldiv_wb_rdy, system_wb_rdy;
 
     wire        branch_flush, jump_flush;
     wire [31:0] branch_new_pc, jump_new_pc;
@@ -157,6 +164,14 @@ module EXECUTE_DISPATCHER (
         .next_stage_valid(muldiv_done), .next_stage_ready(muldiv_wb_rdy)
     );
 
+    ALU_SYSTEM alu_system (
+        .clk(clk), .reset(reset),
+        .prev_instruction(prev_instruction),
+        .prev_stage_valid(system_valid), .prev_stage_ready(system_ready),
+        .out_rd_index(system_rd_idx), .out_rd_value(system_rd_val),
+        .next_stage_valid(system_done), .next_stage_ready(system_wb_rdy)
+    );
+
     // =========================================================
     // WRITEBACK_ARBITER: per-ALU ready, priority merge
     // =========================================================
@@ -169,6 +184,8 @@ module EXECUTE_DISPATCHER (
         .jump_valid(jump_done), .jump_ready(jump_wb_rdy),
         .upper_rd_index(upper_rd_idx), .upper_rd_value(upper_rd_val),
         .upper_valid(upper_done), .upper_ready(upper_wb_rdy),
+        .system_rd_index(system_rd_idx), .system_rd_value(system_rd_val),
+        .system_valid(system_done), .system_ready(system_wb_rdy),
         .memory_rd_index(memory_rd_idx), .memory_rd_value(memory_rd_val),
         .memory_valid(memory_done), .memory_ready(memory_wb_rdy),
         .muldiv_rd_index(muldiv_rd_idx), .muldiv_rd_value(muldiv_rd_val),

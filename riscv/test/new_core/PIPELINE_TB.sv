@@ -60,7 +60,7 @@
     reg  [127:0] dmem_read_data;
     reg          dmem_read_valid = 0;
 
-    reg [7:0] data_mem [0:65535];  // 64KB byte-addressable
+    reg [7:0] data_mem [0:131071];  // 128KB byte-addressable
 
     reg        dmem_pending = 0;
     reg [31:0] dmem_pending_addr;
@@ -73,7 +73,7 @@
             // Byte-masked write
             for (int i = 0; i < 16; i++) begin
                 if (dmem_write_mask[i])
-                    data_mem[{dmem_addr[15:4], 4'b0} + i] <= dmem_write_data[i*8 +: 8];
+                    data_mem[{dmem_addr[16:4], 4'b0} + i] <= dmem_write_data[i*8 +: 8];
             end
         end
 
@@ -84,7 +84,7 @@
         end else if (dmem_pending) begin
             // Return 128-bit line
             for (int i = 0; i < 16; i++)
-                dmem_read_data[i*8 +: 8] <= data_mem[{dmem_pending_addr[15:4], 4'b0} + i];
+                dmem_read_data[i*8 +: 8] <= data_mem[{dmem_pending_addr[16:4], 4'b0} + i];
             dmem_read_valid <= 1;
             dmem_pending    <= 0;
             dmem_ready      <= 1;
@@ -150,7 +150,7 @@
         int i;
         reset = 1;
         for (i = 0; i < 32; i++) regfile[i] = 32'b0;
-        for (i = 0; i < 65536; i++) data_mem[i] = 8'b0;
+        for (i = 0; i < 131072; i++) data_mem[i] = 8'b0;
         @(posedge clk); @(posedge clk);
         reset = 0;
     endtask

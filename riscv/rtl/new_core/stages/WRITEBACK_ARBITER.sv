@@ -35,6 +35,11 @@ module WRITEBACK_ARBITER (
     input  wire        upper_valid,
     output wire        upper_ready,
 
+    input  wire [4:0]  system_rd_index,
+    input  wire [31:0] system_rd_value,
+    input  wire        system_valid,
+    output wire        system_ready,
+
     // === Multi-cycle ALU outputs (can arrive anytime) ===
     input  wire [4:0]  memory_rd_index,
     input  wire [31:0] memory_rd_value,
@@ -56,15 +61,17 @@ module WRITEBACK_ARBITER (
     // =========================================================
     // Single-cycle mux (at most one valid, combinational)
     // =========================================================
-    wire        single_valid = compute_valid || branch_valid || jump_valid || upper_valid;
+    wire        single_valid = compute_valid || branch_valid || jump_valid || upper_valid || system_valid;
     wire [4:0]  single_rd_index = compute_valid ? compute_rd_index :
                                   branch_valid  ? branch_rd_index  :
                                   jump_valid    ? jump_rd_index    :
-                                                  upper_rd_index;
+                                  upper_valid   ? upper_rd_index   :
+                                                  system_rd_index;
     wire [31:0] single_rd_value = compute_valid ? compute_rd_value :
                                   branch_valid  ? branch_rd_value  :
                                   jump_valid    ? jump_rd_value    :
-                                                  upper_rd_value;
+                                  upper_valid   ? upper_rd_value   :
+                                                  system_rd_value;
 
     // =========================================================
     // Priority arbitration: single > memory > muldiv
@@ -90,6 +97,7 @@ module WRITEBACK_ARBITER (
     assign branch_ready  = pick_single || !branch_valid;
     assign jump_ready    = pick_single || !jump_valid;
     assign upper_ready   = pick_single || !upper_valid;
+    assign system_ready  = pick_single || !system_valid;
 
     // Multi-cycle ALUs: ready only when they win
     assign memory_ready = pick_memory;

@@ -40,7 +40,22 @@ module test_memory;
 
         init();
 
-        repeat(1000) @(posedge clk);
+        repeat(100) @(posedge clk);
+        // Trace pipeline state
+        for (int t = 0; t < 20; t++) begin
+            @(posedge clk); #1;
+            $display("T[%0d]: s3v=%b s3r=%b s4v=%b s4r=%b mem_st=%0d sel_mem=%b mem_rdy=%b flush_busy=%b d_flush=%b",
+                     t,
+                     dut.s3_valid, dut.s3_ready,
+                     dut.stage4_execute.prev_stage_valid,
+                     dut.stage4_execute.prev_stage_ready,
+                     dut.stage4_execute.alu_memory.state,
+                     dut.stage4_execute.sel_memory,
+                     dut.stage4_execute.memory_ready,
+                     dut.stage4_execute.flush_alu_busy,
+                     dut.stage4_execute.dispatching_flush);
+        end
+        repeat(800) @(posedge clk);
 
         check_reg(1,  32'h55,       "x1=0x55");
         check_reg(2,  32'h55,       "lw x2");
