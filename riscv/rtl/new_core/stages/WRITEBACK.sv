@@ -20,6 +20,7 @@ module WRITEBACK (
 
     // === Notify REGISTER_DISPATCHER: register freed ===
     output reg  [4:0]  wb_done_index,
+    output reg  [31:0] wb_done_value,
     output reg         wb_done_valid
 );
 
@@ -49,6 +50,7 @@ module WRITEBACK (
                 rf_wr_data    <= prev_rd_value;
                 rf_wr_en      <= (prev_rd_index != 5'd0);
                 wb_done_index <= prev_rd_index;
+                wb_done_value <= prev_rd_value;
                 wb_done_valid <= (prev_rd_index != 5'd0);
             end
         end

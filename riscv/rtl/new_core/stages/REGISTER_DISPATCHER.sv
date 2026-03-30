@@ -32,6 +32,7 @@ module REGISTER_DISPATCHER (
 
     // === Writeback notification ===
     input  wire [4:0]  wb_rd_index,
+    input  wire [31:0] wb_rd_value,     // for forwarding (bypass)
     input  wire        wb_valid,
 
     // === Pipeline flush ===
@@ -86,11 +87,15 @@ module REGISTER_DISPATCHER (
                 next_stage_valid <= 0;
 
             // Dispatch: no hazard, not blocked → send to execute
+            // Forwarding: if writeback is writing to our source reg THIS cycle,
+            // use writeback value (regfile NBA hasn't applied yet)
             if (can_dispatch) begin
                 out_pc           <= lat_pc;
                 out_instruction  <= lat_instruction;
-                out_rs1_value    <= rf_rs1_data;
-                out_rs2_value    <= rf_rs2_data;
+                out_rs1_value    <= (wb_valid && wb_rd_index != 0 && wb_rd_index == lat_rs1_index)
+                                    ? wb_rd_value : rf_rs1_data;
+                out_rs2_value    <= (wb_valid && wb_rd_index != 0 && wb_rd_index == lat_rs2_index)
+                                    ? wb_rd_value : rf_rs2_data;
                 next_stage_valid <= 1;
 
                 if (lat_rd_index != 5'd0)

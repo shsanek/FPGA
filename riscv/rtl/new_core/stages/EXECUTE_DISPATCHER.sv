@@ -74,12 +74,23 @@ module EXECUTE_DISPATCHER (
                         (sel_muldiv        && muldiv_ready)  ||
                         (sel_system        && system_ready);
 
-    // Block new dispatch while branch/jump ALU busy OR just dispatched
-    wire flush_alu_busy = !branch_ready || !jump_ready;
-    // Also block if we're dispatching a branch/jump right now
-    wire dispatching_flush = prev_stage_valid && (sel_branch || sel_jump) && target_ready;
+    // Block dispatch while a branch/jump is in flight (waiting for result).
+    // Set when branch/jump dispatched, cleared when flush fires or branch completes without flush.
+    reg flush_wait;
+    wire branch_flush, jump_flush;  // forward declare (assigned below from ALU outputs)
 
-    assign prev_stage_ready = target_ready && !flush_alu_busy && !dispatching_flush;
+    always_ff @(posedge clk) begin
+        if (reset)
+            flush_wait <= 0;
+        else if (branch_flush || jump_flush)
+            flush_wait <= 0;  // flush fired — pipeline will be flushed
+        else if (flush_wait && branch_ready && jump_ready)
+            flush_wait <= 0;  // both ALUs idle — branch was not taken
+        else if (prev_stage_valid && (sel_branch || sel_jump) && target_ready && !flush_wait)
+            flush_wait <= 1;  // dispatching branch/jump now
+    end
+
+    assign prev_stage_ready = target_ready && !flush_wait;
 
     // Gate valid to each ALU
     wire compute_valid = prev_stage_valid && sel_compute_final && compute_ready;
@@ -98,7 +109,6 @@ module EXECUTE_DISPATCHER (
     wire        compute_done,   branch_done,   jump_done,   upper_done,   memory_done,   muldiv_done,   system_done;
     wire        compute_wb_rdy, branch_wb_rdy, jump_wb_rdy, upper_wb_rdy, memory_wb_rdy, muldiv_wb_rdy, system_wb_rdy;
 
-    wire        branch_flush, jump_flush;
     wire [31:0] branch_new_pc, jump_new_pc;
 
     // =========================================================

@@ -104,6 +104,7 @@ module PIPELINE (
     // Writeback → REGISTER_DISPATCHER notification
     // =========================================================
     wire [4:0]  wb_done_index;
+    wire [31:0] wb_done_value;
     wire        wb_done_valid;
 
     // =========================================================
@@ -149,7 +150,7 @@ module PIPELINE (
         .next_stage_valid(s3_valid), .next_stage_ready(s3_ready),
         .rf_rs1_addr(rf_rs1_addr), .rf_rs2_addr(rf_rs2_addr),
         .rf_rs1_data(rf_rs1_data), .rf_rs2_data(rf_rs2_data),
-        .wb_rd_index(wb_done_index), .wb_valid(wb_done_valid),
+        .wb_rd_index(wb_done_index), .wb_rd_value(wb_done_value), .wb_valid(wb_done_valid),
         .flush(flush)
     );
 
@@ -179,7 +180,7 @@ module PIPELINE (
         .prev_rd_index(wb_arb_rd_index), .prev_rd_value(wb_arb_rd_value),
         .prev_stage_valid(wb_arb_valid), .prev_stage_ready(wb_arb_ready),
         .rf_wr_addr(rf_wr_addr), .rf_wr_data(rf_wr_data), .rf_wr_en(rf_wr_en),
-        .wb_done_index(wb_done_index), .wb_done_valid(wb_done_valid)
+        .wb_done_index(wb_done_index), .wb_done_value(wb_done_value), .wb_done_valid(wb_done_valid)
     );
 
     // =========================================================
