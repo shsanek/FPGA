@@ -43,17 +43,27 @@ module ALU_MULDIV (
     reg [63:0] accumulator;
     reg [31:0] operand_a;
     reg [31:0] operand_b;
+    reg [31:0] orig_rs1;     // original rs1 for REM/REMU by zero
     reg [5:0]  bit_count;
-    reg        op_is_div;      // 1=div/rem, 0=mul
-    reg        sign_a, sign_b; // original signs for signed ops
-    reg        is_rem;         // 1=remainder, 0=quotient/product
-    reg        is_signed;      // signed operation
+    reg        op_is_div;
+    reg        sign_a, sign_b;
+    reg        is_rem;
+    reg        is_signed;
+    reg        rs2_is_signed; // rs2 signedness (false for MULHSU)
 
     assign prev_stage_ready = (state == S_IDLE) && !blocked;
 
-    // Unsigned absolute values
-    wire [31:0] abs_rs1 = (prev_rs1_value[31] && (funct3[1:0] != 2'b11)) ? -prev_rs1_value : prev_rs1_value;
-    wire [31:0] abs_rs2 = (prev_rs2_value[31] && (funct3[1:0] == 2'b00 || funct3[1:0] == 2'b01)) ? -prev_rs2_value : prev_rs2_value;
+    // Per-operation signedness (explicit, not funct3[1:0] hack)
+    //   rs1 signed: MUL(000) MULH(001) MULHSU(010) DIV(100) REM(110)
+    //   rs1 unsigned: MULHU(011) DIVU(101) REMU(111)
+    //   rs2 signed: MUL(000) MULH(001) DIV(100) REM(110)
+    //   rs2 unsigned: MULHSU(010) MULHU(011) DIVU(101) REMU(111)
+    wire rs1_is_unsigned = (funct3 == 3'b011) || (funct3 == 3'b101) || (funct3 == 3'b111);
+    wire rs2_is_unsigned = (funct3 == 3'b010) || (funct3 == 3'b011) ||
+                           (funct3 == 3'b101) || (funct3 == 3'b111);
+
+    wire [31:0] abs_rs1 = (prev_rs1_value[31] && !rs1_is_unsigned) ? -prev_rs1_value : prev_rs1_value;
+    wire [31:0] abs_rs2 = (prev_rs2_value[31] && !rs2_is_unsigned) ? -prev_rs2_value : prev_rs2_value;
 
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -68,17 +78,19 @@ module ALU_MULDIV (
             case (state)
                 S_IDLE: begin
                     if (!blocked && prev_stage_valid) begin
-                        lat_rd     <= rd;
-                        lat_funct3 <= funct3;
-                        sign_a     <= prev_rs1_value[31];
-                        sign_b     <= prev_rs2_value[31];
-                        bit_count  <= 0;
+                        lat_rd        <= rd;
+                        lat_funct3    <= funct3;
+                        sign_a        <= prev_rs1_value[31];
+                        sign_b        <= prev_rs2_value[31];
+                        orig_rs1      <= prev_rs1_value;
+                        rs2_is_signed <= !rs2_is_unsigned;
+                        bit_count     <= 0;
 
                         case (funct3)
                             3'b000, 3'b001, 3'b010, 3'b011: begin // MUL variants
                                 op_is_div   <= 0;
                                 is_rem      <= 0;
-                                is_signed   <= (funct3 != 3'b011);
+                                is_signed   <= !rs1_is_unsigned;
                                 accumulator <= 64'b0;
                                 operand_a   <= abs_rs1;
                                 operand_b   <= abs_rs2;
@@ -86,15 +98,17 @@ module ALU_MULDIV (
                             3'b100, 3'b101: begin // DIV, DIVU
                                 op_is_div   <= 1;
                                 is_rem      <= 0;
-                                is_signed   <= (funct3 == 3'b100);
+                                is_signed   <= !rs1_is_unsigned;
                                 accumulator <= {32'b0, abs_rs1};
+                                operand_a   <= abs_rs1;
                                 operand_b   <= abs_rs2;
                             end
                             3'b110, 3'b111: begin // REM, REMU
                                 op_is_div   <= 1;
                                 is_rem      <= 1;
-                                is_signed   <= (funct3 == 3'b110);
+                                is_signed   <= !rs1_is_unsigned;
                                 accumulator <= {32'b0, abs_rs1};
+                                operand_a   <= abs_rs1;
                                 operand_b   <= abs_rs2;
                             end
                         endcase
@@ -120,7 +134,6 @@ module ALU_MULDIV (
                         end
                         bit_count <= bit_count + 1;
                     end else begin
-                        // Done — compute final result
                         state <= S_DONE;
                     end
                 end
@@ -130,8 +143,10 @@ module ALU_MULDIV (
 
                     if (op_is_div) begin
                         if (operand_b == 0) begin
-                            // Division by zero
-                            out_rd_value <= is_rem ? operand_a : 32'hFFFFFFFF;
+                            // Division by zero (RISC-V spec):
+                            //   DIV/DIVU → 0xFFFFFFFF (-1)
+                            //   REM/REMU → original dividend (rs1)
+                            out_rd_value <= is_rem ? orig_rs1 : 32'hFFFFFFFF;
                         end else if (is_rem) begin
                             out_rd_value <= (is_signed && sign_a) ? -accumulator[63:32] : accumulator[63:32];
                         end else begin
@@ -145,7 +160,14 @@ module ALU_MULDIV (
                                 prod_lo = accumulator[31:0];
                                 out_rd_value <= (is_signed && (sign_a ^ sign_b)) ? -prod_lo : prod_lo;
                             end
-                            default: begin // MULH, MULHSU, MULHU (upper 32)
+                            3'b010: begin // MULHSU (upper 32, rs1 signed × rs2 unsigned)
+                                reg [31:0] prod_hi;
+                                prod_hi = accumulator[63:32];
+                                // Only rs1 sign matters (rs2 is unsigned)
+                                out_rd_value <= sign_a ?
+                                    (~prod_hi + (accumulator[31:0] == 0 ? 1 : 0)) : prod_hi;
+                            end
+                            default: begin // MULH, MULHU (upper 32)
                                 reg [31:0] prod_hi;
                                 prod_hi = accumulator[63:32];
                                 out_rd_value <= (is_signed && (sign_a ^ sign_b)) ?
