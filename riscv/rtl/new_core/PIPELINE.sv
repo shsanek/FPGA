@@ -43,7 +43,13 @@ module PIPELINE (
 
     // === External flush (debug set_pc) ===
     input  wire [31:0] ext_new_pc,
-    input  wire        ext_set_pc
+    input  wire        ext_set_pc,
+
+    // === Stall / debug ===
+    input  wire        stall,             // 1 = stop fetching new instructions
+    output wire        pipeline_empty,    // 1 = all stages idle, waiting for instructions
+    output wire [31:0] dbg_last_alu_pc,   // last PC sent to ALU
+    output wire [31:0] dbg_last_alu_instr // last instruction sent to ALU
 );
 
     // =========================================================
@@ -98,10 +104,13 @@ module PIPELINE (
     // =========================================================
     // Stage 1: INSTRUCTION_PROVIDER
     // =========================================================
+    // Stall: block instruction provider from emitting
+    wire s1_ready_gated = s1_ready && !stall;
+
     INSTRUCTION_PROVIDER stage1_fetch (
         .clk(clk), .reset(reset),
         .out_pc(s1_pc), .out_instruction(s1_instruction),
-        .next_stage_valid(s1_valid), .next_stage_ready(s1_ready),
+        .next_stage_valid(s1_valid), .next_stage_ready(s1_ready_gated),
         .new_pc(flush_pc), .flush(flush),
         .bus_address(icache_bus_address), .bus_read(icache_bus_read),
         .bus_ready(icache_bus_ready),
@@ -170,5 +179,29 @@ module PIPELINE (
         .rf_wr_addr(rf_wr_addr), .rf_wr_data(rf_wr_data), .rf_wr_en(rf_wr_en),
         .wb_done_index(wb_done_index), .wb_done_valid(wb_done_valid)
     );
+
+    // =========================================================
+    // Pipeline empty: all stages have no valid data in flight
+    // =========================================================
+    assign pipeline_empty = !s1_valid && !s2_valid && !s3_valid && !wb_arb_valid && !rf_wr_en;
+
+    // =========================================================
+    // Debug: last instruction dispatched to ALU (s3 → s4 handshake)
+    // =========================================================
+    reg [31:0] last_alu_pc;
+    reg [31:0] last_alu_instr;
+
+    always_ff @(posedge clk) begin
+        if (reset) begin
+            last_alu_pc    <= 32'b0;
+            last_alu_instr <= 32'h0000_0013;
+        end else if (s3_valid && s3_ready) begin
+            last_alu_pc    <= s3_pc;
+            last_alu_instr <= s3_instruction;
+        end
+    end
+
+    assign dbg_last_alu_pc    = last_alu_pc;
+    assign dbg_last_alu_instr = last_alu_instr;
 
 endmodule

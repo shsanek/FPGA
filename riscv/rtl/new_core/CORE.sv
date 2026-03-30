@@ -23,7 +23,13 @@ module CORE #(
 
     // === External flush (debug set_pc) ===
     input  wire [31:0]  ext_new_pc,
-    input  wire         ext_set_pc
+    input  wire         ext_set_pc,
+
+    // === Stall / debug ===
+    input  wire         stall,              // 1 = stop fetching instructions
+    output wire         pipeline_empty,     // 1 = all stages idle
+    output wire [31:0]  dbg_last_alu_pc,    // last PC dispatched to ALU
+    output wire [31:0]  dbg_last_alu_instr  // last instruction dispatched to ALU
 );
 
     // =========================================================
@@ -112,7 +118,10 @@ module CORE #(
         .rf_rs2_addr(rf_rs2_addr), .rf_rs2_data(rf_rs2_data),
         .rf_wr_addr(rf_wr_addr), .rf_wr_data(rf_wr_data), .rf_wr_en(rf_wr_en),
         // Flush
-        .ext_new_pc(flush_pc), .ext_set_pc(flush)
+        .ext_new_pc(flush_pc), .ext_set_pc(flush),
+        // Stall / debug
+        .stall(stall), .pipeline_empty(pipeline_empty),
+        .dbg_last_alu_pc(dbg_last_alu_pc), .dbg_last_alu_instr(dbg_last_alu_instr)
     );
 
     // =========================================================

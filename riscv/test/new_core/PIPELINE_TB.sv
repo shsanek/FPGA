@@ -116,7 +116,8 @@
         .rf_rs1_addr(rf_rs1_addr), .rf_rs1_data(rf_rs1_data),
         .rf_rs2_addr(rf_rs2_addr), .rf_rs2_data(rf_rs2_data),
         .rf_wr_addr(rf_wr_addr), .rf_wr_data(rf_wr_data), .rf_wr_en(rf_wr_en),
-        .ext_new_pc(ext_new_pc), .ext_set_pc(ext_set_pc)
+        .ext_new_pc(ext_new_pc), .ext_set_pc(ext_set_pc),
+        .stall(1'b0), .pipeline_empty(), .dbg_last_alu_pc(), .dbg_last_alu_instr()
     );
 
     // Helpers
