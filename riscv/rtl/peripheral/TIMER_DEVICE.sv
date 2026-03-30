@@ -6,11 +6,9 @@
 //   0x8  TIME_MS    (R)  — миллисекунды с момента запуска (32 бита, ~49 дней)
 //   0xC  TIME_US_LO (R)  — микросекунды с момента запуска, нижние 32 бита
 //
-// Счётчик тактов — 64 бита, считает непрерывно от reset.
-// TIME_MS = cycle_count / (CLOCK_FREQ / 1000)
 // Атомарное чтение: при чтении CYCLE_LO верхняя часть защёлкивается в snapshot.
 module TIMER_DEVICE #(
-    parameter CLOCK_FREQ = 81_250_000   // частота clk в Гц
+    parameter CLOCK_FREQ = 81_250_000
 )(
     input  wire        clk,
     input  wire        reset,
@@ -18,12 +16,15 @@ module TIMER_DEVICE #(
     input  wire [27:0] address,
     input  wire        read_trigger,
 
-    output logic [31:0] read_value,
-    output wire         controller_ready
+    output reg  [31:0] read_value,
+    output wire        controller_ready,
+    output reg         read_valid
 );
 
-    // Всегда готов (комбинационное чтение)
-    assign controller_ready = 1'b1;
+    // read_pending: 1 cycle read latency
+    reg read_pending;
+
+    assign controller_ready = !read_pending;
 
     // 64-битный счётчик тактов
     logic [63:0] cycle_count;
@@ -38,7 +39,7 @@ module TIMER_DEVICE #(
     // Snapshot верхних 32 бит — защёлкивается при чтении CYCLE_LO
     logic [31:0] cycle_hi_snapshot;
 
-    // Миллисекунды: divider counter
+    // Миллисекунды
     localparam CYCLES_PER_MS = CLOCK_FREQ / 1000;
     logic [31:0] ms_counter;
     logic [31:0] ms_divider;
@@ -76,21 +77,35 @@ module TIMER_DEVICE #(
         end
     end
 
-    // Snapshot при чтении CYCLE_LO
+    // Read pipeline: latch data + snapshot, then pulse read_valid
     always_ff @(posedge clk) begin
-        if (read_trigger && address[3:0] == 4'h0)
-            cycle_hi_snapshot <= cycle_count[63:32];
-    end
+        if (reset) begin
+            read_pending <= 0;
+            read_valid   <= 0;
+            read_value   <= 32'd0;
+        end else begin
+            read_valid <= 0;
 
-    // Чтение
-    always_comb begin
-        case (address[3:0])
-            4'h0:    read_value = cycle_count[31:0];     // CYCLE_LO
-            4'h4:    read_value = cycle_hi_snapshot;      // CYCLE_HI (snapshot)
-            4'h8:    read_value = ms_counter;             // TIME_MS
-            4'hC:    read_value = us_counter;             // TIME_US_LO
-            default: read_value = 32'd0;
-        endcase
+            if (read_trigger && !read_pending) begin
+                read_pending <= 1;
+                // Latch value and snapshot
+                case (address[3:0])
+                    4'h0: begin
+                        read_value <= cycle_count[31:0];
+                        cycle_hi_snapshot <= cycle_count[63:32];
+                    end
+                    4'h4:    read_value <= cycle_hi_snapshot;
+                    4'h8:    read_value <= ms_counter;
+                    4'hC:    read_value <= us_counter;
+                    default: read_value <= 32'd0;
+                endcase
+            end
+
+            if (read_pending) begin
+                read_valid   <= 1;
+                read_pending <= 0;
+            end
+        end
     end
 
 endmodule

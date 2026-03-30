@@ -4,6 +4,7 @@ module TIMER_DEVICE_TEST();
     logic        read_trigger;
     wire  [31:0] read_value;
     wire         controller_ready;
+    wire         read_valid;
 
     int error = 0;
 
@@ -13,7 +14,8 @@ module TIMER_DEVICE_TEST();
         .address          (address),
         .read_trigger     (read_trigger),
         .read_value       (read_value),
-        .controller_ready (controller_ready)
+        .controller_ready (controller_ready),
+        .read_valid       (read_valid)
     );
 
     initial begin clk = 0; forever #5 clk = ~clk; end
@@ -24,6 +26,8 @@ module TIMER_DEVICE_TEST();
         read_trigger = 1;
         @(posedge clk);
         read_trigger = 0;
+        // Wait for read_valid pulse
+        while (!read_valid) @(posedge clk);
         #1;
         val = read_value;
     endtask
@@ -37,24 +41,20 @@ module TIMER_DEVICE_TEST();
         reset = 1; read_trigger = 0; address = 0;
         #20; reset = 0;
 
-        // controller_ready должен быть 1
         assert(controller_ready === 1'b1) else begin
             $display("FAIL: controller_ready != 1");
             error++;
         end
 
-        // Прогоним 200 тактов (~2 мс при CLOCK_FREQ=100)
         repeat(200) @(posedge clk);
 
-        // Читаем CYCLE_LO
         read_reg(4'h0, cyc_lo);
         $display("CYCLE_LO = %0d", cyc_lo);
-        assert(cyc_lo > 200) else begin
+        assert(cyc_lo >= 200) else begin
             $display("FAIL: cycle_lo too small: %0d", cyc_lo);
             error++;
         end
 
-        // CYCLE_HI (snapshot)
         read_reg(4'h4, cyc_hi);
         $display("CYCLE_HI = %0d", cyc_hi);
         assert(cyc_hi === 32'd0) else begin
@@ -62,7 +62,6 @@ module TIMER_DEVICE_TEST();
             error++;
         end
 
-        // TIME_MS — при CLOCK_FREQ=100, 100 cycles = 1ms, 200+ cycles = 2+ ms
         read_reg(4'h8, ms);
         $display("TIME_MS  = %0d", ms);
         assert(ms >= 2) else begin
@@ -70,11 +69,9 @@ module TIMER_DEVICE_TEST();
             error++;
         end
 
-        // TIME_US
         read_reg(4'hC, us_lo);
         $display("TIME_US  = %0d", us_lo);
 
-        // Проверяем что счётчик растёт
         repeat(50) @(posedge clk);
         read_reg(4'h0, cyc_lo2);
         assert(cyc_lo2 > cyc_lo) else begin

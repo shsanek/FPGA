@@ -119,6 +119,7 @@ module TOP_V2 #(
     wire [3:0]  io_mask,   oled_mask_w,  sd_mask_w,  timer_mask_w, sp_mask_w;
     wire [31:0] io_rd_data, oled_rd_data, sd_rd_data, timer_rd_data, sp_rd_data;
     wire        io_ready,  oled_ready,   sd_ready,   timer_ready,  sp_ready;
+    wire        io_read_valid, oled_read_valid, sd_read_valid, timer_read_valid, sp_read_valid;
 
     // ===============================================================
     // Debug / Flash
@@ -225,7 +226,8 @@ module TOP_V2 #(
     // ===============================================================
     // DEBUG_CONTROLLER
     // ===============================================================
-    wire mc_dbg_ready = (!flash_active & pipeline_paused) ? bus128_ready : 1'b0;
+    // Debug ready: bus128_ready for request acceptance, OR bus128_read_valid for read completion
+    wire mc_dbg_ready = (!flash_active & pipeline_paused) ? (bus128_ready | bus128_read_valid) : 1'b0;
     wire [31:0] mc_dbg_rd_data;
 
     DEBUG_CONTROLLER #(.DEBUG_ENABLE(DEBUG_ENABLE), .ADDRESS_SIZE(30)) dbg_ctrl (
@@ -338,19 +340,19 @@ module TOP_V2 #(
         .mc_bus_read_valid(mc_bus_read_valid),
         .uart_address(io_addr), .uart_read(io_rd), .uart_write(io_wr),
         .uart_write_data(io_wr_data), .uart_write_mask(io_mask),
-        .uart_read_data(io_rd_data), .uart_ready(io_ready),
+        .uart_read_data(io_rd_data), .uart_ready(io_ready), .uart_read_valid(io_read_valid),
         .oled_address(oled_addr_w), .oled_read(oled_rd_w), .oled_write(oled_wr_w),
         .oled_write_data(oled_wr_data), .oled_write_mask(oled_mask_w),
-        .oled_read_data(oled_rd_data), .oled_ready(oled_ready),
+        .oled_read_data(oled_rd_data), .oled_ready(oled_ready), .oled_read_valid(oled_read_valid),
         .sd_address(sd_addr_w), .sd_read(sd_rd_w), .sd_write(sd_wr_w),
         .sd_write_data(sd_wr_data), .sd_write_mask(sd_mask_w),
-        .sd_read_data(sd_rd_data), .sd_ready(sd_ready),
+        .sd_read_data(sd_rd_data), .sd_ready(sd_ready), .sd_read_valid(sd_read_valid),
         .timer_address(timer_addr_w), .timer_read(timer_rd_w), .timer_write(timer_wr_w),
         .timer_write_data(timer_wr_data), .timer_write_mask(timer_mask_w),
-        .timer_read_data(timer_rd_data), .timer_ready(timer_ready),
+        .timer_read_data(timer_rd_data), .timer_ready(timer_ready), .timer_read_valid(timer_read_valid),
         .sp_address(sp_addr_w), .sp_read(sp_rd_w), .sp_write(sp_wr_w),
         .sp_write_data(sp_wr_data), .sp_write_mask(sp_mask_w),
-        .sp_read_data(sp_rd_data), .sp_ready(sp_ready)
+        .sp_read_data(sp_rd_data), .sp_ready(sp_ready), .sp_read_valid(sp_read_valid)
     );
 
     // ===============================================================
@@ -412,7 +414,7 @@ module TOP_V2 #(
         .clk(clk), .reset(reset),
         .address(io_addr[27:0]), .read_trigger(io_rd), .write_trigger(io_wr),
         .write_value(io_wr_data), .mask(io_mask), .read_value(io_rd_data),
-        .controller_ready(io_ready),
+        .controller_ready(io_ready), .read_valid(io_read_valid),
         .cpu_tx_byte(cpu_tx_byte), .cpu_tx_valid(cpu_tx_valid), .cpu_tx_ready(cpu_tx_ready),
         .cpu_rx_byte(cpu_rx_byte), .cpu_rx_valid(cpu_rx_valid)
     );
@@ -421,7 +423,7 @@ module TOP_V2 #(
         .clk(clk), .reset(reset),
         .address(oled_addr_w[27:0]), .read_trigger(oled_rd_w), .write_trigger(oled_wr_w),
         .write_value(oled_wr_data), .mask(oled_mask_w), .read_value(oled_rd_data),
-        .controller_ready(oled_ready),
+        .controller_ready(oled_ready), .read_valid(oled_read_valid),
         .oled_sck(oled_sck), .oled_mosi(oled_mosi), .oled_cs_n(oled_cs_n),
         .oled_dc(oled_dc), .oled_res_n(oled_res_n),
         .oled_vccen(oled_vccen), .oled_pmoden(oled_pmoden)
@@ -431,7 +433,7 @@ module TOP_V2 #(
         .clk(clk), .reset(reset),
         .address(sd_addr_w[27:0]), .read_trigger(sd_rd_w), .write_trigger(sd_wr_w),
         .write_value(sd_wr_data), .mask(sd_mask_w), .read_value(sd_rd_data),
-        .controller_ready(sd_ready),
+        .controller_ready(sd_ready), .read_valid(sd_read_valid),
         .sd_sck(sd_sck), .sd_mosi(sd_mosi), .sd_miso(sd_miso),
         .sd_cs_n(sd_cs_n), .sd_cd_n(sd_cd_n)
     );
@@ -439,14 +441,15 @@ module TOP_V2 #(
     TIMER_DEVICE #(.CLOCK_FREQ(CLOCK_FREQ)) timer_dev (
         .clk(clk), .reset(reset),
         .address(timer_addr_w[27:0]), .read_trigger(timer_rd_w),
-        .read_value(timer_rd_data), .controller_ready(timer_ready)
+        .read_value(timer_rd_data), .controller_ready(timer_ready),
+        .read_valid(timer_read_valid)
     );
 
     SCRATCHPAD scratchpad (
         .clk(clk), .reset(reset),
         .address(sp_addr_w[27:0]), .read_trigger(sp_rd_w), .write_trigger(sp_wr_w),
         .write_value(sp_wr_data), .mask(sp_mask_w), .read_value(sp_rd_data),
-        .controller_ready(sp_ready),
+        .controller_ready(sp_ready), .read_valid(sp_read_valid),
         // Blitter disabled
         .blitter_active(), .blitter_bus_addr(), .blitter_bus_rd(),
         .blitter_bus_wr(), .blitter_bus_wr_data(), .blitter_bus_mask(),

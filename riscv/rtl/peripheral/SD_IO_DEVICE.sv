@@ -22,8 +22,9 @@ module SD_IO_DEVICE (
     input  wire        write_trigger,
     input  wire [31:0] write_value,
     input  wire [3:0]  mask,
-    output wire [31:0] read_value,
+    output reg  [31:0] read_value,
     output wire        controller_ready,
+    output reg         read_valid,
 
     // SPI
     output wire        sd_sck,
@@ -94,30 +95,22 @@ module SD_IO_DEVICE (
     wire spi_active = !fifo_empty || spi_busy;
 
     // ---------------------------------------------------------------
-    // Комбинационное чтение
+    // Read pending (1-cycle read latency)
     // ---------------------------------------------------------------
-    reg [31:0] rdata;
-    always_comb begin
-        case (reg_sel)
-            REG_DATA:    rdata = {24'b0, rx_data_r};
-            REG_CONTROL: rdata = {31'b0, cs_r};
-            REG_STATUS:  rdata = {29'b0, ~sd_cd_n, spi_active, 1'b0};
-            REG_DIVIDER: rdata = {16'b0, divider_r};
-            default:     rdata = 32'b0;
-        endcase
-    end
-    assign read_value = rdata;
+    reg read_pending;
 
     // ---------------------------------------------------------------
     // controller_ready:
     //   Write DATA: blocked only when FIFO full
     //   Read DATA: blocked while SPI active (FIFO not empty OR SPI busy)
+    //   Read pending: blocked until read_valid pulses
     //   All other registers: always ready
     // ---------------------------------------------------------------
     wire writing_data = write_trigger && (reg_sel == REG_DATA);
     wire reading_data = read_trigger  && (reg_sel == REG_DATA);
 
-    assign controller_ready = writing_data ? !fifo_full :
+    assign controller_ready = read_pending ? 1'b0 :
+                              writing_data ? !fifo_full :
                               reading_data ? !spi_active :
                               1'b1;
 
@@ -132,7 +125,28 @@ module SD_IO_DEVICE (
             cs_r      <= 1'b0;
             rx_data_r <= 8'hFF;
             divider_r <= DEFAULT_DIVIDER;
+            read_pending <= 0;
+            read_valid   <= 0;
+            read_value   <= 32'b0;
         end else begin
+            read_valid <= 0;
+
+            // --- Read pipeline ---
+            if (read_trigger && controller_ready && !read_pending) begin
+                read_pending <= 1;
+                case (reg_sel)
+                    REG_DATA:    read_value <= {24'b0, rx_data_r};
+                    REG_CONTROL: read_value <= {31'b0, cs_r};
+                    REG_STATUS:  read_value <= {29'b0, ~sd_cd_n, spi_active, 1'b0};
+                    REG_DIVIDER: read_value <= {16'b0, divider_r};
+                    default:     read_value <= 32'b0;
+                endcase
+            end
+            if (read_pending) begin
+                read_valid   <= 1;
+                read_pending <= 0;
+            end
+
             // Latch MISO result
             if (spi_done)
                 rx_data_r <= spi_rx;

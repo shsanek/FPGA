@@ -48,6 +48,7 @@ module PERIPHERAL_BUS_V2 (
     output wire [3:0]   uart_write_mask,
     input  wire [31:0]  uart_read_data,
     input  wire         uart_ready,
+    input  wire         uart_read_valid,
 
     // === OLED_FB_DEVICE: 32-bit device interface ===
     output wire [31:0]  oled_address,
@@ -57,6 +58,7 @@ module PERIPHERAL_BUS_V2 (
     output wire [3:0]   oled_write_mask,
     input  wire [31:0]  oled_read_data,
     input  wire         oled_ready,
+    input  wire         oled_read_valid,
 
     // === SD_IO_DEVICE: 32-bit device interface ===
     output wire [31:0]  sd_address,
@@ -66,6 +68,7 @@ module PERIPHERAL_BUS_V2 (
     output wire [3:0]   sd_write_mask,
     input  wire [31:0]  sd_read_data,
     input  wire         sd_ready,
+    input  wire         sd_read_valid,
 
     // === TIMER_DEVICE: 32-bit device interface ===
     output wire [31:0]  timer_address,
@@ -75,6 +78,7 @@ module PERIPHERAL_BUS_V2 (
     output wire [3:0]   timer_write_mask,
     input  wire [31:0]  timer_read_data,
     input  wire         timer_ready,
+    input  wire         timer_read_valid,
 
     // === SCRATCHPAD: 32-bit device interface ===
     output wire [31:0]  sp_address,
@@ -83,7 +87,8 @@ module PERIPHERAL_BUS_V2 (
     output wire [31:0]  sp_write_data,
     output wire [3:0]   sp_write_mask,
     input  wire [31:0]  sp_read_data,
-    input  wire         sp_ready
+    input  wire         sp_ready,
+    input  wire         sp_read_valid
 );
 
     // =========================================================
@@ -133,7 +138,8 @@ module PERIPHERAL_BUS_V2 (
         .dev_write_data (uart_write_data),
         .dev_write_mask (uart_write_mask),
         .dev_read_data  (uart_read_data),
-        .dev_ready      (uart_ready)
+        .dev_ready      (uart_ready),
+        .dev_read_valid (uart_read_valid)
     );
 
     // --- OLED converter ---
@@ -153,7 +159,8 @@ module PERIPHERAL_BUS_V2 (
         .dev_write_data (oled_write_data),
         .dev_write_mask (oled_write_mask),
         .dev_read_data  (oled_read_data),
-        .dev_ready      (oled_ready)
+        .dev_ready      (oled_ready),
+        .dev_read_valid (oled_read_valid)
     );
 
     // --- SD converter ---
@@ -173,7 +180,8 @@ module PERIPHERAL_BUS_V2 (
         .dev_write_data (sd_write_data),
         .dev_write_mask (sd_write_mask),
         .dev_read_data  (sd_read_data),
-        .dev_ready      (sd_ready)
+        .dev_ready      (sd_ready),
+        .dev_read_valid (sd_read_valid)
     );
 
     // --- TIMER converter ---
@@ -193,7 +201,8 @@ module PERIPHERAL_BUS_V2 (
         .dev_write_data (timer_write_data),
         .dev_write_mask (timer_write_mask),
         .dev_read_data  (timer_read_data),
-        .dev_ready      (timer_ready)
+        .dev_ready      (timer_ready),
+        .dev_read_valid (timer_read_valid)
     );
 
     // --- SCRATCHPAD converter ---
@@ -213,7 +222,8 @@ module PERIPHERAL_BUS_V2 (
         .dev_write_data (sp_write_data),
         .dev_write_mask (sp_write_mask),
         .dev_read_data  (sp_read_data),
-        .dev_ready      (sp_ready)
+        .dev_ready      (sp_ready),
+        .dev_read_valid (sp_read_valid)
     );
 
     // =========================================================

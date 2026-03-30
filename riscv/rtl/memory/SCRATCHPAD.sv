@@ -21,8 +21,9 @@ module SCRATCHPAD #(
     input  wire        write_trigger,
     input  wire [31:0] write_value,
     input  wire [3:0]  mask,
-    output wire [31:0] read_value,
+    output reg  [31:0] read_value,
     output wire        controller_ready,
+    output reg         read_valid,
 
     // Blitter bus master interface
     output wire        blitter_active,
@@ -111,8 +112,26 @@ module SCRATCHPAD #(
         endcase
     end
 
-    assign read_value       = is_mmio ? mmio_rd_data : dout;
-    assign controller_ready = 1'b1;
+    // Read pending (1-cycle for BRAM, MMIO latched same cycle)
+    reg read_pending;
+    assign controller_ready = !read_pending;
+
+    always_ff @(posedge clk) begin
+        if (reset) begin
+            read_pending <= 0;
+            read_valid   <= 0;
+            read_value   <= 32'b0;
+        end else begin
+            read_valid <= 0;
+            if (read_trigger && !read_pending)
+                read_pending <= 1;
+            if (read_pending) begin
+                read_value   <= is_mmio ? mmio_rd_data : dout;
+                read_valid   <= 1;
+                read_pending <= 0;
+            end
+        end
+    end
 
     // ---------------------------------------------------------------
     // Working registers

@@ -22,8 +22,9 @@ module OLED_FB_DEVICE (
     input  wire        write_trigger,
     input  wire [31:0] write_value,
     input  wire [3:0]  mask,
-    output wire [31:0] read_value,
+    output reg  [31:0] read_value,
     output wire        controller_ready,
+    output reg         read_valid,
 
     // OLED SPI пины
     output wire        oled_cs_n,
@@ -273,14 +274,11 @@ module OLED_FB_DEVICE (
     // =========================================================
     assign rend_busy = (rstate != R_IDLE);
 
-    // Никакой аппаратной блокировки — controller_ready всегда 1.
-    // Dual-port BRAM: CPU пишет в Port A, рендерер читает Port B.
-    // Синхронизация — ответственность клиента через oled_sync().
-    assign controller_ready = 1'b1;
+    // Read pending (1-cycle read latency for BRAM and register reads)
+    reg read_pending;
+    assign controller_ready = !read_pending;
 
-    // =========================================================
-    // CPU read mux
-    // =========================================================
+    // CPU read mux (combinational — latched in read_pending pipeline)
     logic [31:0] rdata;
     always_comb begin
         if (is_fb) begin
@@ -289,15 +287,32 @@ module OLED_FB_DEVICE (
             rdata = {16'b0, palette[pal_idx]};
         end else begin
             case (reg_sel)
-                2'd0: rdata = {30'b0, mode_r, 1'b0};       // CONTROL (flush bit not readable)
-                2'd1: rdata = {31'b0, rend_busy};           // STATUS
-                2'd2: rdata = {23'b0, vp_width_r};          // VP_WIDTH
-                2'd3: rdata = {23'b0, vp_height_r};         // VP_HEIGHT
+                2'd0: rdata = {30'b0, mode_r, 1'b0};
+                2'd1: rdata = {31'b0, rend_busy};
+                2'd2: rdata = {23'b0, vp_width_r};
+                2'd3: rdata = {23'b0, vp_height_r};
                 default: rdata = 32'b0;
             endcase
         end
     end
-    assign read_value = rdata;
+
+    // Read pipeline
+    always_ff @(posedge clk) begin
+        if (reset) begin
+            read_pending <= 0;
+            read_valid   <= 0;
+            read_value   <= 32'b0;
+        end else begin
+            read_valid <= 0;
+            if (read_trigger && !read_pending)
+                read_pending <= 1;
+            if (read_pending) begin
+                read_value   <= rdata;  // BRAM data ready after 1 cycle
+                read_valid   <= 1;
+                read_pending <= 0;
+            end
+        end
+    end
 
     // =========================================================
     // BRAM Port A address (CPU side)

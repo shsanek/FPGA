@@ -25,8 +25,9 @@ module UART_IO_DEVICE #(
     input  wire        write_trigger,
     input  wire [31:0] write_value,
     input  wire [3:0]  mask,
-    output wire [31:0] read_value,
+    output reg  [31:0] read_value,
     output wire        controller_ready,
+    output reg         read_valid,
 
     // Passthrough к DEBUG_CONTROLLER
     output wire [7:0]  cpu_tx_byte,
@@ -75,23 +76,14 @@ module UART_IO_DEVICE #(
     logic rx_pop_pending;
 
     // ---------------------------------------------------------------
-    // Комбинационное чтение
+    // Read pending (1-cycle read latency)
     // ---------------------------------------------------------------
-    reg [31:0] rdata;
-    always_comb begin
-        case (reg_sel)
-            REG_TX:     rdata = {24'b0, tx_data_r};
-            REG_RX:     rdata = {24'b0, rx_head};
-            REG_STATUS: rdata = {30'b0, cpu_tx_ready, !rx_empty};
-            default:    rdata = 32'b0;
-        endcase
-    end
-    assign read_value = rdata;
+    reg read_pending;
 
     // ---------------------------------------------------------------
-    // controller_ready
+    // controller_ready: not busy with TX and not mid-read
     // ---------------------------------------------------------------
-    assign controller_ready = (tx_state == TX_IDLE);
+    assign controller_ready = (tx_state == TX_IDLE) && !read_pending;
 
     // ---------------------------------------------------------------
     // TX
@@ -109,7 +101,26 @@ module UART_IO_DEVICE #(
             rx_wr_ptr      <= '0;
             rx_rd_ptr      <= '0;
             rx_pop_pending <= 1'b0;
+            read_pending   <= 0;
+            read_valid     <= 0;
+            read_value     <= 32'b0;
         end else begin
+            read_valid <= 0;
+
+            // --- Read pipeline ---
+            if (read_trigger && !read_pending) begin
+                read_pending <= 1;
+                case (reg_sel)
+                    REG_TX:     read_value <= {24'b0, tx_data_r};
+                    REG_RX:     read_value <= {24'b0, rx_head};
+                    REG_STATUS: read_value <= {30'b0, cpu_tx_ready, !rx_empty};
+                    default:    read_value <= 32'b0;
+                endcase
+            end
+            if (read_pending) begin
+                read_valid   <= 1;
+                read_pending <= 0;
+            end
 
             // --- TX FSM ---
             case (tx_state)
