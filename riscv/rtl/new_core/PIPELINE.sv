@@ -104,13 +104,10 @@ module PIPELINE (
     // =========================================================
     // Stage 1: INSTRUCTION_PROVIDER
     // =========================================================
-    // Stall: block instruction provider from emitting
-    wire s1_ready_gated = s1_ready && !stall;
-
     INSTRUCTION_PROVIDER stage1_fetch (
         .clk(clk), .reset(reset),
         .out_pc(s1_pc), .out_instruction(s1_instruction),
-        .next_stage_valid(s1_valid), .next_stage_ready(s1_ready_gated),
+        .next_stage_valid(s1_valid), .next_stage_ready(s1_ready),
         .new_pc(flush_pc), .flush(flush),
         .bus_address(icache_bus_address), .bus_read(icache_bus_read),
         .bus_ready(icache_bus_ready),
