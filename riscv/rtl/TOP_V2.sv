@@ -53,7 +53,11 @@ module TOP_V2 #(
 
     // Status
     output wire boot_active, boot_error,
-    output wire sd_bus_read, sd_bus_write
+    output wire sd_bus_read, sd_bus_write,
+
+    // Test interface (sim only: bypass flash_loader to start CPU)
+    input  wire [31:0] ext_test_new_pc,
+    input  wire        ext_test_set_pc
 );
     localparam ADDRESS_SIZE = 28;
     localparam DATA_SIZE = 32;
@@ -250,8 +254,10 @@ module TOP_V2 #(
     // ===============================================================
     // CORE (pipelined, internal I_CACHE + BUS_ARBITER)
     // ===============================================================
-    wire combined_set_pc = flash_set_pc | dbg_set_pc;
-    wire [31:0] combined_new_pc = flash_set_pc ? flash_new_pc : dbg_new_pc;
+    wire combined_set_pc = flash_set_pc | dbg_set_pc | ext_test_set_pc;
+    wire [31:0] combined_new_pc = flash_set_pc ? flash_new_pc :
+                                  dbg_set_pc   ? dbg_new_pc   :
+                                                  ext_test_new_pc;
 
     CORE #(
         .ICACHE_DEPTH(ICACHE_DEPTH),
