@@ -89,6 +89,7 @@ module EXECUTE_DISPATCHER (
     wire [4:0]  compute_rd_idx, branch_rd_idx, jump_rd_idx, upper_rd_idx, memory_rd_idx, muldiv_rd_idx;
     wire [31:0] compute_rd_val, branch_rd_val, jump_rd_val, upper_rd_val, memory_rd_val, muldiv_rd_val;
     wire        compute_done,   branch_done,   jump_done,   upper_done,   memory_done,   muldiv_done;
+    wire        compute_wb_rdy, branch_wb_rdy, jump_wb_rdy, upper_wb_rdy, memory_wb_rdy, muldiv_wb_rdy;
 
     wire        branch_flush, jump_flush;
     wire [31:0] branch_new_pc, jump_new_pc;
@@ -102,7 +103,7 @@ module EXECUTE_DISPATCHER (
         .prev_rs1_value(prev_rs1_value), .prev_rs2_value(prev_rs2_value),
         .prev_stage_valid(compute_valid), .prev_stage_ready(compute_ready),
         .out_rd_index(compute_rd_idx), .out_rd_value(compute_rd_val),
-        .next_stage_valid(compute_done), .next_stage_ready(next_stage_ready)
+        .next_stage_valid(compute_done), .next_stage_ready(compute_wb_rdy)
     );
 
     ALU_BRANCH alu_branch (
@@ -111,7 +112,7 @@ module EXECUTE_DISPATCHER (
         .prev_rs1_value(prev_rs1_value), .prev_rs2_value(prev_rs2_value),
         .prev_stage_valid(branch_valid), .prev_stage_ready(branch_ready),
         .out_rd_index(branch_rd_idx), .out_rd_value(branch_rd_val),
-        .next_stage_valid(branch_done), .next_stage_ready(next_stage_ready),
+        .next_stage_valid(branch_done), .next_stage_ready(branch_wb_rdy),
         .out_flush(branch_flush), .out_new_pc(branch_new_pc)
     );
 
@@ -121,7 +122,7 @@ module EXECUTE_DISPATCHER (
         .prev_rs1_value(prev_rs1_value),
         .prev_stage_valid(jump_valid), .prev_stage_ready(jump_ready),
         .out_rd_index(jump_rd_idx), .out_rd_value(jump_rd_val),
-        .next_stage_valid(jump_done), .next_stage_ready(next_stage_ready),
+        .next_stage_valid(jump_done), .next_stage_ready(jump_wb_rdy),
         .out_flush(jump_flush), .out_new_pc(jump_new_pc)
     );
 
@@ -130,7 +131,7 @@ module EXECUTE_DISPATCHER (
         .prev_pc(prev_pc), .prev_instruction(prev_instruction),
         .prev_stage_valid(upper_valid), .prev_stage_ready(upper_ready),
         .out_rd_index(upper_rd_idx), .out_rd_value(upper_rd_val),
-        .next_stage_valid(upper_done), .next_stage_ready(next_stage_ready)
+        .next_stage_valid(upper_done), .next_stage_ready(upper_wb_rdy)
     );
 
     ALU_MEMORY alu_memory (
@@ -139,7 +140,7 @@ module EXECUTE_DISPATCHER (
         .prev_rs1_value(prev_rs1_value), .prev_rs2_value(prev_rs2_value),
         .prev_stage_valid(memory_valid), .prev_stage_ready(memory_ready),
         .out_rd_index(memory_rd_idx), .out_rd_value(memory_rd_val),
-        .next_stage_valid(memory_done), .next_stage_ready(next_stage_ready),
+        .next_stage_valid(memory_done), .next_stage_ready(memory_wb_rdy),
         .bus_address(mem_bus_address), .bus_read(mem_bus_read),
         .bus_write(mem_bus_write), .bus_write_data(mem_bus_write_data),
         .bus_write_mask(mem_bus_write_mask),
@@ -153,30 +154,28 @@ module EXECUTE_DISPATCHER (
         .prev_rs1_value(prev_rs1_value), .prev_rs2_value(prev_rs2_value),
         .prev_stage_valid(muldiv_valid), .prev_stage_ready(muldiv_ready),
         .out_rd_index(muldiv_rd_idx), .out_rd_value(muldiv_rd_val),
-        .next_stage_valid(muldiv_done), .next_stage_ready(next_stage_ready)
+        .next_stage_valid(muldiv_done), .next_stage_ready(muldiv_wb_rdy)
     );
 
     // =========================================================
-    // Result mux: priority (only one should finish per cycle normally)
+    // WRITEBACK_ARBITER: per-ALU ready, priority merge
     // =========================================================
-    assign next_stage_valid = compute_done || branch_done || jump_done ||
-                              upper_done   || memory_done || muldiv_done;
-
-    assign out_rd_index = compute_done ? compute_rd_idx :
-                          branch_done  ? branch_rd_idx  :
-                          jump_done    ? jump_rd_idx    :
-                          upper_done   ? upper_rd_idx   :
-                          memory_done  ? memory_rd_idx  :
-                          muldiv_done  ? muldiv_rd_idx  :
-                                         5'd0;
-
-    assign out_rd_value = compute_done ? compute_rd_val :
-                          branch_done  ? branch_rd_val  :
-                          jump_done    ? jump_rd_val    :
-                          upper_done   ? upper_rd_val   :
-                          memory_done  ? memory_rd_val  :
-                          muldiv_done  ? muldiv_rd_val  :
-                                         32'b0;
+    WRITEBACK_ARBITER wb_arb (
+        .compute_rd_index(compute_rd_idx), .compute_rd_value(compute_rd_val),
+        .compute_valid(compute_done), .compute_ready(compute_wb_rdy),
+        .branch_rd_index(branch_rd_idx), .branch_rd_value(branch_rd_val),
+        .branch_valid(branch_done), .branch_ready(branch_wb_rdy),
+        .jump_rd_index(jump_rd_idx), .jump_rd_value(jump_rd_val),
+        .jump_valid(jump_done), .jump_ready(jump_wb_rdy),
+        .upper_rd_index(upper_rd_idx), .upper_rd_value(upper_rd_val),
+        .upper_valid(upper_done), .upper_ready(upper_wb_rdy),
+        .memory_rd_index(memory_rd_idx), .memory_rd_value(memory_rd_val),
+        .memory_valid(memory_done), .memory_ready(memory_wb_rdy),
+        .muldiv_rd_index(muldiv_rd_idx), .muldiv_rd_value(muldiv_rd_val),
+        .muldiv_valid(muldiv_done), .muldiv_ready(muldiv_wb_rdy),
+        .wb_rd_index(out_rd_index), .wb_rd_value(out_rd_value),
+        .wb_valid(next_stage_valid), .wb_ready(next_stage_ready)
+    );
 
     // Flush from branch or jump
     assign out_flush  = branch_flush || jump_flush;

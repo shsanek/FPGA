@@ -46,10 +46,11 @@ module WRITEBACK_ARBITER (
     input  wire        muldiv_valid,
     output wire        muldiv_ready,
 
-    // === To register file (writeback) ===
+    // === To WRITEBACK stage ===
     output wire [4:0]  wb_rd_index,
     output wire [31:0] wb_rd_value,
-    output wire        wb_valid
+    output wire        wb_valid,
+    input  wire        wb_ready          // WRITEBACK can accept
 );
 
     // =========================================================
@@ -69,9 +70,9 @@ module WRITEBACK_ARBITER (
     // Priority arbitration: single > memory > muldiv
     // Only one writeback per cycle (register file has 1 write port)
     // =========================================================
-    wire pick_single = single_valid;
-    wire pick_memory = !single_valid && memory_valid;
-    wire pick_muldiv = !single_valid && !memory_valid && muldiv_valid;
+    wire pick_single = single_valid && wb_ready;
+    wire pick_memory = !single_valid && memory_valid && wb_ready;
+    wire pick_muldiv = !single_valid && !memory_valid && muldiv_valid && wb_ready;
 
     assign wb_valid    = pick_single || pick_memory || pick_muldiv;
     assign wb_rd_index = pick_single ? single_rd_index :
