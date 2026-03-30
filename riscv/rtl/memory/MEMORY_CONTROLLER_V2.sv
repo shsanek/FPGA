@@ -28,6 +28,11 @@ module MEMORY_CONTROLLER_V2 #(
     input  wire [ADDR_WIDTH-1:0]  invalidate_address,
     input  wire                   invalidate_trigger,
 
+    // === Output buffer peek (combinational, always reflects current state) ===
+    output wire [ADDR_WIDTH-1:0] peek_line_address,   // line-aligned address in output buffer
+    output wire [DATA_WIDTH-1:0] peek_line_data,       // 128-bit line data
+    output wire                  peek_line_valid,      // output buffer contains valid data
+
     // === Bus slave (upstream) ===
     input  wire [ADDR_WIDTH-1:0]  bus_address,
     input  wire                   bus_read,
@@ -80,6 +85,11 @@ module MEMORY_CONTROLLER_V2 #(
     reg [DATA_WIDTH-1:0]       output_value;
 
     assign bus_read_data = output_value;
+
+    // Peek: expose output buffer state (for prefetch by INSTRUCTION_PROVIDER)
+    assign peek_line_address = {{(ADDR_WIDTH-CACHE_ADDR_W){1'b0}}, output_address[CACHE_ADDR_W-1:4], 4'b0000};
+    assign peek_line_data    = output_value;
+    assign peek_line_valid   = output_valid;
 
     // =========================================================
     // Latched command state
