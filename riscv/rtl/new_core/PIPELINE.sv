@@ -46,10 +46,13 @@ module PIPELINE (
     input  wire        ext_set_pc,
 
     // === Stall / debug ===
-    input  wire        stall,             // 1 = stop fetching new instructions
-    output wire        pipeline_empty,    // 1 = all stages idle, waiting for instructions
-    output wire [31:0] dbg_last_alu_pc,   // last PC sent to ALU
-    output wire [31:0] dbg_last_alu_instr // last instruction sent to ALU
+    input  wire        stall,
+    output wire        pipeline_empty,
+    output wire [31:0] dbg_last_alu_pc,
+    output wire [31:0] dbg_last_alu_instr,
+
+    // === Flush output (for I_CACHE reset in CORE) ===
+    output wire        out_flush
 );
 
     // =========================================================
@@ -59,6 +62,8 @@ module PIPELINE (
     wire [31:0] alu_new_pc;
     wire        flush    = alu_flush || ext_set_pc;
     wire [31:0] flush_pc = ext_set_pc ? ext_new_pc : alu_new_pc;
+
+    assign out_flush = flush;
 
     // =========================================================
     // Stage 1 → 2 wires

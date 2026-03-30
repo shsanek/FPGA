@@ -87,10 +87,7 @@ module CORE #(
     // =========================================================
     // Flush
     // =========================================================
-    wire        pipeline_flush;
-    wire [31:0] pipeline_new_pc;
-    wire        flush    = pipeline_flush || ext_set_pc;
-    wire [31:0] flush_pc = ext_set_pc ? ext_new_pc : pipeline_new_pc;
+    wire pipeline_flush;  // from PIPELINE out_flush
 
     // =========================================================
     // Pipeline
@@ -118,10 +115,11 @@ module CORE #(
         .rf_rs2_addr(rf_rs2_addr), .rf_rs2_data(rf_rs2_data),
         .rf_wr_addr(rf_wr_addr), .rf_wr_data(rf_wr_data), .rf_wr_en(rf_wr_en),
         // Flush
-        .ext_new_pc(flush_pc), .ext_set_pc(flush),
+        .ext_new_pc(ext_new_pc), .ext_set_pc(ext_set_pc),
         // Stall / debug
         .stall(stall), .pipeline_empty(pipeline_empty),
-        .dbg_last_alu_pc(dbg_last_alu_pc), .dbg_last_alu_instr(dbg_last_alu_instr)
+        .dbg_last_alu_pc(dbg_last_alu_pc), .dbg_last_alu_instr(dbg_last_alu_instr),
+        .out_flush(pipeline_flush)
     );
 
     // =========================================================
@@ -130,7 +128,7 @@ module CORE #(
     MEMORY_CONTROLLER_V2 #(
         .DEPTH(ICACHE_DEPTH), .WAYS(ICACHE_WAYS), .READ_ONLY(1)
     ) icache (
-        .clk(clk), .reset(reset || flush),
+        .clk(clk), .reset(reset || pipeline_flush),
         // Invalidate (not connected)
         .invalidate_ready(), .invalidate_address(32'b0), .invalidate_trigger(1'b0),
         // Peek outputs
