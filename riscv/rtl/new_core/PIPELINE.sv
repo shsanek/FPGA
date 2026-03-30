@@ -52,7 +52,10 @@ module PIPELINE (
     output wire [31:0] dbg_last_alu_instr,
 
     // === Flush output (for I_CACHE reset in CORE) ===
-    output wire        out_flush
+    output wire        out_flush,
+
+    // === Instruction counter ===
+    output wire [31:0] instr_count
 );
 
     // =========================================================
@@ -169,7 +172,8 @@ module PIPELINE (
         .mem_bus_write(data_bus_write), .mem_bus_write_data(data_bus_write_data),
         .mem_bus_write_mask(data_bus_write_mask),
         .mem_bus_ready(data_bus_ready), .mem_bus_read_data(data_bus_read_data),
-        .mem_bus_read_valid(data_bus_read_valid)
+        .mem_bus_read_valid(data_bus_read_valid),
+        .instr_count(instr_count)
     );
 
     // =========================================================

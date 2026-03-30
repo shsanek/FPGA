@@ -1,7 +1,7 @@
 // WRITEBACK_ARBITER — collects results from all ALUs, sends to writeback.
 //
-// Single-cycle ALUs (compute, branch, jump, upper) never collide — only one
-// dispatched per cycle. Their outputs are muxed combinationally.
+// Single-cycle ALUs (compute, branch, jump, upper, system) CAN collide when
+// dispatched on consecutive cycles to different ALUs. Priority mux resolves.
 //
 // Multi-cycle ALUs (memory, muldiv) can finish at any time, potentially
 // simultaneously with each other or with a single-cycle ALU.
@@ -92,12 +92,19 @@ module WRITEBACK_ARBITER (
     // =========================================================
     // Ready signals: accepted this cycle?
     // =========================================================
-    // Single-cycle ALUs: ready when they win (or no result)
-    assign compute_ready = pick_single || !compute_valid;
-    assign branch_ready  = pick_single || !branch_valid;
-    assign jump_ready    = pick_single || !jump_valid;
-    assign upper_ready   = pick_single || !upper_valid;
-    assign system_ready  = pick_single || !system_valid;
+    // Single-cycle ALUs: ready only when THIS ALU won the mux (or no result).
+    // Multiple single-cycle ALUs can finish simultaneously — only the winner clears.
+    wire pick_compute = wb_ready && compute_valid;
+    wire pick_branch  = wb_ready && !compute_valid && branch_valid;
+    wire pick_jump    = wb_ready && !compute_valid && !branch_valid && jump_valid;
+    wire pick_upper   = wb_ready && !compute_valid && !branch_valid && !jump_valid && upper_valid;
+    wire pick_system  = wb_ready && !compute_valid && !branch_valid && !jump_valid && !upper_valid && system_valid;
+
+    assign compute_ready = pick_compute || !compute_valid;
+    assign branch_ready  = pick_branch  || !branch_valid;
+    assign jump_ready    = pick_jump    || !jump_valid;
+    assign upper_ready   = pick_upper   || !upper_valid;
+    assign system_ready  = pick_system  || !system_valid;
 
     // Multi-cycle ALUs: ready only when they win
     assign memory_ready = pick_memory;

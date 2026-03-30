@@ -1,14 +1,10 @@
-// CORE_TB — test harness for CORE module.
-// Connects CORE to mock 128-bit memory (combined code + data).
-// Loads program from imem[], runs until pipeline_empty && stall, reports cycle count.
+module core_test_bench_ipc;
 
-// No module wrapper — included by test files.
-
+    // Override CORE_TB — use larger I-cache so program fits
     reg clk = 0;
     always #5 clk = ~clk;
     reg reset = 1;
 
-    // === Mock memory: 128-bit bus, 1-cycle latency ===
     wire [31:0]  bus_address;
     wire         bus_read, bus_write;
     wire [127:0] bus_write_data;
@@ -17,10 +13,8 @@
     reg  [127:0] bus_read_data;
     reg          bus_read_valid = 0;
 
-    // Unified memory: 64K words = 256KB (code + data)
     reg [31:0] mem [0:65535];
 
-    // 1-cycle read latency, instant write
     reg        mem_pending = 0;
     reg [31:0] mem_pending_addr;
 
@@ -31,7 +25,6 @@
             bus_ready   <= 1;
             mem_pending <= 0;
         end else begin
-            // Write: instant, byte-masked
             if (bus_write && bus_ready) begin
                 reg [31:0] base;
                 base = {bus_address[31:4], 4'b0000};
@@ -46,7 +39,6 @@
                 end
             end
 
-            // Read: 1-cycle latency
             if (bus_read && bus_ready) begin
                 mem_pending      <= 1;
                 mem_pending_addr <= bus_address;
@@ -63,7 +55,6 @@
         end
     end
 
-    // === DUT ===
     reg [31:0] ext_new_pc = 0;
     reg        ext_set_pc = 0;
     reg        core_stall = 0;
@@ -71,7 +62,8 @@
     wire [31:0] dbg_pc, dbg_instr;
     wire [31:0] instr_count;
 
-    CORE #(.ICACHE_DEPTH(16), .ICACHE_WAYS(1)) dut (
+    // Large I-cache: 64 lines = 1KB (fits 198-word program)
+    CORE #(.ICACHE_DEPTH(64), .ICACHE_WAYS(1)) dut (
         .clk(clk), .reset(reset),
         .bus_address(bus_address), .bus_read(bus_read), .bus_write(bus_write),
         .bus_write_data(bus_write_data), .bus_write_mask(bus_write_mask),
@@ -82,13 +74,12 @@
         .instr_count(instr_count)
     );
 
-    // === Helpers ===
     int errors = 0;
     int cycle_count;
 
     task automatic load_program(input string hex_file);
         int i;
-        for (i = 0; i < 65536; i++) mem[i] = 32'h00000013; // NOP
+        for (i = 0; i < 65536; i++) mem[i] = 32'h00000013;
         $readmemh(hex_file, mem);
     endtask
 
@@ -97,29 +88,35 @@
         @(posedge clk); @(posedge clk);
         reset = 0;
         core_stall = 0;
-
-        // Run until EBREAK seen (check every cycle, latch on first sight)
         cycle_count = 0;
         while (cycle_count < max_cycles) begin
             @(posedge clk); #1;
             cycle_count++;
-            // Check s3→s4 handshake for ebreak passing through
             if (dut.pipeline_inst.s3_valid && dut.pipeline_inst.s3_ready &&
                 dut.pipeline_inst.s3_instruction == 32'h00100073)
                 break;
         end
-
         if (cycle_count >= max_cycles)
-            $display("TIMEOUT after %0d cycles", max_cycles);
+            $display("TIMEOUT after %0d cycles (last_pc=0x%08X last_instr=0x%08X)",
+                max_cycles, dbg_pc, dbg_instr);
     endtask
 
-    task automatic check_reg(input int idx, input int expected, input string label);
-        logic [31:0] actual;
-        actual = (idx == 0) ? 32'b0 : dut.regfile[idx];
-        if (actual !== expected) begin
-            $display("FAIL [%s]: x%0d = 0x%08X, expected 0x%08X", label, idx, actual, expected);
+    initial begin
+        load_program("/tmp/bench_ipc.hex");
+        run_program(5000000);
+
+        $display("bench_ipc: %0d cycles, %0d instrs, IPC=%0d.%02d (10 iters, N=32)",
+            cycle_count, instr_count,
+            instr_count / cycle_count,
+            (instr_count * 100 / cycle_count) % 100);
+
+        if (cycle_count >= 5000000) begin
+            $display("bench_ipc: TIMEOUT");
             errors++;
         end
-    endtask
 
-// End of CORE_TB include
+        if (errors == 0) $display("bench_ipc: PASSED");
+        else $display("bench_ipc: FAILED (%0d errors)", errors);
+        $finish;
+    end
+endmodule

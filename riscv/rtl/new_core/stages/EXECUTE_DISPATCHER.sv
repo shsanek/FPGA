@@ -30,6 +30,9 @@ module EXECUTE_DISPATCHER (
     output wire        out_flush,
     output wire [31:0] out_new_pc,
 
+    // === Instruction counter ===
+    output wire [31:0] instr_count,
+
     // === ALU_MEMORY bus master (exposed to top) ===
     output wire [31:0]  mem_bus_address,
     output wire         mem_bus_read,
@@ -206,5 +209,16 @@ module EXECUTE_DISPATCHER (
     // Flush from branch or jump
     assign out_flush  = branch_flush || jump_flush;
     assign out_new_pc = jump_flush ? jump_new_pc : branch_new_pc;
+
+    // Instruction counter: count each dispatch to any ALU
+    reg [31:0] instr_counter;
+    assign instr_count = instr_counter;
+
+    always_ff @(posedge clk) begin
+        if (reset)
+            instr_counter <= 0;
+        else if (prev_stage_valid && prev_stage_ready)
+            instr_counter <= instr_counter + 1;
+    end
 
 endmodule

@@ -29,7 +29,8 @@ module CORE #(
     input  wire         stall,              // 1 = stop fetching instructions
     output wire         pipeline_empty,     // 1 = all stages idle
     output wire [31:0]  dbg_last_alu_pc,    // last PC dispatched to ALU
-    output wire [31:0]  dbg_last_alu_instr  // last instruction dispatched to ALU
+    output wire [31:0]  dbg_last_alu_instr, // last instruction dispatched to ALU
+    output wire [31:0]  instr_count         // instructions dispatched to ALU
 );
 
     // =========================================================
@@ -119,7 +120,8 @@ module CORE #(
         // Stall / debug
         .stall(stall), .pipeline_empty(pipeline_empty),
         .dbg_last_alu_pc(dbg_last_alu_pc), .dbg_last_alu_instr(dbg_last_alu_instr),
-        .out_flush(pipeline_flush)
+        .out_flush(pipeline_flush),
+        .instr_count(instr_count)
     );
 
     // =========================================================
