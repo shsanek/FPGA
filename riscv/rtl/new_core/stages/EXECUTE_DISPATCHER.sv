@@ -26,7 +26,7 @@ module EXECUTE_DISPATCHER (
     output wire        next_stage_valid,
     input  wire        next_stage_ready,
 
-    // === Flush output (from branch/jump ALUs) ===
+    // === Flush ===
     output wire        out_flush,
     output wire [31:0] out_new_pc,
 
@@ -74,35 +74,8 @@ module EXECUTE_DISPATCHER (
                         (sel_muldiv        && muldiv_ready)  ||
                         (sel_system        && system_ready);
 
-    // Block dispatch while a branch/jump is in flight (waiting for result).
-    // Set when branch/jump dispatched, cleared when flush fires or branch completes without flush.
-    reg flush_wait;
-    wire branch_flush, jump_flush;  // forward declare (assigned below from ALU outputs)
-
-    always_ff @(posedge clk) begin
-        if (reset)
-            flush_wait <= 0;
-        else if (branch_flush || jump_flush)
-            flush_wait <= 0;  // flush fired — pipeline will be flushed
-        else if (flush_wait && branch_ready && jump_ready)
-            flush_wait <= 0;  // both ALUs idle — branch was not taken
-        else if (prev_stage_valid && (sel_branch || sel_jump) && target_ready && !flush_wait)
-            flush_wait <= 1;  // dispatching branch/jump now
-    end
-
-    assign prev_stage_ready = target_ready && !flush_wait;
-
-    // Gate valid to each ALU
-    wire compute_valid = prev_stage_valid && sel_compute_final && compute_ready;
-    wire branch_valid  = prev_stage_valid && sel_branch        && branch_ready;
-    wire jump_valid    = prev_stage_valid && sel_jump           && jump_ready;
-    wire upper_valid   = prev_stage_valid && sel_upper          && upper_ready;
-    wire memory_valid  = prev_stage_valid && sel_memory         && memory_ready;
-    wire muldiv_valid  = prev_stage_valid && sel_muldiv         && muldiv_ready;
-    wire system_valid  = prev_stage_valid && sel_system         && system_ready;
-
     // =========================================================
-    // ALU result wires
+    // ALU result wires (declared before use in flush_locked logic)
     // =========================================================
     wire [4:0]  compute_rd_idx, branch_rd_idx, jump_rd_idx, upper_rd_idx, memory_rd_idx, muldiv_rd_idx, system_rd_idx;
     wire [31:0] compute_rd_val, branch_rd_val, jump_rd_val, upper_rd_val, memory_rd_val, muldiv_rd_val, system_rd_val;
@@ -110,6 +83,32 @@ module EXECUTE_DISPATCHER (
     wire        compute_wb_rdy, branch_wb_rdy, jump_wb_rdy, upper_wb_rdy, memory_wb_rdy, muldiv_wb_rdy, system_wb_rdy;
 
     wire [31:0] branch_new_pc, jump_new_pc;
+    wire        branch_flush, jump_flush;
+
+    // Flush lock: blocks dispatch while branch/jump in flight.
+    reg flush_locked;
+
+    // Block dispatch while branch/jump in flight (flush_locked)
+    assign prev_stage_ready = target_ready && !flush_locked;
+
+    // Gate valid to each ALU
+    wire compute_valid = prev_stage_valid && sel_compute_final && compute_ready  && !flush_locked;
+    wire branch_valid  = prev_stage_valid && sel_branch        && branch_ready   && !flush_locked;
+    wire jump_valid    = prev_stage_valid && sel_jump           && jump_ready     && !flush_locked;
+    wire upper_valid   = prev_stage_valid && sel_upper          && upper_ready    && !flush_locked;
+    wire memory_valid  = prev_stage_valid && sel_memory         && memory_ready   && !flush_locked;
+    wire muldiv_valid  = prev_stage_valid && sel_muldiv         && muldiv_ready   && !flush_locked;
+    wire system_valid  = prev_stage_valid && sel_system         && system_ready   && !flush_locked;
+
+    // Set when branch/jump dispatched. Cleared when branch/jump ALU finishes.
+    always_ff @(posedge clk) begin
+        if (reset)
+            flush_locked <= 0;
+        else if (branch_done || jump_done)
+            flush_locked <= 0;
+        else if ((branch_valid || jump_valid) && !flush_locked)
+            flush_locked <= 1;
+    end
 
     // =========================================================
     // ALU instances
