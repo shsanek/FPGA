@@ -156,7 +156,7 @@ module PIPELINE (
     );
 
     // =========================================================
-    // Stage 6: WRITEBACK
+    // Stage 5: WRITEBACK
     // =========================================================
     WRITEBACK stage6_writeback (
         .clk(clk), .reset(reset),
