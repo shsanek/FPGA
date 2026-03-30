@@ -62,9 +62,17 @@ module REGISTER_DISPATCHER (
     // Blocked = have valid output but next stage hasn't taken it
     wire blocked = next_stage_valid && !next_stage_ready;
 
-    // Can accept: no latched instruction waiting (or it's being dispatched this cycle)
-    wire can_dispatch = lat_valid && !has_hazard && !blocked;
-    assign prev_stage_ready = !lat_valid || can_dispatch;
+    // Can dispatch: have instruction, no hazard, not blocked, and next stage accepts
+    wire can_dispatch = lat_valid && !has_hazard && !blocked && next_stage_ready;
+
+    // Detect branch/jump opcode in latched instruction
+    wire [6:0] lat_opcode = lat_instruction[6:0];
+    wire lat_is_flush = (lat_opcode == 7'b1100011) ||  // BRANCH
+                        (lat_opcode == 7'b1101111) ||  // JAL
+                        (lat_opcode == 7'b1100111);    // JALR
+
+    // Don't accept from decode when dispatching branch/jump (wrong-path prevention)
+    assign prev_stage_ready = !lat_valid || (can_dispatch && !lat_is_flush);
 
     integer i;
     always_ff @(posedge clk) begin
@@ -72,9 +80,17 @@ module REGISTER_DISPATCHER (
         if (wb_valid && wb_rd_index != 5'd0)
             busy[wb_rd_index] <= 0;
 
-        if (reset || flush) begin
+        if (reset) begin
             for (i = 0; i < 32; i = i + 1)
                 busy[i] <= 0;
+            lat_valid        <= 0;
+            next_stage_valid <= 0;
+            out_pc           <= 32'b0;
+            out_instruction  <= 32'h0000_0013;
+            out_rs1_value    <= 32'b0;
+            out_rs2_value    <= 32'b0;
+        end else if (flush) begin
+            // busy[] NOT cleared — only writeback clears busy bits.
             lat_valid        <= 0;
             next_stage_valid <= 0;
             out_pc           <= 32'b0;
