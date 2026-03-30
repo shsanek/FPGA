@@ -27,27 +27,33 @@
             regfile[rf_wr_addr] <= rf_wr_data;
     end
 
-    // I_CACHE mock: simple memory, 1-cycle latency
+    // I_CACHE mock: peek-based (combinational output buffer)
     wire [31:0]  icache_addr;
     wire         icache_read;
-    reg  [127:0] icache_data;
     reg          icache_ready = 1;
-    reg          icache_valid = 0;
+
+    // Peek: output buffer state
+    reg  [31:0]  icache_peek_addr;
+    reg  [127:0] icache_peek_data;
+    reg          icache_peek_valid = 0;
 
     // Instruction memory (4K words = 16KB)
     reg [31:0] imem [0:4095];
 
     always @(posedge clk) begin
-        icache_valid <= 0;
-        if (icache_read && icache_ready) begin
-            // Return 128-bit line (4 words) aligned
-            icache_data <= {
-                imem[icache_addr[13:2] + 3],
-                imem[icache_addr[13:2] + 2],
-                imem[icache_addr[13:2] + 1],
-                imem[icache_addr[13:2] + 0]
+        if (reset) begin
+            icache_ready     <= 1;
+            icache_peek_valid <= 0;
+        end else if (icache_read && icache_ready) begin
+            // Load line into "output buffer" (peek)
+            icache_peek_addr <= {icache_addr[31:4], 4'b0000};
+            icache_peek_data <= {
+                imem[{icache_addr[13:4], 2'd3}],
+                imem[{icache_addr[13:4], 2'd2}],
+                imem[{icache_addr[13:4], 2'd1}],
+                imem[{icache_addr[13:4], 2'd0}]
             };
-            icache_valid <= 1;
+            icache_peek_valid <= 1;
         end
     end
 
@@ -99,8 +105,10 @@
     PIPELINE dut (
         .clk(clk), .reset(reset),
         .icache_bus_address(icache_addr), .icache_bus_read(icache_read),
-        .icache_bus_read_data(icache_data), .icache_bus_ready(icache_ready),
-        .icache_bus_read_valid(icache_valid),
+        .icache_bus_ready(icache_ready),
+        .icache_peek_address(icache_peek_addr),
+        .icache_peek_data(icache_peek_data),
+        .icache_peek_valid(icache_peek_valid),
         .data_bus_address(dmem_addr), .data_bus_read(dmem_read),
         .data_bus_write(dmem_write), .data_bus_write_data(dmem_write_data),
         .data_bus_write_mask(dmem_write_mask), .data_bus_ready(dmem_ready),

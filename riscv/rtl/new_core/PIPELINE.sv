@@ -12,12 +12,15 @@ module PIPELINE (
     input wire clk,
     input wire reset,
 
-    // === I_CACHE bus (128-bit, for instruction fetch) ===
+    // === I_CACHE bus (for instruction fetch) ===
     output wire [31:0]  icache_bus_address,
     output wire         icache_bus_read,
-    input  wire [127:0] icache_bus_read_data,
     input  wire         icache_bus_ready,
-    input  wire         icache_bus_read_valid,
+
+    // === I_CACHE peek (combinational view of output buffer) ===
+    input  wire [31:0]  icache_peek_address,
+    input  wire [127:0] icache_peek_data,
+    input  wire         icache_peek_valid,
 
     // === Data bus (128-bit, for LOAD/STORE) ===
     output wire [31:0]  data_bus_address,
@@ -101,8 +104,10 @@ module PIPELINE (
         .next_stage_valid(s1_valid), .next_stage_ready(s1_ready),
         .new_pc(flush_pc), .flush(flush),
         .bus_address(icache_bus_address), .bus_read(icache_bus_read),
-        .bus_read_data(icache_bus_read_data),
-        .bus_ready(icache_bus_ready), .bus_read_valid(icache_bus_read_valid)
+        .bus_ready(icache_bus_ready),
+        .peek_line_address(icache_peek_address),
+        .peek_line_data(icache_peek_data),
+        .peek_line_valid(icache_peek_valid)
     );
 
     // =========================================================
