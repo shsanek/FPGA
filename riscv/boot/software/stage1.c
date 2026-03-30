@@ -8,16 +8,16 @@
 #include "fat32.h"
 #include "../../programs/common/font8x10.h"
 
-#define UART_TX   (*(volatile unsigned int *)0x10000000U)
-#define SD_STATUS (*(volatile unsigned int *)0x10020008U)
-#define TIMER_MS  (*(volatile unsigned int *)0x10030008U)
+#define UART_TX   (*(volatile unsigned int *)0x40000000U)
+#define SD_STATUS (*(volatile unsigned int *)0x40020008U)
+#define TIMER_MS  (*(volatile unsigned int *)0x40030008U)
 
 /* ---- OLED_FB_DEVICE registers ---- */
-#define OLED_CONTROL   (*(volatile unsigned int *)0x10010000U)
-#define OLED_STATUS    (*(volatile unsigned int *)0x10010004U)
-#define OLED_VP_WIDTH  (*(volatile unsigned int *)0x10010008U)
-#define OLED_VP_HEIGHT (*(volatile unsigned int *)0x1001000CU)
-#define OLED_FB        ((volatile unsigned int *)0x10014000U)
+#define OLED_CONTROL   (*(volatile unsigned int *)0x40010000U)
+#define OLED_STATUS    (*(volatile unsigned int *)0x40010004U)
+#define OLED_VP_WIDTH  (*(volatile unsigned int *)0x40010008U)
+#define OLED_VP_HEIGHT (*(volatile unsigned int *)0x4001000CU)
+#define OLED_FB        ((volatile unsigned int *)0x40014000U)
 
 #define LOAD_ADDR 0x00000000U
 

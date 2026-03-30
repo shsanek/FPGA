@@ -2,7 +2,7 @@
 #define SD_H
 
 /* SD card SPI driver for RISC-V bare-metal.
- * Uses SD_IO_DEVICE at 0x10020000.
+ * Uses SD_IO_DEVICE at 0x40020000.
  */
 
 /* Returns 0 on success, negative on error.
