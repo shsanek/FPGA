@@ -2,6 +2,7 @@
 //
 // One external bus port (128-bit standard interface).
 // Internally: I_CACHE miss and MEM (load/store) share bus via BUS_ARBITER.
+// INSTRUCTION_PROVIDER uses peek to read I_CACHE without bus requests.
 
 module CORE #(
     parameter ICACHE_DEPTH = 256,
@@ -10,7 +11,7 @@ module CORE #(
     input wire clk,
     input wire reset,
 
-    // === External 128-bit bus (to PERIPHERAL_BUS / MEMORY_CONTROLLER) ===
+    // === External 128-bit bus ===
     output wire [31:0]  bus_address,
     output wire         bus_read,
     output wire         bus_write,
@@ -28,7 +29,7 @@ module CORE #(
     // =========================================================
     // Register file (32 x 32-bit, x0 hardwired to 0)
     // =========================================================
-    reg [31:0] regfile [1:31];  // x1..x31 (x0 implicit 0)
+    reg [31:0] regfile [1:31];
 
     wire [4:0]  rf_rs1_addr, rf_rs2_addr, rf_wr_addr;
     wire [31:0] rf_wr_data;
@@ -42,13 +43,16 @@ module CORE #(
     end
 
     // =========================================================
-    // Pipeline ↔ I_CACHE bus wires
+    // Pipeline ↔ I_CACHE wires
     // =========================================================
     wire [31:0]  icache_pipe_addr;
     wire         icache_pipe_read;
-    wire [127:0] icache_pipe_read_data;
     wire         icache_pipe_ready;
-    wire         icache_pipe_read_valid;
+
+    // Peek from I_CACHE output buffer
+    wire [31:0]  icache_peek_addr;
+    wire [127:0] icache_peek_data;
+    wire         icache_peek_valid;
 
     // =========================================================
     // Pipeline ↔ Data bus wires (from ALU_MEMORY)
@@ -75,7 +79,7 @@ module CORE #(
     wire         icache_ext_read_valid;
 
     // =========================================================
-    // Flush from pipeline (branch/jump)
+    // Flush
     // =========================================================
     wire        pipeline_flush;
     wire [31:0] pipeline_new_pc;
@@ -85,15 +89,16 @@ module CORE #(
     // =========================================================
     // Pipeline
     // =========================================================
-    PIPELINE pipeline (
+    PIPELINE pipeline_inst (
         .clk(clk), .reset(reset),
-        // I_CACHE bus
+        // I_CACHE: bus + peek
         .icache_bus_address(icache_pipe_addr),
         .icache_bus_read(icache_pipe_read),
-        .icache_bus_read_data(icache_pipe_read_data),
         .icache_bus_ready(icache_pipe_ready),
-        .icache_bus_read_valid(icache_pipe_read_valid),
-        // Data bus (from ALU_MEMORY)
+        .icache_peek_address(icache_peek_addr),
+        .icache_peek_data(icache_peek_data),
+        .icache_peek_valid(icache_peek_valid),
+        // Data bus
         .data_bus_address(data_pipe_addr),
         .data_bus_read(data_pipe_read),
         .data_bus_write(data_pipe_write),
@@ -119,15 +124,19 @@ module CORE #(
         .clk(clk), .reset(reset || flush),
         // Invalidate (not connected)
         .invalidate_ready(), .invalidate_address(32'b0), .invalidate_trigger(1'b0),
-        // Upstream: from pipeline INSTRUCTION_PROVIDER
+        // Peek outputs
+        .peek_line_address(icache_peek_addr),
+        .peek_line_data(icache_peek_data),
+        .peek_line_valid(icache_peek_valid),
+        // Upstream: from pipeline
         .bus_address(icache_pipe_addr),
         .bus_read(icache_pipe_read),
         .bus_write(1'b0),
         .bus_write_data(128'b0),
         .bus_write_mask(16'b0),
         .bus_ready(icache_pipe_ready),
-        .bus_read_data(icache_pipe_read_data),
-        .bus_read_valid(icache_pipe_read_valid),
+        .bus_read_data(),   // not used — peek replaces this
+        .bus_read_valid(),  // not used
         // Downstream: miss → arbiter port1
         .external_address(icache_ext_addr),
         .external_read(icache_ext_read),
@@ -144,7 +153,7 @@ module CORE #(
     // =========================================================
     BUS_ARBITER arbiter (
         .clk(clk), .reset(reset),
-        // Port 0: MEM data (load/store) — priority
+        // Port 0: MEM data — priority
         .p0_address(data_pipe_addr),
         .p0_read(data_pipe_read),
         .p0_write(data_pipe_write),
