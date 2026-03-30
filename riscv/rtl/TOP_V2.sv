@@ -304,14 +304,14 @@ module TOP_V2 #(
     wire [127:0] icache_bus_rd_data;
     wire         icache_bus_rd_valid;
 
-    // ready_save_data: CPU accepted instruction (not stalled by MEM and instruction was valid)
-    wire ip_ready_save = ip_valid && !cpu_mem_stall;
+    // next_stage_ready: CPU accepted instruction (not stalled by MEM and instruction was valid)
+    wire ip_next_ready = ip_valid && !cpu_mem_stall;
 
     INSTRUCTION_PROVIDER ip (
         .clk(clk), .reset(reset),
-        .instruction(ip_instruction), .valid(ip_valid), .current_pc(ip_current_pc),
-        .new_pc(combined_new_pc), .set_pc(combined_set_pc),
-        .ready_save_data(ip_ready_save),
+        .out_pc(ip_current_pc), .out_instruction(ip_instruction),
+        .next_stage_valid(ip_valid), .next_stage_ready(ip_next_ready),
+        .new_pc(combined_new_pc), .flush(combined_set_pc),
         // 128-bit bus → I_CACHE
         .bus_address(if128_addr), .bus_read(if128_rd),
         .bus_read_data(icache_bus_rd_data),
