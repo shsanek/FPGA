@@ -42,7 +42,7 @@ rcsid[] = "$Id: r_draw.c,v 1.4 1997/02/03 16:47:55 b1 Exp $";
 // State.
 #include "doomstat.h"
 
-#include "riscv/config.h"
+/* blitter removed — software rendering only */
 
 
 // ?
@@ -115,15 +115,18 @@ void R_DrawColumn (void)
         I_Error ("R_DrawColumn: %i to %i at %i", dc_yl, dc_yh, dc_x);
 #endif
 
-    BLIT_SRC_ADDR   = (uint32_t)dc_source;
-    BLIT_SRC_FRAC   = dc_texturemid + (dc_yl - centery) * dc_iscale;
-    BLIT_SRC_STEP   = dc_iscale;
-    BLIT_SRC_MASK   = 127;
-    BLIT_DST_OFFSET = (viewwindowy + dc_yl) * SCREENWIDTH + (viewwindowx + dc_x);
-    BLIT_DST_STEP   = SCREENWIDTH;
-    BLIT_COUNT      = count + 1;
-    BLIT_CMAP_OFFSET = (uint32_t)dc_colormap;
-    BLIT_CMD        = 1;
+    /* Software column draw */
+    {
+        byte *dest = screens[0] + (viewwindowy + dc_yl) * SCREENWIDTH + (viewwindowx + dc_x);
+        fixed_t frac = dc_texturemid + (dc_yl - centery) * dc_iscale;
+        fixed_t step = dc_iscale;
+        int i;
+        for (i = 0; i <= count; i++) {
+            *dest = dc_colormap[dc_source[(frac >> FRACBITS) & 127]];
+            dest += SCREENWIDTH;
+            frac += step;
+        }
+    }
 }
 
 
@@ -455,18 +458,19 @@ void R_DrawSpan (void)
     if (count < 0)
         return;
 
-    BLIT_SRC_ADDR    = (uint32_t)ds_source;
-    BLIT_SRC_FRAC    = ds_xfrac;
-    BLIT_SRC_STEP    = ds_xstep;
-    BLIT_SRC_MASK    = 63;
-    BLIT_SRC_YFRAC   = ds_yfrac;
-    BLIT_SRC_YSTEP   = ds_ystep;
-    BLIT_SRC_SHIFT   = 6;
-    BLIT_DST_OFFSET  = (viewwindowy + ds_y) * SCREENWIDTH + (viewwindowx + ds_x1);
-    BLIT_DST_STEP    = 1;
-    BLIT_COUNT       = count + 1;
-    BLIT_CMAP_OFFSET = (uint32_t)ds_colormap;
-    BLIT_CMD         = 2;
+    /* Software span draw */
+    {
+        byte *dest = screens[0] + (viewwindowy + ds_y) * SCREENWIDTH + (viewwindowx + ds_x1);
+        unsigned int xfrac = ds_xfrac;
+        unsigned int yfrac = ds_yfrac;
+        int i;
+        for (i = 0; i <= count; i++) {
+            unsigned int spot = ((yfrac >> (16 - 6)) & (63 * 64)) + ((xfrac >> 16) & 63);
+            *dest++ = ds_colormap[ds_source[spot]];
+            xfrac += ds_xstep;
+            yfrac += ds_ystep;
+        }
+    }
 }
 
 

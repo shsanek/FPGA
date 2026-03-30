@@ -1,5 +1,12 @@
 /*
  * config.h — Hardware config for DOOM on Arty A7.
+ *
+ * Address map (new):
+ *   0x4000_xxxx  UART
+ *   0x4001_xxxx  OLED
+ *   0x4002_xxxx  SD
+ *   0x4003_xxxx  TIMER
+ *   0x4004_xxxx  SCRATCHPAD (128 KB)
  */
 
 #pragma once
@@ -8,13 +15,13 @@
 #include <string.h>
 
 /* Timer device (cycle counter / milliseconds) */
-#define TIMER_CYCLE_LO  (*(volatile uint32_t *)0x10030000U)
-#define TIMER_CYCLE_HI  (*(volatile uint32_t *)0x10030004U)
-#define TIMER_TIME_MS   (*(volatile uint32_t *)0x10030008U)
-#define TIMER_TIME_US   (*(volatile uint32_t *)0x1003000CU)
+#define TIMER_CYCLE_LO  (*(volatile uint32_t *)0x40030000U)
+#define TIMER_CYCLE_HI  (*(volatile uint32_t *)0x40030004U)
+#define TIMER_TIME_MS   (*(volatile uint32_t *)0x40030008U)
+#define TIMER_TIME_US   (*(volatile uint32_t *)0x4003000CU)
 
 /* Scratchpad — 128 KB BRAM, 1-тактовый доступ */
-#define SCRATCH_BASE      0x10040000U
+#define SCRATCH_BASE      0x40040000U
 #define SCRATCH_SIZE      (128 * 1024)
 
 /* Layout:
@@ -27,21 +34,5 @@
 
 /* Bus address flags */
 #define BUS_STREAM        0x20000000U   /* bit29: bypass cache, use stream cache */
-
-/* Hardware Blitter (inside SCRATCHPAD, offset 0x20000) */
-#define BLIT_BASE        (SCRATCH_BASE + 0x20000U)
-#define BLIT_CMD         (*(volatile uint32_t *)(BLIT_BASE + 0x00))
-#define BLIT_STATUS      (*(volatile uint32_t *)(BLIT_BASE + 0x04))
-#define BLIT_SRC_ADDR    (*(volatile uint32_t *)(BLIT_BASE + 0x08))
-#define BLIT_SRC_FRAC    (*(volatile uint32_t *)(BLIT_BASE + 0x0C))
-#define BLIT_SRC_STEP    (*(volatile uint32_t *)(BLIT_BASE + 0x10))
-#define BLIT_SRC_MASK    (*(volatile uint32_t *)(BLIT_BASE + 0x14))
-#define BLIT_DST_OFFSET  (*(volatile uint32_t *)(BLIT_BASE + 0x18))
-#define BLIT_DST_STEP    (*(volatile uint32_t *)(BLIT_BASE + 0x1C))
-#define BLIT_COUNT       (*(volatile uint32_t *)(BLIT_BASE + 0x20))
-#define BLIT_CMAP_OFFSET (*(volatile uint32_t *)(BLIT_BASE + 0x24))
-#define BLIT_SRC_YFRAC   (*(volatile uint32_t *)(BLIT_BASE + 0x28))
-#define BLIT_SRC_YSTEP   (*(volatile uint32_t *)(BLIT_BASE + 0x2C))
-#define BLIT_SRC_SHIFT   (*(volatile uint32_t *)(BLIT_BASE + 0x30))
 
 #define _memcpy(a, b, c) memcpy(a, b, c)

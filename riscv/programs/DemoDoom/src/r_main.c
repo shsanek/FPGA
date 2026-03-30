@@ -868,7 +868,7 @@ void R_SetupFrame (player_t* player)
 // R_RenderView
 //
 /* Timer for profiling */
-#define PROF_TIMER_US (*(volatile unsigned int *)0x1003000CU)
+#define PROF_TIMER_US (*(volatile unsigned int *)0x4003000CU)
 
 void R_RenderPlayerView (player_t* player)
 {
@@ -906,7 +906,7 @@ void R_RenderPlayerView (player_t* player)
     NetUpdate ();
 
     rframe++;
-    unsigned int now_ms = *(volatile unsigned int *)0x10030008U;
+    unsigned int now_ms = *(volatile unsigned int *)0x40030008U;
     if (rframe == 1 || (now_ms - last_prof_ms) >= 3000) {
         printf("[RENDER F%d] setup=%d bsp=%d planes=%d masked=%d total=%d us\n",
                rframe, rt1-rt0, rt2-rt1, rt3-rt2, rt4-rt3, rt4-rt0);
