@@ -67,6 +67,7 @@ module ALU_MEMORY #(
     reg [2:0]  lat_funct3;
     reg [4:0]  lat_rd;
     reg        lat_is_load;
+    reg [31:0] lat_rs2_value;
 
     assign prev_stage_ready = (state == S_IDLE) && !blocked;
 
@@ -84,15 +85,15 @@ module ALU_MEMORY #(
         wr_mask_positioned = 16'b0;
         case (lat_funct3[1:0])
             2'b00: begin // SB
-                wr_data_positioned[byte_off*8 +: 8] = prev_rs2_value[7:0];
+                wr_data_positioned[byte_off*8 +: 8] = lat_rs2_value[7:0];
                 wr_mask_positioned[byte_off] = 1;
             end
             2'b01: begin // SH
-                wr_data_positioned[{byte_off[3:1], 3'b0} +: 16] = prev_rs2_value[15:0];
+                wr_data_positioned[{byte_off[3:1], 4'b0} +: 16] = lat_rs2_value[15:0];
                 wr_mask_positioned[{byte_off[3:1], 1'b0} +: 2] = 2'b11;
             end
             2'b10: begin // SW
-                wr_data_positioned[{byte_off[3:2], 4'b0} +: 32] = prev_rs2_value;
+                wr_data_positioned[{byte_off[3:2], 5'b0} +: 32] = lat_rs2_value;
                 wr_mask_positioned[{byte_off[3:2], 2'b0} +: 4] = 4'b1111;
             end
             default: ;
@@ -113,24 +114,23 @@ module ALU_MEMORY #(
             end
             3'b001: begin // LH (sign-extend)
                 reg [15:0] h;
-                h = bus_read_data[{byte_off[3:1], 3'b0} +: 16];
+                h = bus_read_data[{byte_off[3:1], 4'b0} +: 16];
                 load_result = {{16{h[15]}}, h};
             end
             3'b010: begin // LW
-                load_result = bus_read_data[{byte_off[3:2], 4'b0} +: 32];
+                load_result = bus_read_data[{byte_off[3:2], 5'b0} +: 32];
             end
             3'b100: begin // LBU (zero-extend)
                 load_result = {24'b0, bus_read_data[byte_off*8 +: 8]};
             end
             3'b101: begin // LHU (zero-extend)
-                load_result = {16'b0, bus_read_data[{byte_off[3:1], 3'b0} +: 16]};
+                load_result = {16'b0, bus_read_data[{byte_off[3:1], 4'b0} +: 16]};
             end
             default: load_result = 32'b0;
         endcase
     end
 
-    // Latched rs2 for store (need to hold during bus transaction)
-    reg [31:0] lat_rs2_value;
+    // lat_rs2_value declared above (forward ref for wr_data_positioned)
 
     always_ff @(posedge clk) begin
         if (reset) begin

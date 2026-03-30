@@ -40,20 +40,23 @@ module test_memory;
 
         init();
 
-        repeat(100) @(posedge clk);
+        repeat(5) @(posedge clk);
         // Trace pipeline state
-        for (int t = 0; t < 20; t++) begin
+        // Check data_mem after program runs
+        repeat(800) @(posedge clk);
+        $display("data_mem[0x10000]=%02X %02X %02X %02X",
+                 data_mem[32'h10000], data_mem[32'h10001], data_mem[32'h10002], data_mem[32'h10003]);
+        $display("x1=%08X x2=%08X x10=%08X", regfile[1], regfile[2], regfile[10]);
+
+        for (int t = 0; t < 30; t++) begin
             @(posedge clk); #1;
-            $display("T[%0d]: s3v=%b s3r=%b s4v=%b s4r=%b mem_st=%0d sel_mem=%b mem_rdy=%b flush_busy=%b d_flush=%b",
+            $display("T[%0d]: mem_state=%0d mem_valid=%b bus_rd=%b bus_wr=%b bus_addr=%08X bus_rdy=%b opcode=%07b sel_mem=%b",
                      t,
-                     dut.s3_valid, dut.s3_ready,
-                     dut.stage4_execute.prev_stage_valid,
-                     dut.stage4_execute.prev_stage_ready,
                      dut.stage4_execute.alu_memory.state,
-                     dut.stage4_execute.sel_memory,
-                     dut.stage4_execute.memory_ready,
-                     dut.stage4_execute.flush_alu_busy,
-                     dut.stage4_execute.dispatching_flush);
+                     dut.stage4_execute.memory_valid,
+                     dmem_read, dmem_write, dmem_addr, dmem_ready,
+                     dut.stage4_execute.prev_instruction[6:0],
+                     dut.stage4_execute.sel_memory);
         end
         repeat(800) @(posedge clk);
 

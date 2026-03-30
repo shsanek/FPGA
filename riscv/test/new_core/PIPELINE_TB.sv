@@ -73,7 +73,7 @@
             // Byte-masked write
             for (int i = 0; i < 16; i++) begin
                 if (dmem_write_mask[i])
-                    data_mem[{dmem_addr[16:4], 4'b0} + i] <= dmem_write_data[i*8 +: 8];
+                    data_mem[{dmem_addr[16:4], 4'b0} + i] = dmem_write_data[i*8 +: 8];
             end
         end
 
@@ -82,9 +82,9 @@
             dmem_pending_addr <= dmem_addr;
             dmem_ready        <= 0;
         end else if (dmem_pending) begin
-            // Return 128-bit line
+            // Return 128-bit line (blocking assign so ALU sees data same cycle as valid)
             for (int i = 0; i < 16; i++)
-                dmem_read_data[i*8 +: 8] <= data_mem[{dmem_pending_addr[16:4], 4'b0} + i];
+                dmem_read_data[i*8 +: 8] = data_mem[{dmem_pending_addr[16:4], 4'b0} + i];
             dmem_read_valid <= 1;
             dmem_pending    <= 0;
             dmem_ready      <= 1;
