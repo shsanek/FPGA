@@ -1,14 +1,17 @@
 // SD I/O Device — memory-mapped контроллер PmodMicroSD (SPI mode).
 //
 // Адресное пространство (биты [3:2] адреса):
-//   offset 0x00  DATA     (W) — отправить байт по SPI (блокирует bus)
-//                          (R) — последний принятый байт (MISO)
+//   offset 0x00  DATA     (W) — отправить байт по SPI (в TX FIFO, не блокирует bus)
+//                          (R) — последний принятый байт (MISO), блокирует пока FIFO+SPI не завершатся
 //   offset 0x04  CONTROL  (W/R) — bit 0 = CS (1 = CS_N active low)
 //   offset 0x08  STATUS   (R) — {29'b0, card_detect, spi_busy, 0}
+//                                spi_busy = 1 когда FIFO не пуст ИЛИ SPI transfer в процессе
 //   offset 0x0C  DIVIDER  (W/R) — SPI clock делитель
 //
-// Full-duplex: запись в DATA отправляет байт по MOSI и одновременно
-// принимает байт по MISO. Результат доступен при чтении DATA.
+// Full-duplex: запись в DATA ставит байт в TX FIFO. Внутренний FSM
+// кормит SPI_MASTER из FIFO. Каждый transfer принимает байт по MISO.
+// Чтение DATA возвращает последний принятый байт (после завершения всех transfer).
+
 module SD_IO_DEVICE (
     input  wire        clk,
     input  wire        reset,
@@ -26,7 +29,7 @@ module SD_IO_DEVICE (
     output wire        sd_sck,
     output wire        sd_mosi,
     input  wire        sd_miso,
-    output wire        sd_cs_n,    // chip select (active low)
+    output wire        sd_cs_n,
 
     // Card detect (active low: 0 = card inserted)
     input  wire        sd_cd_n
@@ -57,11 +60,10 @@ module SD_IO_DEVICE (
     // ---------------------------------------------------------------
     // Регистры
     // ---------------------------------------------------------------
-    logic        cs_r;         // CS state (1=active)
-    logic [7:0]  rx_data_r;    // last received byte
-    logic [7:0]  tx_data_r;    // last sent byte
+    logic        cs_r;
+    logic [7:0]  rx_data_r;
 
-    localparam [15:0] DEFAULT_DIVIDER = 16'd101; // ~400 kHz for SD init
+    localparam [15:0] DEFAULT_DIVIDER = 16'd101;
 
     wire [1:0] reg_sel = address[3:2];
     localparam REG_DATA    = 2'd0;
@@ -70,9 +72,26 @@ module SD_IO_DEVICE (
     localparam REG_DIVIDER = 2'd3;
 
     // ---------------------------------------------------------------
-    // CS pin
+    // TX FIFO (4 deep)
     // ---------------------------------------------------------------
+    wire [7:0] fifo_rd_data;
+    wire       fifo_empty, fifo_full;
+    reg        fifo_rd_en;
+
+    UART_FIFO #(.DEPTH(4), .WIDTH(8)) tx_fifo (
+        .clk(clk), .reset(reset),
+        .wr_data(write_value[7:0]),
+        .wr_en(write_trigger && (reg_sel == REG_DATA) && !fifo_full),
+        .full(fifo_full),
+        .rd_data(fifo_rd_data),
+        .rd_en(fifo_rd_en),
+        .empty(fifo_empty)
+    );
+
     assign sd_cs_n = ~cs_r;
+
+    // SPI active = FIFO has data OR SPI transferring
+    wire spi_active = !fifo_empty || spi_busy;
 
     // ---------------------------------------------------------------
     // Комбинационное чтение
@@ -82,7 +101,7 @@ module SD_IO_DEVICE (
         case (reg_sel)
             REG_DATA:    rdata = {24'b0, rx_data_r};
             REG_CONTROL: rdata = {31'b0, cs_r};
-            REG_STATUS:  rdata = {29'b0, ~sd_cd_n, spi_busy, 1'b0};
+            REG_STATUS:  rdata = {29'b0, ~sd_cd_n, spi_active, 1'b0};
             REG_DIVIDER: rdata = {16'b0, divider_r};
             default:     rdata = 32'b0;
         endcase
@@ -90,39 +109,50 @@ module SD_IO_DEVICE (
     assign read_value = rdata;
 
     // ---------------------------------------------------------------
-    // controller_ready
+    // controller_ready:
+    //   Write DATA: blocked only when FIFO full
+    //   Read DATA: blocked while SPI active (FIFO not empty OR SPI busy)
+    //   All other registers: always ready
     // ---------------------------------------------------------------
-    assign controller_ready = !spi_busy;
+    wire writing_data = write_trigger && (reg_sel == REG_DATA);
+    wire reading_data = read_trigger  && (reg_sel == REG_DATA);
+
+    assign controller_ready = writing_data ? !fifo_full :
+                              reading_data ? !spi_active :
+                              1'b1;
 
     // ---------------------------------------------------------------
-    // Latch rx_data when SPI done
+    // FIFO → SPI feeder FSM
     // ---------------------------------------------------------------
     always_ff @(posedge clk) begin
         spi_trigger <= 1'b0;
+        fifo_rd_en  <= 1'b0;
 
         if (reset) begin
             cs_r      <= 1'b0;
             rx_data_r <= 8'hFF;
-            tx_data_r <= 8'h00;
             divider_r <= DEFAULT_DIVIDER;
         end else begin
             // Latch MISO result
             if (spi_done)
                 rx_data_r <= spi_rx;
 
+            // Feed SPI from FIFO when SPI is idle
+            if (!spi_busy && !fifo_empty && !fifo_rd_en) begin
+                fifo_rd_en  <= 1'b1;
+            end
+
+            // After FIFO read, start SPI transfer
+            if (fifo_rd_en) begin
+                spi_data    <= fifo_rd_data;
+                spi_trigger <= 1'b1;
+            end
+
+            // Register writes (non-DATA)
             if (write_trigger) begin
                 case (reg_sel)
-                    REG_DATA: begin
-                        tx_data_r   <= write_value[7:0];
-                        spi_data    <= write_value[7:0];
-                        spi_trigger <= 1'b1;
-                    end
-                    REG_CONTROL: begin
-                        cs_r <= write_value[0];
-                    end
-                    REG_DIVIDER: begin
-                        divider_r <= write_value[15:0];
-                    end
+                    REG_CONTROL: cs_r      <= write_value[0];
+                    REG_DIVIDER: divider_r <= write_value[15:0];
                     default: ;
                 endcase
             end

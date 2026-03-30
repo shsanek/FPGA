@@ -91,9 +91,10 @@ module SD_IO_DEVICE_TEST();
             sck_prev     = 0;
             @(posedge clk);
             write_reg(2'd0, {24'b0, tx});
-            @(posedge clk);
-            @(posedge clk);
-            wait_ready;
+            // Wait for SPI to start (FIFO → SPI has 2-cycle latency)
+            while (!dut.spi_busy) @(posedge clk);
+            // Wait for SPI to finish
+            while (dut.spi_active) @(posedge clk);
             @(posedge clk);
         end
     endtask
