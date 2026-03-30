@@ -49,13 +49,14 @@ module REGISTER_DISPATCHER (
     reg        lat_valid;      // have latched instruction waiting
 
     // Hazard check on latched indices
-    wire rs1_busy = (lat_rs1_index < 5'd32) && (lat_rs1_index != 5'd0) && busy[lat_rs1_index];
-    wire rs2_busy = (lat_rs2_index < 5'd32) && (lat_rs2_index != 5'd0) && busy[lat_rs2_index];
+    // x0 never busy (writes to x0 ignored), so index=0 → no hazard
+    wire rs1_busy = (lat_rs1_index != 5'd0) && busy[lat_rs1_index];
+    wire rs2_busy = (lat_rs2_index != 5'd0) && busy[lat_rs2_index];
     wire has_hazard = lat_valid && (rs1_busy || rs2_busy);
 
     // Register file addresses from latched indices
-    assign rf_rs1_addr = lat_rs1_index[4] ? 5'd0 : lat_rs1_index;
-    assign rf_rs2_addr = lat_rs2_index[4] ? 5'd0 : lat_rs2_index;
+    assign rf_rs1_addr = lat_rs1_index;
+    assign rf_rs2_addr = lat_rs2_index;
 
     // Blocked = have valid output but next stage hasn't taken it
     wire blocked = next_stage_valid && !next_stage_ready;
@@ -67,7 +68,7 @@ module REGISTER_DISPATCHER (
     integer i;
     always_ff @(posedge clk) begin
         // Writeback: always clear busy (independent of everything)
-        if (wb_valid && wb_rd_index < 5'd32 && wb_rd_index != 5'd0)
+        if (wb_valid && wb_rd_index != 5'd0)
             busy[wb_rd_index] <= 0;
 
         if (reset || flush) begin
@@ -92,7 +93,7 @@ module REGISTER_DISPATCHER (
                 out_rs2_value    <= rf_rs2_data;
                 next_stage_valid <= 1;
 
-                if (lat_rd_index < 5'd32 && lat_rd_index != 5'd0)
+                if (lat_rd_index != 5'd0)
                     busy[lat_rd_index] <= 1;
 
                 lat_valid <= 0;

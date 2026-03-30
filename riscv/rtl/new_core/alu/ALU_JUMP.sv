@@ -53,7 +53,7 @@ module ALU_JUMP (
     always_ff @(posedge clk) begin
         if (reset || flush) begin
             next_stage_valid <= 0;
-            out_rd_index     <= 5'b10000;
+            out_rd_index     <= 5'd0;
             out_rd_value     <= 32'b0;
             out_flush        <= 0;
             out_new_pc       <= 32'b0;

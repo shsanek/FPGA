@@ -168,7 +168,7 @@ module EXECUTE_DISPATCHER (
                           upper_done   ? upper_rd_idx   :
                           memory_done  ? memory_rd_idx  :
                           muldiv_done  ? muldiv_rd_idx  :
-                                         5'b10000;
+                                         5'd0;
 
     assign out_rd_value = compute_done ? compute_rd_val :
                           branch_done  ? branch_rd_val  :

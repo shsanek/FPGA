@@ -62,7 +62,7 @@ module ALU_MULDIV (
         if (reset || flush) begin
             state            <= S_IDLE;
             next_stage_valid <= 0;
-            out_rd_index     <= 5'b10000;
+            out_rd_index     <= 5'd0;
             out_rd_value     <= 32'b0;
         end else begin
             if (next_stage_valid && next_stage_ready)

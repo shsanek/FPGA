@@ -1,7 +1,7 @@
 // ALU_BRANCH — branch comparison. 1 cycle.
 //
 // BEQ, BNE, BLT, BGE, BLTU, BGEU
-// Outputs flush + new_pc if branch taken. No register write (rd=NO_REG).
+// Outputs flush + new_pc if branch taken. No register write (rd=5'd0).
 
 module ALU_BRANCH (
     input wire clk,
@@ -15,7 +15,7 @@ module ALU_BRANCH (
     input  wire        prev_stage_valid,
     output wire        prev_stage_ready,
 
-    // === To writeback (rd=NO_REG always) ===
+    // === To writeback (rd=5'd0 always) ===
     output reg  [4:0]  out_rd_index,
     output reg  [31:0] out_rd_value,
     output reg         next_stage_valid,
@@ -61,7 +61,7 @@ module ALU_BRANCH (
     always_ff @(posedge clk) begin
         if (reset || flush) begin
             next_stage_valid <= 0;
-            out_rd_index     <= 5'b10000;
+            out_rd_index     <= 5'd0;
             out_rd_value     <= 32'b0;
             out_flush        <= 0;
             out_new_pc       <= 32'b0;
@@ -72,7 +72,7 @@ module ALU_BRANCH (
             end
 
             if (!blocked && prev_stage_valid) begin
-                out_rd_index     <= 5'b10000;  // branches don't write registers
+                out_rd_index     <= 5'd0;  // branches don't write registers
                 out_rd_value     <= 32'b0;
                 next_stage_valid <= 1;
                 out_flush        <= take;

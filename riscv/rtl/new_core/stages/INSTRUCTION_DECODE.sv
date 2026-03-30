@@ -16,9 +16,9 @@ module INSTRUCTION_DECODE (
     // === To next stage (REGISTER_DISPATCHER) ===
     output reg  [31:0] out_pc,
     output reg  [31:0] out_instruction,
-    output reg  [4:0]  out_rs1_index,        // 5'b10000 = not used
-    output reg  [4:0]  out_rs2_index,        // 5'b10000 = not used
-    output reg  [4:0]  out_rd_index,         // 5'b10000 = not used
+    output reg  [4:0]  out_rs1_index,        // 5'd0 = not used
+    output reg  [4:0]  out_rs2_index,        // 5'd0 = not used
+    output reg  [4:0]  out_rd_index,         // 5'd0 = not used
     output reg         next_stage_valid,
     input  wire        next_stage_ready,
 
@@ -35,7 +35,7 @@ module INSTRUCTION_DECODE (
     localparam [6:0] OP_JALR   = 7'b1100111;
     localparam [6:0] OP_LUI    = 7'b0110111;
     localparam [6:0] OP_AUIPC  = 7'b0010111;
-    localparam [4:0] NO_REG    = 5'b10000;
+    // rd/rs1/rs2 = 0 means x0 (zero register, write ignored)
 
     // Combinational decode from prev_instruction
     wire [6:0] opcode = prev_instruction[6:0];
@@ -61,9 +61,9 @@ module INSTRUCTION_DECODE (
             next_stage_valid <= 0;
             out_pc           <= 32'b0;
             out_instruction  <= 32'h0000_0013;
-            out_rs1_index    <= NO_REG;
-            out_rs2_index    <= NO_REG;
-            out_rd_index     <= NO_REG;
+            out_rs1_index    <= 5'd0;
+            out_rs2_index    <= 5'd0;
+            out_rd_index     <= 5'd0;
         end else begin
             // Clear valid when next stage accepts
             if (next_stage_valid && next_stage_ready)
@@ -73,9 +73,9 @@ module INSTRUCTION_DECODE (
             if (!blocked && prev_stage_valid) begin
                 out_pc          <= prev_pc;
                 out_instruction <= prev_instruction;
-                out_rs1_index   <= uses_rs1 ? rs1 : NO_REG;
-                out_rs2_index   <= uses_rs2 ? rs2 : NO_REG;
-                out_rd_index    <= uses_rd  ? rd  : NO_REG;
+                out_rs1_index   <= uses_rs1 ? rs1 : 5'd0;
+                out_rs2_index   <= uses_rs2 ? rs2 : 5'd0;
+                out_rd_index    <= uses_rd  ? rd  : 5'd0;
                 next_stage_valid <= 1;
             end
         end

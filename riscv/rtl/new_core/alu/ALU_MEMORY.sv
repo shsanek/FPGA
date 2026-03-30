@@ -1,7 +1,7 @@
 // ALU_MEMORY — LOAD and STORE via bus. Multi-cycle.
 //
 // LOAD:  rd = mem[rs1 + imm], sign/zero extended by funct3
-// STORE: mem[rs1 + imm] = rs2 (byte/half/word by funct3), rd = NO_REG
+// STORE: mem[rs1 + imm] = rs2 (byte/half/word by funct3), rd = 5'd0
 //
 // Uses 128-bit bus interface. Handles byte/half/word alignment internally.
 
@@ -139,7 +139,7 @@ module ALU_MEMORY #(
         if (reset || flush) begin
             state            <= S_IDLE;
             next_stage_valid <= 0;
-            out_rd_index     <= 5'b10000;
+            out_rd_index     <= 5'd0;
             out_rd_value     <= 32'b0;
             bus_read         <= 0;
             bus_write        <= 0;
@@ -155,7 +155,7 @@ module ALU_MEMORY #(
                     if (!blocked && prev_stage_valid) begin
                         lat_addr       <= addr;
                         lat_funct3     <= funct3;
-                        lat_rd         <= is_load ? rd : 5'b10000;
+                        lat_rd         <= is_load ? rd : 5'd0;
                         lat_is_load    <= is_load;
                         lat_rs2_value  <= prev_rs2_value;
                         state          <= S_BUS_REQ;
@@ -184,7 +184,7 @@ module ALU_MEMORY #(
                     end else begin
                         // Store: done when bus_ready returns
                         if (bus_ready) begin
-                            out_rd_index     <= 5'b10000;
+                            out_rd_index     <= 5'd0;
                             out_rd_value     <= 32'b0;
                             next_stage_valid <= 1;
                             state            <= S_IDLE;
