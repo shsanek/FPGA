@@ -32,10 +32,7 @@ module ALU_MEMORY #(
     output reg  [15:0]           bus_write_mask,
     input  wire                  bus_ready,
     input  wire [127:0]          bus_read_data,
-    input  wire                  bus_read_valid,
-
-    // === Pipeline flush ===
-    input  wire        flush
+    input  wire                  bus_read_valid
 );
 
     wire blocked = next_stage_valid && !next_stage_ready;
@@ -136,7 +133,7 @@ module ALU_MEMORY #(
     reg [31:0] lat_rs2_value;
 
     always_ff @(posedge clk) begin
-        if (reset || flush) begin
+        if (reset) begin
             state            <= S_IDLE;
             next_stage_valid <= 0;
             out_rd_index     <= 5'd0;

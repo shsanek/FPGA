@@ -18,10 +18,7 @@ module ALU_COMPUTE (
     output reg  [4:0]  out_rd_index,
     output reg  [31:0] out_rd_value,
     output reg         next_stage_valid,
-    input  wire        next_stage_ready,
-
-    // === Pipeline flush ===
-    input  wire        flush
+    input  wire        next_stage_ready
 );
 
     wire blocked = next_stage_valid && !next_stage_ready;
@@ -59,7 +56,7 @@ module ALU_COMPUTE (
     end
 
     always_ff @(posedge clk) begin
-        if (reset || flush) begin
+        if (reset) begin
             next_stage_valid <= 0;
             out_rd_index     <= 5'd0;
             out_rd_value     <= 32'b0;

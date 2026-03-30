@@ -18,10 +18,7 @@ module ALU_MULDIV (
     output reg  [4:0]  out_rd_index,
     output reg  [31:0] out_rd_value,
     output reg         next_stage_valid,
-    input  wire        next_stage_ready,
-
-    // === Pipeline flush ===
-    input  wire        flush
+    input  wire        next_stage_ready
 );
 
     wire blocked = next_stage_valid && !next_stage_ready;
@@ -59,7 +56,7 @@ module ALU_MULDIV (
     wire [31:0] abs_rs2 = (prev_rs2_value[31] && (funct3[1:0] == 2'b00 || funct3[1:0] == 2'b01)) ? -prev_rs2_value : prev_rs2_value;
 
     always_ff @(posedge clk) begin
-        if (reset || flush) begin
+        if (reset) begin
             state            <= S_IDLE;
             next_stage_valid <= 0;
             out_rd_index     <= 5'd0;

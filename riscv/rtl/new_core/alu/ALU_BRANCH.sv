@@ -23,10 +23,7 @@ module ALU_BRANCH (
 
     // === Branch result ===
     output reg         out_flush,
-    output reg  [31:0] out_new_pc,
-
-    // === Pipeline flush ===
-    input  wire        flush
+    output reg  [31:0] out_new_pc
 );
 
     wire blocked = next_stage_valid && !next_stage_ready;
@@ -59,7 +56,7 @@ module ALU_BRANCH (
     end
 
     always_ff @(posedge clk) begin
-        if (reset || flush) begin
+        if (reset) begin
             next_stage_valid <= 0;
             out_rd_index     <= 5'd0;
             out_rd_value     <= 32'b0;

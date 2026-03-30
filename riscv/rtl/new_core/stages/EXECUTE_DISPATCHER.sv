@@ -30,9 +30,6 @@ module EXECUTE_DISPATCHER (
     output wire        out_flush,
     output wire [31:0] out_new_pc,
 
-    // === Pipeline flush input ===
-    input  wire        flush,
-
     // === ALU_MEMORY bus master (exposed to top) ===
     output wire [31:0]  mem_bus_address,
     output wire         mem_bus_read,
@@ -72,8 +69,11 @@ module EXECUTE_DISPATCHER (
                         (sel_memory        && memory_ready)  ||
                         (sel_muldiv        && muldiv_ready);
 
-    // We can accept from REGISTER_DISPATCHER when target ALU is free
-    assign prev_stage_ready = target_ready;
+    // Block dispatch if branch/jump ALU is busy (might flush — must wait for result)
+    wire flush_pending = !branch_ready || !jump_ready;
+
+    // Can accept when target ALU free AND no flush-capable ALU in flight
+    assign prev_stage_ready = target_ready && !flush_pending;
 
     // Gate valid to each ALU
     wire compute_valid = prev_stage_valid && sel_compute_final && compute_ready;
@@ -97,7 +97,7 @@ module EXECUTE_DISPATCHER (
     // ALU instances
     // =========================================================
     ALU_COMPUTE alu_compute (
-        .clk(clk), .reset(reset), .flush(flush),
+        .clk(clk), .reset(reset),
         .prev_instruction(prev_instruction),
         .prev_rs1_value(prev_rs1_value), .prev_rs2_value(prev_rs2_value),
         .prev_stage_valid(compute_valid), .prev_stage_ready(compute_ready),
@@ -106,7 +106,7 @@ module EXECUTE_DISPATCHER (
     );
 
     ALU_BRANCH alu_branch (
-        .clk(clk), .reset(reset), .flush(flush),
+        .clk(clk), .reset(reset),
         .prev_pc(prev_pc), .prev_instruction(prev_instruction),
         .prev_rs1_value(prev_rs1_value), .prev_rs2_value(prev_rs2_value),
         .prev_stage_valid(branch_valid), .prev_stage_ready(branch_ready),
@@ -116,7 +116,7 @@ module EXECUTE_DISPATCHER (
     );
 
     ALU_JUMP alu_jump (
-        .clk(clk), .reset(reset), .flush(flush),
+        .clk(clk), .reset(reset),
         .prev_pc(prev_pc), .prev_instruction(prev_instruction),
         .prev_rs1_value(prev_rs1_value),
         .prev_stage_valid(jump_valid), .prev_stage_ready(jump_ready),
@@ -126,7 +126,7 @@ module EXECUTE_DISPATCHER (
     );
 
     ALU_UPPER alu_upper (
-        .clk(clk), .reset(reset), .flush(flush),
+        .clk(clk), .reset(reset),
         .prev_pc(prev_pc), .prev_instruction(prev_instruction),
         .prev_stage_valid(upper_valid), .prev_stage_ready(upper_ready),
         .out_rd_index(upper_rd_idx), .out_rd_value(upper_rd_val),
@@ -134,7 +134,7 @@ module EXECUTE_DISPATCHER (
     );
 
     ALU_MEMORY alu_memory (
-        .clk(clk), .reset(reset), .flush(flush),
+        .clk(clk), .reset(reset),
         .prev_instruction(prev_instruction),
         .prev_rs1_value(prev_rs1_value), .prev_rs2_value(prev_rs2_value),
         .prev_stage_valid(memory_valid), .prev_stage_ready(memory_ready),
@@ -148,7 +148,7 @@ module EXECUTE_DISPATCHER (
     );
 
     ALU_MULDIV alu_muldiv (
-        .clk(clk), .reset(reset), .flush(flush),
+        .clk(clk), .reset(reset),
         .prev_instruction(prev_instruction),
         .prev_rs1_value(prev_rs1_value), .prev_rs2_value(prev_rs2_value),
         .prev_stage_valid(muldiv_valid), .prev_stage_ready(muldiv_ready),
